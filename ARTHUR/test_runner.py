@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 import argparse
 from dataclasses import dataclass
-from datetime import datetime  # <-- MODULE AJOUTÉ
+from datetime import datetime
 
 # Import the geometric detection system
 # Note: Make sure arc_geometric_detection.py is in the same directory
@@ -68,7 +68,7 @@ class TestSuite:
     and generates comprehensive reports.
     """
     
-    def __init__(self, json_path: str = "ARTHUR/arc_test_grids.json"):
+    def __init__(self, json_path: str = "arc_test_grids.json"):
         """
         Initialize test suite.
         
@@ -88,14 +88,17 @@ class TestSuite:
             True if successful, False otherwise
         """
         try:
-            with open(self.json_path, 'r') as f:
+            # Construct path relative to the script's location
+            script_dir = Path(__file__).parent
+            full_json_path = script_dir / self.json_path
+            with open(full_json_path, 'r') as f:
                 self.test_data = json.load(f)
             
-            print(f"✓ Loaded {len(self.test_data['test_grids'])} test cases from {self.json_path}")
+            print(f"✓ Loaded {len(self.test_data['test_grids'])} test cases from {full_json_path}")
             return True
         
         except FileNotFoundError:
-            print(f"✗ Error: Could not find file '{self.json_path}'")
+            print(f"✗ Error: Could not find file '{self.json_path}' in the script directory.")
             return False
         except json.JSONDecodeError as e:
             print(f"✗ Error: Invalid JSON format - {e}")
@@ -374,7 +377,7 @@ class TestSuite:
         else:
             plt.show()
     
-    def visualize_all_failed_tests(self, output_dir: str = "test_failures"):
+    def visualize_all_failed_tests(self, output_dir: str):
         """
         Generate visualizations for all failed tests.
         
@@ -397,7 +400,7 @@ class TestSuite:
         
         print(f"✓ Visualizations saved to {output_dir}/")
     
-    def export_results(self, output_path: str = "test_results.json"):
+    def export_results(self, output_path: str):
         """
         Export test results to JSON file.
         
@@ -424,8 +427,8 @@ def main():
     
     parser.add_argument(
         '--json', '-j',
-        default='ARTHUR/arc_test_grids.json',
-        help='Path to test grids JSON file (default: ARTHUR/arc_test_grids.json)'
+        default='arc_test_grids.json',
+        help='Path to test grids JSON file (default: arc_test_grids.json)'
     )
     
     parser.add_argument(
@@ -498,12 +501,17 @@ def main():
     if args.export:
         suite.export_results(args.export)
     
-    # --- LOGIQUE D'HORODATAGE AJOUTÉE ICI ---
     # Generate visualizations if requested
     if args.visualize or args.visualize_all:
-        # Create a timestamped directory
+        # --- MODIFICATION POUR LE CHEMIN RELATIF ---
+        # Get the directory where the script is located
+        script_dir = Path(__file__).parent
+        
+        # Create a timestamped directory name
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        timestamped_dir = Path(f"{args.output_dir}_{timestamp}")
+        
+        # Construct the full path for the output directory inside the script's folder
+        timestamped_dir = script_dir / f"{args.output_dir}_{timestamp}"
         
         if args.visualize:
             suite.visualize_all_failed_tests(output_dir=str(timestamped_dir))
@@ -549,10 +557,14 @@ if __name__ == "__main__":
                 print("\nWould you like to generate visualizations of failed tests?")
                 response = input("(y/n): ").strip().lower()
                 if response == 'y':
+                    # --- MODIFICATION POUR LE CHEMIN RELATIF ---
+                    # Get the directory where the script is located
+                    script_dir = Path(__file__).parent
+                    
                     # Create a timestamped directory for simple mode as well
                     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                    output_dir = f"ARTHUR/test_failures_{timestamp}"
-                    suite.visualize_all_failed_tests(output_dir=output_dir)
+                    output_dir = script_dir / f"test_failures_{timestamp}"
+                    suite.visualize_all_failed_tests(output_dir=str(output_dir))
         
         sys.exit(0)
     
