@@ -551,7 +551,7 @@ if __name__ == "__main__":
                 if response == 'y':
                     # Create a timestamped directory for simple mode as well
                     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                    output_dir = f"test_failures_{timestamp}"
+                    output_dir = f"ARTHUR/test_failures_{timestamp}"
                     suite.visualize_all_failed_tests(output_dir=output_dir)
         
         sys.exit(0)
