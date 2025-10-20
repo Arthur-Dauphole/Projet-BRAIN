@@ -1,0 +1,289 @@
+{
+  "test_grids": [
+    {
+      "id": "simple_rectangle",
+      "name": "Simple Filled Rectangle",
+      "description": "A basic 4x3 filled rectangle in the center",
+      "tags": ["rectangle", "filled", "simple"],
+      "expected_shapes": {
+        "rectangles": 1,
+        "lines": 0
+      },
+      "grid": [
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 1, 1, 1, 1, 0, 0],
+        [0, 0, 1, 1, 1, 1, 0, 0],
+        [0, 0, 1, 1, 1, 1, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0]
+      ]
+    },
+    {
+      "id": "hollow_rectangle",
+      "name": "Hollow Rectangle",
+      "description": "Rectangle with hollow interior",
+      "tags": ["rectangle", "hollow", "border"],
+      "expected_shapes": {
+        "rectangles": 1,
+        "lines": 0
+      },
+      "grid": [
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 2, 2, 2, 2, 2, 0, 0],
+        [0, 2, 0, 0, 0, 2, 0, 0],
+        [0, 2, 0, 0, 0, 2, 0, 0],
+        [0, 2, 2, 2, 2, 2, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0]
+      ]
+    },
+    {
+      "id": "multiple_rectangles",
+      "name": "Multiple Rectangles",
+      "description": "Several non-overlapping rectangles of different sizes",
+      "tags": ["rectangle", "multiple", "varied_sizes"],
+      "expected_shapes": {
+        "rectangles": 3,
+        "lines": 0
+      },
+      "grid": [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 1, 1, 0, 0, 3, 3, 0, 0],
+        [0, 1, 1, 1, 0, 0, 3, 3, 0, 0],
+        [0, 0, 0, 0, 0, 0, 3, 3, 0, 0],
+        [0, 0, 5, 5, 5, 5, 0, 0, 0, 0],
+        [0, 0, 5, 5, 5, 5, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ]
+    },
+    {
+      "id": "horizontal_line",
+      "name": "Horizontal Line",
+      "description": "Simple horizontal line segment",
+      "tags": ["line", "horizontal"],
+      "expected_shapes": {
+        "rectangles": 0,
+        "lines": 1
+      },
+      "grid": [
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 1, 1, 1, 1, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0]
+      ]
+    },
+    {
+      "id": "vertical_line",
+      "name": "Vertical Line",
+      "description": "Simple vertical line segment",
+      "tags": ["line", "vertical"],
+      "expected_shapes": {
+        "rectangles": 0,
+        "lines": 1
+      },
+      "grid": [
+        [0, 0, 0, 2, 0, 0],
+        [0, 0, 0, 2, 0, 0],
+        [0, 0, 0, 2, 0, 0],
+        [0, 0, 0, 2, 0, 0],
+        [0, 0, 0, 2, 0, 0],
+        [0, 0, 0, 0, 0, 0]
+      ]
+    },
+    {
+      "id": "diagonal_line",
+      "name": "Diagonal Line",
+      "description": "45-degree diagonal line",
+      "tags": ["line", "diagonal"],
+      "expected_shapes": {
+        "rectangles": 0,
+        "lines": 1
+      },
+      "grid": [
+        [3, 0, 0, 0, 0, 0],
+        [0, 3, 0, 0, 0, 0],
+        [0, 0, 3, 0, 0, 0],
+        [0, 0, 0, 3, 0, 0],
+        [0, 0, 0, 0, 3, 0],
+        [0, 0, 0, 0, 0, 0]
+      ]
+    },
+    {
+      "id": "cross_pattern",
+      "name": "Cross Pattern",
+      "description": "Horizontal and vertical lines forming a cross",
+      "tags": ["line", "pattern", "cross"],
+      "expected_shapes": {
+        "rectangles": 0,
+        "lines": 2
+      },
+      "grid": [
+        [0, 0, 0, 4, 0, 0, 0],
+        [0, 0, 0, 4, 0, 0, 0],
+        [4, 4, 4, 4, 4, 4, 4],
+        [0, 0, 0, 4, 0, 0, 0],
+        [0, 0, 0, 4, 0, 0, 0]
+      ]
+    },
+    {
+      "id": "square_symmetry",
+      "name": "Square with Symmetry",
+      "description": "Perfect square that should have both horizontal and vertical symmetry",
+      "tags": ["rectangle", "square", "symmetry"],
+      "expected_shapes": {
+        "rectangles": 1,
+        "lines": 0
+      },
+      "grid": [
+        [0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 5, 5, 5, 0, 0],
+        [0, 0, 5, 5, 5, 0, 0],
+        [0, 0, 5, 5, 5, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0]
+      ]
+    },
+    {
+      "id": "mixed_shapes",
+      "name": "Mixed Shapes",
+      "description": "Combination of rectangles and lines",
+      "tags": ["rectangle", "line", "mixed"],
+      "expected_shapes": {
+        "rectangles": 2,
+        "lines": 1
+      },
+      "grid": [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+        [0, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 2, 2, 2, 2, 2, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 3, 3, 0, 0, 0, 0, 0, 0, 0],
+        [0, 3, 3, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ]
+    },
+    {
+      "id": "nested_rectangles",
+      "name": "Nested Rectangles",
+      "description": "One rectangle inside another (treated as separate shapes)",
+      "tags": ["rectangle", "nested", "complex"],
+      "expected_shapes": {
+        "rectangles": 2,
+        "lines": 0
+      },
+      "grid": [
+        [1, 1, 1, 1, 1, 1, 1],
+        [1, 0, 0, 0, 0, 0, 1],
+        [1, 0, 2, 2, 2, 0, 1],
+        [1, 0, 2, 2, 2, 0, 1],
+        [1, 0, 0, 0, 0, 0, 1],
+        [1, 1, 1, 1, 1, 1, 1]
+      ]
+    },
+    {
+      "id": "l_shape",
+      "name": "L-Shape",
+      "description": "L-shaped pattern (not a rectangle, should not be detected as such)",
+      "tags": ["irregular", "l_shape"],
+      "expected_shapes": {
+        "rectangles": 0,
+        "lines": 0
+      },
+      "grid": [
+        [0, 0, 0, 0, 0, 0],
+        [0, 6, 6, 6, 0, 0],
+        [0, 6, 0, 0, 0, 0],
+        [0, 6, 0, 0, 0, 0],
+        [0, 6, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0]
+      ]
+    },
+    {
+      "id": "short_line_edge_case",
+      "name": "Short Horizontal Line (Edge Case)",
+      "description": "Very thin shape, should be detected as a line, not a rectangle.",
+      "tags": ["line", "thin", "edge_case"],
+      "expected_shapes": {
+        "rectangles": 0,
+        "lines": 1
+      },
+      "grid": [
+        [0, 0, 0, 0, 0],
+        [0, 7, 7, 7, 0],
+        [0, 0, 0, 0, 0]
+      ]
+    },
+    {
+      "id": "parallel_lines",
+      "name": "Parallel Horizontal Lines",
+      "description": "Multiple parallel horizontal lines",
+      "tags": ["line", "parallel", "multiple"],
+      "expected_shapes": {
+        "rectangles": 0,
+        "lines": 3
+      },
+      "grid": [
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 1, 1, 1, 1, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [2, 2, 2, 2, 2, 2, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [3, 3, 3, 3, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0]
+      ]
+    },
+    {
+      "id": "small_shapes",
+      "name": "Minimal Shapes (and single pixel)",
+      "description": "Tests a minimal 2x2 square and a single 1x1 pixel. Only the square should be detected.",
+      "tags": ["small", "edge_case"],
+      "expected_shapes": {
+        "rectangles": 1,
+        "lines": 0
+      },
+      "grid": [
+        [0, 0, 0, 0, 0, 0],
+        [0, 1, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 2, 2, 0],
+        [0, 0, 0, 2, 2, 0],
+        [0, 0, 0, 0, 0, 0]
+      ]
+    },
+    {
+      "id": "complex_scene",
+      "name": "Complex Scene",
+      "description": "Complex scene with multiple shape types for comprehensive testing",
+      "tags": ["complex", "comprehensive"],
+      "expected_shapes": {
+        "rectangles": 3,
+        "lines": 2
+      },
+      "grid": [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 1, 1, 1, 0, 0, 4, 4, 4, 0, 0],
+        [0, 1, 1, 1, 1, 0, 0, 4, 4, 4, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 2, 0, 0, 5, 5, 5, 5, 5, 5, 0],
+        [0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      ]
+    }
+  ],
+  "metadata": {
+    "version": "1.1",
+    "total_tests": 15,
+    "categories": {
+      "rectangles": 8,
+      "lines": 7,
+      "mixed": 2,
+      "edge_cases": 3
+    },
+    "description": "Comprehensive test suite for geometric detection on ARC-like grids. Version 1.1 corrects inconsistencies in test expectations."
+  }
+}
