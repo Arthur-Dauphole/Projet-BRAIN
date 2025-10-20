@@ -220,7 +220,7 @@ class GridUtils:
     @staticmethod
     def extract_connected_components(grid: np.ndarray, 
                                     background_color: int = 0,
-                                    connectivity: int = 4) -> List[Set[Point]]:
+                                    connectivity: int = 8) -> List[Set[Point]]:
         """
         Extract all connected components from grid (excluding background).
         
@@ -407,49 +407,30 @@ class LineDetector:
     @staticmethod
     def is_line(pixels: Set[Point], tolerance: float = 0.1) -> Tuple[bool, Optional[str]]:
         """
-        Check if pixels form a straight line.
-        
-        Args:
-            pixels: Set of pixels to check
-            tolerance: Maximum deviation from perfect line
-        
-        Returns:
-            (is_line, direction) where direction is 'horizontal', 'vertical', or 'diagonal'
+        Check if pixels form a straight line using a more robust method.
         """
         if len(pixels) < 2:
             return False, None
-        
+
         points_list = list(pixels)
-        xs = [p.x for p in points_list]
-        ys = [p.y for p in points_list]
+        xs = {p.x for p in points_list}
+        ys = {p.y for p in points_list}
         
-        x_range = max(xs) - min(xs)
-        y_range = max(ys) - min(ys)
-        
-        # Horizontal line
-        if y_range <= tolerance * len(pixels):
+        # Horizontal line: one unique y-coordinate
+        if len(ys) == 1:
             return True, 'horizontal'
         
-        # Vertical line
-        if x_range <= tolerance * len(pixels):
+        # Vertical line: one unique x-coordinate
+        if len(xs) == 1:
             return True, 'vertical'
         
-        # Check diagonal (45 degrees)
-        if abs(x_range - y_range) <= tolerance * max(x_range, y_range):
-            # Check if points actually form a diagonal
-            sorted_points = sorted(points_list, key=lambda p: (p.x, p.y))
-            deviations = []
-            
-            for i in range(1, len(sorted_points)):
-                dx = sorted_points[i].x - sorted_points[i-1].x
-                dy = sorted_points[i].y - sorted_points[i-1].y
-                
-                # For diagonal, dx and dy should have similar magnitude
-                if dx != 0 and dy != 0:
-                    ratio = abs(dy / dx)
-                    deviations.append(abs(ratio - 1))
-            
-            if deviations and np.mean(deviations) <= tolerance:
+        # Diagonal line: number of unique x's and y's must equal the total number of pixels
+        # This prevents blocks like 2x2 from being classified as diagonal
+        if len(xs) == len(pixels) and len(ys) == len(pixels):
+            # Further check: the range of x and y should be the same
+            x_range = max(xs) - min(xs)
+            y_range = max(ys) - min(ys)
+            if x_range == y_range:
                 return True, 'diagonal'
         
         return False, None
@@ -696,25 +677,30 @@ class GeometricDetectionEngine:
     
     def detect_all_shapes(self, grid: np.ndarray) -> Dict[str, List[GeometricShape]]:
         """
-        Run all detectors on the grid.
-        
-        Args:
-            grid: Input ARC grid
-        
-        Returns:
-            Dictionary mapping shape types to lists of detected shapes
+        Run all detectors on the grid and resolve ambiguities.
         """
-        results = {}
-        
-        # Detect rectangles
-        results['rectangles'] = self.detectors['rectangles'].detect_rectangles(
+        # --- ÉTAPE A : DÉTECTION BRUTE ---
+        detected_rectangles = self.detectors['rectangles'].detect_rectangles(
             grid, self.background_color
         )
-        
-        # Detect lines
-        results['lines'] = self.detectors['lines'].detect_lines(
+        detected_lines = self.detectors['lines'].detect_lines(
             grid, self.background_color
         )
+
+        # --- ÉTAPE B : CORRECTION DES AMBIGUÏTÉS ---
+        # Crée un set des pixels de chaque ligne pour une recherche rapide
+        line_pixel_sets = {frozenset(line.pixels) for line in detected_lines}
+
+        # Filtre les rectangles : ne garde que ceux dont les pixels ne correspondent pas à une ligne
+        final_rectangles = [
+            rect for rect in detected_rectangles
+            if frozenset(rect.pixels) not in line_pixel_sets
+        ]
+
+        results = {
+            'rectangles': final_rectangles,
+            'lines': detected_lines
+        }
         
         # Detect symmetries for each shape
         for shape_type, shapes in results.items():
