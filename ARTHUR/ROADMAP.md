@@ -1,6 +1,6 @@
 #  Feuille de Route du Projet de Détection Géométrique 🚀
 
-Ce document liste les prochaines étapes et les idées d'amélioration pour faire évoluer le projet. Coche les cases (`- [x]`) au fur et à mesure de ta progression.
+Ce document liste les prochaines étapes et les idées d'amélioration pour faire évoluer le projet. Cochez les cases (`- [x]`) au fur et à mesure de la progression.
 
 ---
 
