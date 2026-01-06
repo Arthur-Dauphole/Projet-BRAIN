@@ -1,14 +1,23 @@
 import json
+import os
 import numpy as np
-from openai import OpenAI # Pour Ollama ou GPT-4
 
-# 1. IMPORTE TON MOTEUR (Le fichier que tu m'as montré)
-# Assure-toi que ton fichier s'appelle geometric_engine.py
-from geometric_engine import GeometricDetectionEngine
+def load_arc_task(file_path):
+    """
+    Charge un fichier JSON ARC et sépare les exemples de l'énoncé.
+    """
+    with open(file_path, 'r') as f:
+        data = json.load(f)
+    
+    # On prend généralement le premier exemple d'entraînement
+    train_input = np.array(data['train'][0]['input'])
+    train_output = np.array(data['train'][0]['output'])
+    
+    # On prend le premier énoncé de test (celui à résoudre)
+    test_input = np.array(data['test'][0]['input'])
+    
+    return train_input, train_output, test_input
 
-# ============================================================================
-# ADAPTER : Convertit tes objets Python en JSON pour le LLM
-# ============================================================================
 
 def serialize_for_llm(analysis_result):
 
