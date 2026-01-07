@@ -1,44 +1,44 @@
 import json
 import os
 import numpy as np
+import re
+from openai import OpenAI
+from geometric_engine import GeometricDetectionEngine
+import matplotlib.pyplot as plt
+from matplotlib import colors
+
+
+# ============================================================================
+# CHARGEMENT ET PRÉPARATION DES DONNÉES
+# ============================================================================
 
 def load_arc_task(file_path):
-    """
-    Charge un fichier JSON ARC et sépare les exemples de l'énoncé.
-    """
+    """Charge un fichier JSON ARC et sépare les exemples de l'énoncé."""
     with open(file_path, 'r') as f:
         data = json.load(f)
     
-    # On prend généralement le premier exemple d'entraînement
+    # Premier exemple d'entraînement
     train_input = np.array(data['train'][0]['input'])
     train_output = np.array(data['train'][0]['output'])
     
-    # On prend le premier énoncé de test (celui à résoudre)
+    # Premier énoncé de test (énoncé à résoudre)
     test_input = np.array(data['test'][0]['input'])
     
     return train_input, train_output, test_input
 
-
 def serialize_for_llm(analysis_result):
+    """Transforme les objets complexes en dictionnaire JSON simple pour le LLM."""
+    clean_output = {"rectangles": [], "lines": []}
 
-    """
-    Transforme les objets complexes (Set, Point, Enum) en dictionnaire simple.
-    """
-    clean_output = {
-        "rectangles": [],
-        "lines": []
-    }
-
-    # Helper pour convertir un Point en liste [x, y]
     def point_to_list(p):
         return [p.x, p.y]
 
-    # 1. Traitement des Rectangles
+    # Traitement des Rectangles
     for rect in analysis_result['rectangles']:
         item = {
-            "id": f"rect_{id(rect)}", # ID unique temporaire
+            "id": f"rect_{id(rect)}",
             "type": "rectangle",
-            "color": int(rect.color), # Convertir numpy int en int standard
+            "color": int(rect.color),
             "position": {
                 "top_left": [rect.bounding_box.min_x, rect.bounding_box.min_y],
                 "center": point_to_list(rect.bounding_box.center)
@@ -49,11 +49,9 @@ def serialize_for_llm(analysis_result):
         }
         clean_output["rectangles"].append(item)
 
-    # 2. Traitement des Lignes
+    # Traitement des Lignes
     for line in analysis_result['lines']:
-        # Conversion des endpoints (qui sont des objets Point)
         endpoints = [point_to_list(p) for p in line.properties.get('endpoints', [])]
-        
         item = {
             "id": f"line_{id(line)}",
             "type": "line",
@@ -66,159 +64,167 @@ def serialize_for_llm(analysis_result):
 
     return clean_output
 
-# ============================================================================
-# MOTEUR D'INFÉRENCE (LLM)
-# ============================================================================
 
-    # Une grille de test (Reprise de ton exemple)
-    test_grid = np.array([
-        [0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 1, 1, 1, 0, 0, 0], # Rectangle Bleu (1)
-        [0, 1, 0, 0, 1, 0, 0, 0],
-        [0, 1, 0, 0, 1, 0, 2, 2], # Ligne Rouge (2)
-        [0, 1, 1, 1, 1, 0, 2, 2],
-        [0, 0, 0, 0, 0, 0, 2, 2],
-        [0, 0, 3, 3, 3, 3, 0, 0], # Ligne Verte (3)
-        [0, 0, 0, 0, 0, 0, 0, 0],
-    ])
-
-    resultat = solve_arc_task(test_grid)
+def json_to_grid(json_data, grid_size=(10, 10)):
+    """
+    Transforme la description JSON du LLM en une grille NumPy exploitable.
+    """
+    # Créer une grille vide (couleur 0 par défaut)
+    grid = np.zeros(grid_size, dtype=int)
     
-    print("\n" + "="*50)
-    print("RÉSULTAT DU SOLVER NEURO-SYMBOLIQUE")
-    print("="*50)
-    print(resultat)
+    # 1. Dessiner les rectangles
+    for rect in json_data.get('rectangles', []):
+        x, y = rect['position']['top_left']
+        w, h = rect['size']['width'], rect['size']['height']
+        color = rect['color']
+        
+        # On remplit la zone du rectangle (en vérifiant de ne pas sortir de la grille)
+        grid[x:x+w, y:y+h] = color
+        
+    # 2. Dessiner les lignes
+    for line in json_data.get('lines', []):
+        color = line['color']
+        for pt in line.get('endpoints', []):
+            # Ici on simplifie en dessinant les points des endpoints
+            # Pour une ligne complète, il faudrait une boucle de remplissage
+            grid[pt[0], pt[1]] = color
+            
+    return grid
 
-
-    # ============================================================================
-# MOTEUR D'INFÉRENCE (LLM) - Mise à jour
 # ============================================================================
+# POINT D'ENTRÉE DU PROGRAMME
+# ============================================================================
+
+
+def plot_arc_grid(grid, title="Grille ARC"):
+    """Affiche une grille avec les couleurs officielles ARC."""
+    # Palette officielle ARC (0 à 9)
+    arc_colors = [
+        '#000000', '#0074D9', '#FF4136', '#2ECC40', '#FFDC00',
+        '#AAAAAA', '#F012BE', '#FF851B', '#7FDBFF', '#870C25'
+    ]
+    cmap = colors.ListedColormap(arc_colors)
+    norm = colors.BoundaryNorm(np.arange(-0.5, 10, 1), cmap.N)
+
+    plt.figure(figsize=(5, 5))
+    plt.imshow(grid, cmap=cmap, norm=norm)
+    plt.grid(True, which='both', color='gray', linewidth=0.5)
+    
+    # Affichage des chiffres dans les cases (optionnel)
+    for i in range(grid.shape[0]):
+        for j in range(grid.shape[1]):
+            plt.text(j, i, str(grid[i, j]), ha='center', va='center', 
+                     color='white' if grid[i, j] in [0, 1, 2, 9] else 'black')
+
+    plt.title(title)
+    plt.xticks(np.arange(-0.5, grid.shape[1], 1), [])
+    plt.yticks(np.arange(-0.5, grid.shape[0], 1), [])
+    plt.show()
 
 def deduce_and_solve_arc_task(train_input_grid, train_output_grid, test_input_grid):
+    """Boucle complète : Perception -> Prompt -> LLM -> Solution."""
     
-    # 1. PERCEPTION SUR LES GRILLES (Ton code)
-    print("👁️  Phase 1/3: Analyse géométrique des 3 grilles...")
+    # 1. PERCEPTION
+    print("👁️  Phase 1/3: Analyse géométrique des grilles...")
     engine = GeometricDetectionEngine(background_color=0)
     
-    # Analyse de l'exemple d'entraînement (Input)
-    train_input_raw = engine.detect_all_shapes(train_input_grid)
-    train_input_json = json.dumps(serialize_for_llm(train_input_raw), indent=2)
+    tr_in_json = json.dumps(serialize_for_llm(engine.detect_all_shapes(train_input_grid)), indent=2)
+    tr_out_json = json.dumps(serialize_for_llm(engine.detect_all_shapes(train_output_grid)), indent=2)
+    te_in_json = json.dumps(serialize_for_llm(engine.detect_all_shapes(test_input_grid)), indent=2)
     
-    # Analyse de l'exemple d'entraînement (Output)
-    train_output_raw = engine.detect_all_shapes(train_output_grid)
-    train_output_json = json.dumps(serialize_for_llm(train_output_raw), indent=2)
-
-    # Analyse de l'énoncé à résoudre (Test Input)
-    test_input_raw = engine.detect_all_shapes(test_input_grid)
-    test_input_json = json.dumps(serialize_for_llm(test_input_raw), indent=2)
+    # 2. CONSTRUCTION DU PROMPT
+    print("🧠 Phase 2/3: Construction du Prompt Maître...")
     
-    # 2. CONSTRUCTION DU PROMPT MAÎTRE
-    print("🧠 Phase 2/3: Construction du Prompt Maître pour déduction...")
-    
-    system_prompt = """
-    Tu es un solveur de problèmes ARC-AGI. Ton travail est d'abord de DÉDUIRE la règle 
-    de transformation entre la scène ENTREE et la scène SORTIE de l'EXEMPLE.
-    Ensuite, tu dois APPLIQUER cette règle à la scène ENONCÉ.
-    
-    Ton unique réponse doit être une description JSON (strictement) 
-    de la scène finale résolue (SORTIE TEST). 
-    Ne génère aucun commentaire ou texte explicatif.
-    """
+    system_prompt = (
+        "Tu es un solveur ARC-AGI. Analyse la transformation entre l'ENTREE et la SORTIE de l'EXEMPLE. "
+        "Applique cette règle à l'ENONCÉ. Ta réponse doit être EXCLUSIVEMENT un objet JSON valide. "
+        "Pas de texte, pas de blabla."
+    )
 
     user_message = f"""
-    --- DÉDUCTION DE LA RÈGLE (EXEMPLE) ---
+    --- EXEMPLE ---
+    ENTREE: {tr_in_json}
+    SORTIE: {tr_out_json}
 
-    SCÈNE ENTRÉE EXEMPLE:
-    {train_input_json}
-
-    SCÈNE SORTIE EXEMPLE (Résolution):
-    {train_output_json}
-
-    --- APPLICATION DE LA RÈGLE (ÉNONCÉ) ---
+    --- ENONCÉ ---
+    ENTREE: {te_in_json}
     
-    SCÈNE ENTRÉE ÉNONCÉ:
-    {test_input_json}
-    
-    Génère le JSON de la SCÈNE SORTIE ÉNONCÉ.
+    Génère le JSON de la SORTIE de l'ENONCÉ.
     """
     
-    # 3. RAISONNEMENT (LLM)
-    print("⏳ Phase 3/3: Soumission au LLM. Déduction et Application en cours...")
-    
-    client = OpenAI(base_url='http://localhost:11434/v1', api_key='ollama')
-
+    # 3. APPEL OLLAMA (GEMMA)
+    print("⏳ Phase 3/3: Soumission à Gemma (via Ollama)...")
     try:
+        client = OpenAI(base_url='http://localhost:11434/v1', api_key='ollama')
+        
         response = client.chat.completions.create(
-            model="llama3", 
+            model="gemma3:1b", # Vérifie que c'est bien le nom dans 'ollama list'
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}
             ],
-            temperature=0.1 # Toujours basse pour la logique
+            temperature=0.1 # On baisse la créativité pour plus de logique
         )
+
         llm_response_text = response.choices[0].message.content
         
-        # Tentative de parser le JSON retourné par le LLM (l'étape finale!)
-        try:
-            solved_json = json.loads(llm_response_text)
-            print("✅ Résolution réussie. JSON de sortie parsé.")
-            return solved_json
-        except json.JSONDecodeError:
-            print("❌ ERREUR: Le LLM n'a pas retourné un JSON valide.")
-            return {"error": "LLM output was not valid JSON", "raw_output": llm_response_text}
-
+        # Extraction du JSON par Regex (pour ignorer le texte superflu)
+        json_match = re.search(r"(\{.*\})", llm_response_text, re.DOTALL)
+        
+        if json_match:
+            clean_json_str = json_match.group(1)
+            try:
+                solved_json = json.loads(clean_json_str)
+                print("✅ Résolution réussie. JSON extrait avec succès.")
+                return solved_json
+            except json.JSONDecodeError:
+                print("❌ ERREUR: Le texte extrait n'est pas un JSON valide.")
+        else:
+            print("❌ ERREUR: Aucun JSON trouvé dans la réponse du LLM.")
+            
+        return {"error": "Invalid output", "raw": llm_response_text}
 
     except Exception as e:
-        return {"error": f"Erreur de connexion au LLM : {e}"}
-
+        print(f"❌ ERREUR CRITIQUE: {e}")
+        return {"error": str(e)}
+    
 # ============================================================================
-# MAIN - EXEMPLE OPÉRATIONNEL
+# POINT D'ENTRÉE DU PROGRAMME
 # ============================================================================
 
 if __name__ == "__main__":
-    
-    # --- SIMULATION D'UNE TÂCHE ARC-AGI : Déplacer le carré ---
-    
-    # EXEMPLE D'ENTRAÎNEMENT: Carré Bleu (1) en haut à gauche -> Carré Bleu en bas à droite
-    train_input = np.array([
-        [0, 1, 0, 0, 0],
-        [1, 1, 0, 0, 0],
-        [0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0],
-    ])
-    
-    train_output = np.array([
-        [0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0],
-        [0, 0, 0, 1, 1],
-        [0, 0, 0, 1, 1],
-    ])
-    
-    # ÉNONCÉ À RÉSOUDRE: Carré Rouge (2) au centre -> ??? (Doit aller dans le coin)
-    test_input = np.array([
-        [0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0],
-        [0, 0, 2, 2, 0],
-        [0, 0, 2, 2, 0],
-        [0, 0, 0, 0, 0],
-    ])
+    # 1. Chemin vers ton fichier
+    task_file = "/Users/paullefrais/Documents/ISAE SUPAERO/Cours Supaero/2A/Projet R&D Brain/Projet-BRAIN-VSCODE/Projet-BRAIN/Paul/03560426.json"
 
-    resultat = deduce_and_solve_arc_task(train_input, train_output, test_input)
-    
-    print("\n" + "="*50)
-    print("RÉSULTAT DU SOLVER (JSON de la SCÈNE SORTIE ÉNONCÉ)")
-    print("="*50)
-    
-    # Affiche le résultat joliment
-    if isinstance(resultat, dict) and 'error' in resultat:
-        print(f"Erreur: {resultat['error']}")
-        if 'raw_output' in resultat:
-            print("\nSortie brute du LLM :")
-            print(resultat['raw_output'])
+    if not os.path.exists(task_file):
+        print(f"❌ Fichier non trouvé : {task_file}")
     else:
-        print(json.dumps(resultat, indent=2))
+        print(f"🚀 Chargement de la tâche : {os.path.basename(task_file)}")
         
-    # Idéalement, ici, tu aurais une fonction pour reconstruire la grille NumPy 
-    # à partir du JSON du LLM et vérifier si elle est correcte.
+        # CHARGEMENT DES DONNÉES
+        tr_in, tr_out, te_in = load_arc_task(task_file)
+
+        # 2. Exécution du Solver
+        resultat_json = deduce_and_solve_arc_task(tr_in, tr_out, te_in)
+        
+        # 3. Visualisation et Sauvegarde
+        if "error" not in resultat_json:
+            # On génère la grille avec la taille de l'énoncé
+            grid_result = json_to_grid(resultat_json, grid_size=te_in.shape)
+            
+            # Affichage terminal
+            print("\n🎨 GRILLE GÉNÉRÉE PAR L'IA (NUMPY) :")
+            print(grid_result)
+            
+            # Sauvegarde du JSON
+            output_filename = "solution_brain.json"
+            with open(output_filename, "w") as f:
+                json.dump(resultat_json, f, indent=4)
+            print(f"💾 Résultat sauvegardé dans {output_filename}")
+
+            # --- AFFICHAGE VISUEL (MATPLOTLIB) ---
+            print("📊 Ouverture de la fenêtre de visualisation...")
+            plot_arc_grid(te_in, title="Entrée (Test Input)")
+            plot_arc_grid(grid_result, title="Solution générée par BRAIN (Gemma)")
+        else:
+            print(f"❌ Échec de la résolution : {resultat_json.get('error')}")
