@@ -32,35 +32,9 @@ try:
 except ImportError:
     OLLAMA_LIB_AVAILABLE = False
 
-# Import the geometric detection classes
-from arc_geometric_detection import GeometricShape, Point, BoundingBox
-
-
-# ============================================================================
-# COLOR MAPPING
-# ============================================================================
-
-class ColorMapper:
-    """Maps numeric color codes to human-readable names."""
-    
-    # Standard ARC color palette (0-9)
-    COLOR_NAMES = {
-        0: "Black",
-        1: "Blue",
-        2: "Red",
-        3: "Green",
-        4: "Yellow",
-        5: "Grey",
-        6: "Magenta",
-        7: "Orange",
-        8: "Cyan",
-        9: "Brown"
-    }
-    
-    @classmethod
-    def get_color_name(cls, color_code: int) -> str:
-        """Get human-readable color name for a color code."""
-        return cls.COLOR_NAMES.get(color_code, f"Color{color_code}")
+# Import core geometric models from the new package layout
+from src.arc_brain.core.models import GeometricShape, Point, BoundingBox
+from src.arc_brain.core.color import ColorMapper
 
 
 # ============================================================================
