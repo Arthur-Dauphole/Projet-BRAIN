@@ -1,7 +1,7 @@
 {
     "rectangles": [
         {
-            "id": "rect_5217499184",
+            "id": "rect_4686884464",
             "type": "rectangle",
             "color": 8,
             "position": {
@@ -22,7 +22,7 @@
             "is_square": true
         },
         {
-            "id": "rect_5217500144",
+            "id": "rect_4686884800",
             "type": "rectangle",
             "color": 3,
             "position": {
@@ -45,7 +45,7 @@
     ],
     "lines": [
         {
-            "id": "line_5217497264",
+            "id": "line_4686888880",
             "type": "line",
             "color": 7,
             "direction": "vertical",
@@ -62,7 +62,7 @@
             ]
         },
         {
-            "id": "line_5217501152",
+            "id": "line_4686886144",
             "type": "line",
             "color": 6,
             "direction": "vertical",
