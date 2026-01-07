@@ -20,11 +20,7 @@ from datetime import datetime
 
 # Import the geometric detection system
 # Note: Make sure arc_geometric_detection.py is in the same directory
-from arc_geometric_detection import (
-    GeometricDetectionEngine,
-    GeometricVisualizer,
-    GeometricShape
-)
+from src.arc_brain.perception.engine import GeometricDetectionEngine
 
 
 # ============================================================================

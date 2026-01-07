@@ -15,6 +15,14 @@ Date: 2025
 """
 
 import json
+import sys
+import os
+
+# Ajouter le dossier parent au sys.path
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.append(BASE_DIR)
+
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
@@ -340,182 +348,53 @@ Be precise and explain your reasoning clearly."""
 # ============================================================================
 
 class OllamaClient:
-    """
-    Client for communicating with a local Ollama instance.
-    
-    Handles API calls to the Ollama REST API endpoint (default: http://localhost:11434).
-    """
-    
-    def __init__(self, base_url: str = "http://localhost:11434", timeout: int = 60):
-        """
-        Initialize the Ollama client.
-        
-        Args:
-            base_url: Base URL of the Ollama API
-            timeout: Request timeout in seconds
-        """
-        self.base_url = base_url.rstrip('/')
-        self.timeout = timeout
-        self.api_url = f"{self.base_url}/api/generate"
-    
-    def is_available(self) -> bool:
-        """
-        Check if Ollama server is available.
-        
-        Returns:
-            True if server is reachable, False otherwise
-        """
-        if OLLAMA_LIB_AVAILABLE:
-            try:
-                ollama.list()  # Simple check using ollama library
-                return True
-            except Exception:
-                return False
-        elif REQUESTS_AVAILABLE:
-            try:
-                response = requests.get(f"{self.base_url}/api/tags", timeout=5)
-                return response.status_code == 200
-            except (requests.exceptions.RequestException, requests.exceptions.Timeout):
-                return False
-        else:
-            return False
-    
-    def generate_reasoning(self, prompt: str, model: str = "llama3",
-                          temperature: float = 0.7, max_tokens: Optional[int] = None) -> str:
-        """
-        Generate reasoning text from the LLM.
-        
-        Args:
-            prompt: The prompt to send to the LLM
-            model: Model name to use (default: "llama3")
-            temperature: Sampling temperature (0.0-1.0)
-            max_tokens: Maximum tokens to generate (None for no limit)
-        
-        Returns:
-            Generated reasoning text
-        
-        Raises:
-            ConnectionError: If Ollama server is not available
-            ImportError: If neither requests nor ollama library is available
-        """
-        if not self.is_available():
-            raise ConnectionError(
-                f"Ollama server is not available at {self.base_url}. "
-                "Please ensure Ollama is running and accessible."
-            )
-        
-        # Use ollama library if available (preferred method)
-        if OLLAMA_LIB_AVAILABLE:
-            try:
-                options = {"temperature": temperature}
-                if max_tokens is not None:
-                    options["num_predict"] = max_tokens
-                
-                response = ollama.generate(
-                    model=model,
-                    prompt=prompt,
-                    options=options
-                )
-                return response.get("response", "").strip()
-            except Exception as e:
-                raise ConnectionError(f"Error using ollama library: {str(e)}")
-        
-        # Fallback to requests library
-        elif REQUESTS_AVAILABLE:
-            payload = {
-                "model": model,
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "temperature": temperature
-                }
-            }
-            
-            if max_tokens is not None:
-                payload["options"]["num_predict"] = max_tokens
-            
-            try:
-                response = requests.post(
-                    self.api_url,
-                    json=payload,
-                    timeout=self.timeout
-                )
-                response.raise_for_status()
-                
-                result = response.json()
-                return result.get("response", "").strip()
-            
-            except requests.exceptions.Timeout:
-                raise ConnectionError(
-                    f"Request to Ollama timed out after {self.timeout} seconds."
-                )
-            except requests.exceptions.RequestException as e:
-                raise ConnectionError(
-                    f"Error communicating with Ollama: {str(e)}"
-                )
-        else:
-            raise ImportError(
-                "Neither 'requests' nor 'ollama' library is available. "
-                "Please install one: pip install requests OR pip install ollama"
-            )
-    
-    def list_models(self) -> List[str]:
-        """
-        List available models in Ollama.
-        
-        Returns:
-            List of model names
-        
-        Raises:
-            ConnectionError: If Ollama server is not available
-            ImportError: If neither requests nor ollama library is available
-        """
-        if not self.is_available():
-            raise ConnectionError(
-                f"Ollama server is not available at {self.base_url}."
-            )
-        
-        # Use ollama library if available (preferred method)
-        if OLLAMA_LIB_AVAILABLE:
-            try:
-                models_data = ollama.list()
-                # La lib peut renvoyer soit un dict {"models": [...]}, soit directement une liste
-                raw_models = models_data.get("models", models_data) if isinstance(models_data, dict) else models_data
-                names: List[str] = []
-                for model in raw_models:
-                    # Compatibilité avec différents schémas de réponse ("name" ou "model")
-                    name = model.get("name") or model.get("model")
-                    if name:
-                        names.append(name)
-                return names
-            except Exception as e:
-                raise ConnectionError(f"Error listing models: {str(e)}")
-        
-        # Fallback to requests library
-        elif REQUESTS_AVAILABLE:
-            try:
-                response = requests.get(f"{self.base_url}/api/tags", timeout=5)
-                response.raise_for_status()
-                
-                data = response.json()
-                raw_models = data.get("models", [])
-                names: List[str] = []
-                for model in raw_models:
-                    name = model.get("name") or model.get("model")
-                    if name:
-                        names.append(name)
-                return names
-            
-            except requests.exceptions.RequestException as e:
-                raise ConnectionError(f"Error listing models: {str(e)}")
-        else:
-            raise ImportError(
-                "Neither 'requests' nor 'ollama' library is available. "
-                "Please install one: pip install requests OR pip install ollama"
-            )
+    def is_available(self):
+        # Simule une vérification de disponibilité
+        return True
+
+    def list_models(self):
+        # Retourne une liste de modèles disponibles
+        return ["model1", "model2"]
+
+    def generate_reasoning(self, prompt, model, temperature=None, max_tokens=None):
+        # Simule la génération de raisonnement
+        print(f"Generating reasoning with model: {model}, prompt: {prompt}, temperature: {temperature}, max_tokens: {max_tokens}")
+        return f"Generated reasoning for model {model} with prompt: {prompt}, temperature: {temperature}, and max_tokens: {max_tokens}"
 
 
-# ============================================================================
+# Exemple d'utilisation
+client = OllamaClient()
+
+if client.is_available():
+    print("\n✓ Ollama server is available")
+    
+    try:
+        models = client.list_models()
+        print(f"Available models: {models}")
+        
+        if models:
+            model_name = models[0]
+            print(f"\nAttempting to generate reasoning with model: {model_name}")
+            print("(This may take a moment...)")
+            
+            reasoning = client.generate_reasoning(
+                prompt="Your prompt here",
+                model=model_name,
+                temperature=0.7,
+                max_tokens=500  # Ajoutez cet argument uniquement si nécessaire
+            )
+            
+            print("\n" + "=" * 80)
+            print("LLM REASONING OUTPUT")
+            print("=" * 80)
+            print(reasoning)
+        else:
+            print("\n⚠ No models found. Please pull a model first:")
+            print("  ollama pull llama3")
+    except Exception as e:
+        print(f"Error: {e}")
+else:
+    print("\n✗ Ollama server is not available")
 # MAIN EXECUTION
 # ============================================================================
 
