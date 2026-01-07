@@ -479,8 +479,15 @@ class OllamaClient:
         if OLLAMA_LIB_AVAILABLE:
             try:
                 models_data = ollama.list()
-                models = [model["name"] for model in models_data.get("models", [])]
-                return models
+                # La lib peut renvoyer soit un dict {"models": [...]}, soit directement une liste
+                raw_models = models_data.get("models", models_data) if isinstance(models_data, dict) else models_data
+                names: List[str] = []
+                for model in raw_models:
+                    # Compatibilité avec différents schémas de réponse ("name" ou "model")
+                    name = model.get("name") or model.get("model")
+                    if name:
+                        names.append(name)
+                return names
             except Exception as e:
                 raise ConnectionError(f"Error listing models: {str(e)}")
         
@@ -491,8 +498,13 @@ class OllamaClient:
                 response.raise_for_status()
                 
                 data = response.json()
-                models = [model["name"] for model in data.get("models", [])]
-                return models
+                raw_models = data.get("models", [])
+                names: List[str] = []
+                for model in raw_models:
+                    name = model.get("name") or model.get("model")
+                    if name:
+                        names.append(name)
+                return names
             
             except requests.exceptions.RequestException as e:
                 raise ConnectionError(f"Error listing models: {str(e)}")
