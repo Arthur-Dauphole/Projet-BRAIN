@@ -26,7 +26,7 @@ Ce document liste les prochaines étapes et les idées d'amélioration pour fair
   - *Logique :* Ajouter une fonction qui vérifie si la `BoundingBox` d'une forme est entièrement contenue dans une autre.
   - *Pour plus de précision :* Vérifier ensuite que tous les pixels de la forme interne sont bien dans l'ensemble des pixels de la forme externe.
 
-- [ ] **Analyse des relations spatiales (gauche de, au-dessus, etc.)**
+- [x] **Analyse des relations spatiales (gauche de, au-dessus, etc.)**
   - *Logique :* Comparer les coordonnées des `BoundingBox` pour déterminer les positions relatives.
   - *Exemple :* `shape_A.bbox.max_x < shape_B.bbox.min_x` signifie que A est entièrement à gauche de B.
 
@@ -45,3 +45,14 @@ Ce document liste les prochaines étapes et les idées d'amélioration pour fair
 - [ ] **Migration vers un framework de test standard**
   - *Objectif :* Rendre les tests plus modulaires, plus puissants et plus faciles à écrire.
   - *Solution :* Adapter `test_runner.py` pour qu'il utilise le framework **pytest**. Cela te permettra de simplement écrire des fonctions de test `test_quelquechose()` sans toute la structure de classe `TestSuite`.
+
+ 
+## Étape 4 : Actions
+
+- Se concentrer sur les actions (passer d'une couleur à l'autre suivant une demande, ou relier 2 points d'une grille)
+- Faire du visuel, voir ce qu'on a en input, l'outuput attendu, et l'output obtenue, voir les différences
+- on a un point en input, un rectangle en sortie, il faut qu'il refasse le rectangle peu importe ou est placé le      point, essayer un peu partout
+- faire une translation, 3 exemples de translation puis on doit le refaire par rapport à une forme simple (exemple)
+- Changement de couleur
+
+--> Se concentrer sur tracé trait, translation et changement de couleur.
