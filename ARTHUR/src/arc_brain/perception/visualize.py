@@ -32,30 +32,72 @@ class GeometricVisualizer:
         fig, ax = GeometricVisualizer.plot_grid(grid, title, figsize)
 
         for i, shape in enumerate(shapes):
-            bbox = shape.bounding_box
-            rect = MPLRect(
-                (bbox.min_x - 0.5, bbox.min_y - 0.5),
-                bbox.width,
-                bbox.height,
-                linewidth=2,
-                edgecolor="red",
-                facecolor="none",
-                linestyle="--",
-            )
-            ax.add_patch(rect)
-
-            label = f"{shape.shape_type} #{i+1}"
-            ax.text(
-                bbox.min_x,
-                bbox.min_y - 0.7,
-                label,
-                color="red",
-                fontsize=10,
-                fontweight="bold",
-                bbox=dict(boxstyle="round", facecolor="white", alpha=0.7),
-            )
+            GeometricVisualizer._add_shape_overlay(ax, shape, i)
 
         return fig, ax
+
+    @staticmethod
+    def _add_shape_overlay(ax: plt.Axes, shape: GeometricShape, index: int):
+        """Helper to add a bounding box and label for a shape to an axes."""
+        bbox = shape.bounding_box
+        rect = MPLRect(
+            (bbox.min_x - 0.5, bbox.min_y - 0.5),
+            bbox.width,
+            bbox.height,
+            linewidth=2,
+            edgecolor="red",
+            facecolor="none",
+            linestyle="--",
+        )
+        ax.add_patch(rect)
+
+        label = f"{shape.shape_type} #{index+1}"
+        ax.text(
+            bbox.min_x,
+            bbox.min_y - 0.7,
+            label,
+            color="red",
+            fontsize=10,
+            fontweight="bold",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.7),
+        )
+
+    @staticmethod
+    def plot_solver_debug(
+        input_grid: np.ndarray,
+        target_grid: np.ndarray,
+        detected_shapes: List[GeometricShape],
+        title: str = "ARC Solver Debug",
+        figsize: Tuple[int, int] = (18, 6)
+    ):
+        """Generates a debug figure with Raw Input, Target Output, and Perception View."""
+        fig, axs = plt.subplots(1, 3, figsize=figsize)
+        fig.suptitle(title, fontsize=16)
+
+        # 1. Raw Input
+        axs[0].imshow(input_grid, cmap="tab10", interpolation="nearest")
+        axs[0].set_title("Raw Input")
+        axs[0].grid(True, which="both", color="gray", linewidth=0.5, alpha=0.3)
+
+        # 2. Target Output
+        axs[1].imshow(target_grid, cmap="tab10", interpolation="nearest")
+        axs[1].set_title("Target Output")
+        axs[1].grid(True, which="both", color="gray", linewidth=0.5, alpha=0.3)
+
+        # 3. Perception View (Input + Bounding Boxes)
+        axs[2].imshow(input_grid, cmap="tab10", interpolation="nearest")
+        axs[2].set_title("Perception View")
+        axs[2].grid(True, which="both", color="gray", linewidth=0.5, alpha=0.3)
+
+        for i, shape in enumerate(detected_shapes):
+            GeometricVisualizer._add_shape_overlay(axs[2], shape, i)
+
+        for ax in axs:
+            ax.set_xticks(np.arange(-0.5, input_grid.shape[1], 1), minor=True)
+            ax.set_yticks(np.arange(-0.5, input_grid.shape[0], 1), minor=True)
+
+        plt.tight_layout()
+        return fig, axs
 
     @staticmethod
     def print_shape_info(shape: GeometricShape) -> None:
