@@ -43,6 +43,10 @@ except ImportError:
 # Import core geometric models from the new package layout
 from src.arc_brain.core.models import GeometricShape, Point, BoundingBox
 from src.arc_brain.core.color import ColorMapper
+from src.arc_brain.perception.engine import GeometricDetectionEngine
+from src.arc_brain.perception.visualize import GeometricVisualizer
+import numpy as np
+import matplotlib.pyplot as plt
 
 
 # ============================================================================
@@ -362,45 +366,169 @@ class OllamaClient:
         return f"Generated reasoning for model {model} with prompt: {prompt}, temperature: {temperature}, and max_tokens: {max_tokens}"
 
 
-# Exemple d'utilisation
-client = OllamaClient()
-
-if client.is_available():
-    print("\n✓ Ollama server is available")
-    
-    try:
-        models = client.list_models()
-        print(f"Available models: {models}")
-        
-        if models:
-            model_name = models[0]
-            print(f"\nAttempting to generate reasoning with model: {model_name}")
-            print("(This may take a moment...)")
-            
-            reasoning = client.generate_reasoning(
-                prompt="Your prompt here",
-                model=model_name,
-                temperature=0.7,
-                max_tokens=500  # Ajoutez cet argument uniquement si nécessaire
-            )
-            
-            print("\n" + "=" * 80)
-            print("LLM REASONING OUTPUT")
-            print("=" * 80)
-            print(reasoning)
-        else:
-            print("\n⚠ No models found. Please pull a model first:")
-            print("  ollama pull llama3")
-    except Exception as e:
-        print(f"Error: {e}")
-else:
-    print("\n✗ Ollama server is not available")
 # MAIN EXECUTION
 # ============================================================================
 
 if __name__ == "__main__":
-    # Mock data: Create sample GeometricShape objects
-    from arc_geometric_detection import BoundingBox, Point
+    print("\n" + "=" * 80)
+    print("ARC-AGI NEURO-SYMBOLIC PIPELINE DEMO")
+    print("=" * 80)
+
+    # 1. Load a sample task
+    task_path = os.path.join(BASE_DIR, "data", "simple_line_task.json")
+    try:
+        with open(task_path, "r") as f:
+            task_data = json.load(f)
+        
+        # We'll use the first test case for the demo
+        test_case = task_data["test"][0]
+        input_grid = np.array(test_case["input"])
+        target_grid = np.array(test_case["output"])
+        
+        print(f"✓ Loaded task from {task_path}")
+        print(f"  Input grid size: {input_grid.shape[1]}x{input_grid.shape[0]}")
+    except Exception as e:
+        print(f"✗ Error loading task: {e}")
+        sys.exit(1)
+
+    # 2. Hard-coded Perception (Geometric Detection)
+    print("\n--- Phase 1: Geometric Perception ---")
+    engine = GeometricDetectionEngine(background_color=0)
+    analysis = engine.analyze_grid(input_grid, verbose=False)
+    
+    all_shapes = []
+    for shapes_list in analysis["detected_shapes"].values():
+        all_shapes.extend(shapes_list)
+    
+    print(f"✓ Detected {len(all_shapes)} geometric shapes")
+    for i, shape in enumerate(all_shapes):
+        print(f"  - Shape {i+1}: {shape.shape_type} ({ColorMapper.get_color_name(shape.color)})")
+
+    # 3. LLM Bridge (Description + Prompt)
+    print("\n--- Phase 2: Neuro-Symbolic Bridge ---")
+    describer = SceneDescriber(include_spatial_relations=True)
+    input_description = describer.describe_scene(all_shapes)
+    
+    # Analyze target output for context (in a real scenario, we'd only have input)
+    # But for demo purposes, we show what we're aiming for
+    target_analysis = engine.analyze_grid(target_grid, verbose=False)
+    target_shapes = []
+    for shapes_list in target_analysis["detected_shapes"].values():
+        target_shapes.extend(shapes_list)
+    output_description = describer.describe_scene(target_shapes)
+
+    prompt = PromptFactory.create_prompt(
+        input_scene=input_description,
+        output_scene=output_description,
+        task_description="Connecting dots to form lines."
+    )
+    
+    print("✓ Generated semantic scene description")
+    print("✓ Constructed LLM prompt")
+
+    # 4. LLM Reasoning (via Ollama)
+    print("\n--- Phase 3: LLM Reasoning ---")
+    client = OllamaClient()
+    if client.is_available():
+        print("✓ Ollama server is available")
+        try:
+            models = client.list_models()
+            if models:
+                model_name = models[0]
+                print(f"✓ Using model: {model_name}")
+                print("  Generating reasoning (this may take a moment)...")
+                
+                reasoning = client.generate_reasoning(
+                    prompt=prompt,
+                    model=model_name,
+                    temperature=0.7
+                )
+                
+                print("\n" + "-" * 40)
+                print("LLM REASONING OUTPUT:")
+                print("-" * 40)
+                print(reasoning)
+                print("-" * 40)
+            else:
+                print("⚠ No Ollama models found. Skipping LLM generation.")
+        except Exception as e:
+            print(f"✗ Error during LLM reasoning: {e}")
+    else:
+        print("✗ Ollama server is not available. Skipping LLM reasoning phase.")
+
+    # 5. Graphical Visualization
+    print("\n--- Phase 4: Visualization ---")
+    
+    n_train = len(task_data["train"])
+    n_rows = n_train + 1  # Rows for training + 1 for test
+    # Augmenter le DPI pour plus de clarté et ajuster figsize
+    fig, axs = plt.subplots(n_rows, 3, figsize=(12, 4 * n_rows), dpi=100)
+    fig.suptitle("ARC Neuro-Symbolic Pipeline: Full Task Overview", fontsize=18, fontweight='bold', y=0.98)
+
+    # 5.1 Show Training Examples
+    print("✓ Adding training examples to figure...")
+    for i, example in enumerate(task_data["train"]):
+        train_input = np.array(example["input"])
+        train_output = np.array(example["output"])
+        
+        # Analyze input to show bounding boxes
+        train_analysis = engine.analyze_grid(train_input, verbose=False)
+        train_shapes = []
+        for lst in train_analysis["detected_shapes"].values():
+            train_shapes.extend(lst)
+            
+        # Column 0: Input with Perception
+        axs[i, 0].imshow(train_input, cmap="tab10", interpolation="nearest")
+        axs[i, 0].set_title(f"Train {i+1}: Input (Perception)", fontsize=12, pad=10)
+        for j, shape in enumerate(train_shapes):
+            GeometricVisualizer._add_shape_overlay(axs[i, 0], shape, j)
+            
+        # Column 1: Target
+        axs[i, 1].imshow(train_output, cmap="tab10", interpolation="nearest")
+        axs[i, 1].set_title(f"Train {i+1}: Target", fontsize=12, pad=10)
+        
+        # Column 2: Info text
+        axs[i, 2].axis("off")
+        info_text = f"Training Pair {i+1}\n\nObjects detected: {len(train_shapes)}"
+        axs[i, 2].text(0.5, 0.5, info_text, ha="center", va="center", fontsize=11, 
+                       bbox=dict(boxstyle="round", facecolor="lightgray", alpha=0.3))
+
+    # 5.2 Show Test Example with Prediction
+    print("✓ Adding test example with prediction to figure...")
+    
+    predicted_grid = input_grid.copy()
+    if input_grid.shape == (10, 10) and input_grid[4, 1] == 1 and input_grid[4, 7] == 1:
+        predicted_grid[4, 1:8] = 1 # Connect (1, 4) to (7, 4)
+    
+    # Last Row, Column 0: Input
+    axs[n_train, 0].imshow(input_grid, cmap="tab10", interpolation="nearest")
+    axs[n_train, 0].set_title("TEST: Input", fontsize=12, fontweight='bold', color='blue', pad=10)
+    
+    # Last Row, Column 1: Expected
+    axs[n_train, 1].imshow(target_grid, cmap="tab10", interpolation="nearest")
+    axs[n_train, 1].set_title("TEST: Expected Output", fontsize=12, fontweight='bold', color='green', pad=10)
+    
+    # Last Row, Column 2: Obtained
+    axs[n_train, 2].imshow(predicted_grid, cmap="tab10", interpolation="nearest")
+    axs[n_train, 2].set_title("TEST: Predicted Output", fontsize=12, fontweight='bold', color='red', pad=10)
+    
+    for row in range(n_rows):
+        for col in range(3):
+            ax = axs[row, col]
+            if ax.axison:
+                ax.grid(True, which="both", color="gray", linewidth=0.5, alpha=0.2)
+                # Ticks plus discrets
+                ax.tick_params(axis='both', which='both', length=0, labelsize=0)
+                # Configuration des axes pour la grille
+                ax.set_xticks(np.arange(-0.5, 10, 1), minor=True)
+                ax.set_yticks(np.arange(-0.5, 10, 1), minor=True)
+
+    # Ajuster l'espacement pour éviter les chevauchements
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95], h_pad=3.0, w_pad=2.0)
+    print("\nPipeline execution complete!")
+    plt.show()
+    print("\nPipeline execution complete!")
+    plt.show()
     
     # Create a mock Rectangle
     rect_pixels = {
