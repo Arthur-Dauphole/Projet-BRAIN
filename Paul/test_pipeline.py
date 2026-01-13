@@ -8,16 +8,16 @@ from reasoning import ReasoningEngine
 
 # --- 1. DÉFINITION DES GRILLES (Input et Output attendu de l'énoncé) ---
 grid_in = [
-    [1, 1, 0, 0, 0],
-    [1, 1, 0, 0, 6],
+    [1, 1, 1, 0, 0],
+    [1, 1, 1, 0, 6],
     [0, 0, 0, 0, 6],
     [0, 0, 6, 6, 6],
     [0, 0, 0, 0, 0]
 ]
 
 grid_out_expected = [
-    [0, 0, 4, 4, 0],
-    [0, 0, 4, 4, 0],
+    [0, 0, 4, 4, 4],
+    [0, 0, 4, 4, 4],
     [0, 0, 8, 0, 0],
     [0, 0, 8, 0, 0],
     [8, 8, 8, 0, 0]
