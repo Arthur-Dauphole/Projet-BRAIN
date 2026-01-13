@@ -151,6 +151,9 @@ def deduce_and_solve_arc_task(train_input_grid, train_output_grid, test_input_gr
     
     Génère le JSON de la SORTIE de l'ENONCÉ.
     """
+    print("--- DEBUG PROMPT ---")
+    print(user_message)
+    print("--------------------")
     
     # 3. APPEL OLLAMA (GEMMA)
     print("⏳ Phase 3/3: Soumission à Gemma (via Ollama)...")
@@ -194,7 +197,7 @@ def deduce_and_solve_arc_task(train_input_grid, train_output_grid, test_input_gr
 
 if __name__ == "__main__":
     # 1. Chemin vers ton fichier
-    task_file = "/Users/paullefrais/Documents/ISAE SUPAERO/Cours Supaero/2A/Projet R&D Brain/Projet-BRAIN-VSCODE/Projet-BRAIN/Paul/03560426.json"
+    task_file = '/Users/paullefrais/Documents/ISAE SUPAERO/Cours Supaero/2A/Projet R&D Brain/Projet-BRAIN-VSCODE/Projet-BRAIN/Paul/simple.json'
 
     if not os.path.exists(task_file):
         print(f"❌ Fichier non trouvé : {task_file}")
