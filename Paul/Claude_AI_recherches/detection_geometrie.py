@@ -327,7 +327,6 @@ def print_detection_result(result):
         
         print()
 
-
 if __name__ == "__main__":
     # Exemple d'utilisation
     fichier = '/Users/paullefrais/Documents/ISAE SUPAERO/Cours Supaero/2A/Projet R&D Brain/Projet-BRAIN-VSCODE/ARC-AGI-master/data/training/a5f85a15.json'
