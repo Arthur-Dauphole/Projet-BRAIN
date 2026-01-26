@@ -112,61 +112,67 @@ class ActionExecutor:
     def _action_translate(self, grid: Grid, action_data: dict) -> ActionResult:
         """
         Translate (shift) pixels/objects by (dx, dy).
-        
-        Parameters:
-            params.dx: int - Horizontal shift (positive = right)
-            params.dy: int - Vertical shift (positive = down)
-            color_filter: int (optional) - Only translate pixels of this color
-        
-        Returns:
-            ActionResult with translated grid
         """
         params = action_data.get("params", {})
-        dx = params.get("dx", 0)  # Horizontal shift (columns)
-        dy = params.get("dy", 0)  # Vertical shift (rows)
-        color_filter = action_data.get("color_filter", None)
+        dx = int(params.get("dx", 0))
+        dy = int(params.get("dy", 0))
+        color_filter = action_data.get("color_filter")
+        if color_filter is not None:
+            color_filter = int(color_filter)
         
         if self.verbose:
             print(f"  Executing TRANSLATE: dx={dx}, dy={dy}, color_filter={color_filter}")
         
-        # Create output grid (start with background)
-        output_data = np.zeros_like(grid.data)
+        # Get dimensions
+        height, width = grid.data.shape
         
-        height, width = grid.shape
+        # Collect all pixel moves first, then apply them
+        moves = []  # List of (row, col, value) to set
+        keeps = []  # List of (row, col, value) to keep in place
         
-        # Process each pixel
-        for row in range(height):
-            for col in range(width):
-                pixel_value = grid.data[row, col]
+        for r in range(height):
+            for c in range(width):
+                val = int(grid.data[r, c])
                 
-                # Check if this pixel should be translated
                 if color_filter is not None:
-                    if pixel_value == color_filter:
-                        # Translate this pixel
-                        new_row = row + dy
-                        new_col = col + dx
-                        
-                        # Boundary check (clip - don't wrap)
-                        if 0 <= new_row < height and 0 <= new_col < width:
-                            output_data[new_row, new_col] = pixel_value
+                    if val == color_filter:
+                        nr, nc = r + dy, c + dx
+                        if 0 <= nr < height and 0 <= nc < width:
+                            moves.append((nr, nc, val))
                     else:
-                        # Keep non-filtered pixels in place
-                        output_data[row, col] = pixel_value
+                        keeps.append((r, c, val))
                 else:
-                    # No filter - translate all non-background pixels
-                    if pixel_value != 0:
-                        new_row = row + dy
-                        new_col = col + dx
-                        
-                        if 0 <= new_row < height and 0 <= new_col < width:
-                            output_data[new_row, new_col] = pixel_value
+                    if val != 0:
+                        nr, nc = r + dy, c + dx
+                        if 0 <= nr < height and 0 <= nc < width:
+                            moves.append((nr, nc, val))
         
-        output_grid = Grid(data=output_data)
+        if self.verbose:
+            print(f"  Moves to apply: {len(moves)}")
+            print(f"  Keeps to apply: {len(keeps)}")
+        
+        # Create result as Python list first, then convert to numpy
+        result_list = [[0 for _ in range(width)] for _ in range(height)]
+        
+        # Apply keeps
+        for r, c, v in keeps:
+            result_list[r][c] = v
+        
+        # Apply moves  
+        for r, c, v in moves:
+            result_list[r][c] = v
+        
+        # Convert to numpy array
+        result = np.array(result_list, dtype=np.int64)
+        
+        if self.verbose:
+            print(f"  Pixels moved: {len(moves)}")
+            print(f"  Result non-zero: {np.count_nonzero(result)}")
         
         return ActionResult(
             success=True,
-            output_grid=output_grid,
-            message=f"Translated by dx={dx}, dy={dy}",
+            output_grid=Grid(data=result),
+            message=f"Translated dx={dx}, dy={dy}, moved {len(moves)} pixels",
             details={"dx": dx, "dy": dy, "color_filter": color_filter}
         )
     

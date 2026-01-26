@@ -22,6 +22,7 @@ from modules import (
     Grid,
     ARCTask,
     SymbolDetector,
+    TransformationDetector,
     PromptMaker,
     LLMClient,
     ResultAnalyzer,
@@ -58,9 +59,13 @@ class BRAINOrchestrator:
         # Initialize pipeline components
         self._log("Initializing BRAIN Pipeline...")
         
-        # Step 1: Perception
+        # Step 1a: Shape Perception
         self.detector = SymbolDetector(connectivity=4)
-        self._log("  ✓ Symbol Detector (Perception)")
+        self._log("  ✓ Symbol Detector (Shapes)")
+        
+        # Step 1b: Transformation Detection
+        self.transformation_detector = TransformationDetector(verbose=verbose)
+        self._log("  ✓ Transformation Detector (Patterns)")
         
         # Step 2: Prompting
         self.prompt_maker = PromptMaker(
@@ -132,9 +137,9 @@ class BRAINOrchestrator:
             "action_data": None
         }
         
-        # === STEP 1: PERCEPTION ===
+        # === STEP 1a: PERCEPTION (Shapes) ===
         self._log("=" * 50)
-        self._log("STEP 1: PERCEPTION (Symbol Detection)")
+        self._log("STEP 1a: PERCEPTION (Shape Detection)")
         self._log("=" * 50)
         
         # Detect objects in all grids
@@ -147,6 +152,24 @@ class BRAINOrchestrator:
         for pair in task.test_pairs:
             self.detector.detect(pair.input_grid)
             self._log(f"  Test input: {pair.input_grid}")
+        
+        # === STEP 1b: TRANSFORMATION DETECTION ===
+        self._log("\n" + "=" * 50)
+        self._log("STEP 1b: TRANSFORMATION DETECTION")
+        self._log("=" * 50)
+        
+        detected_transformations = []
+        for i, pair in enumerate(task.train_pairs):
+            transformations = self.transformation_detector.detect_all(
+                pair.input_grid, pair.output_grid
+            )
+            if transformations:
+                self._log(f"  Example {i+1}: {self.transformation_detector.describe_transformations(transformations)}")
+                detected_transformations.append(transformations)
+            else:
+                self._log(f"  Example {i+1}: No clear transformation detected")
+        
+        results["detected_transformations"] = detected_transformations
         
         # === STEP 2: PROMPTING ===
         self._log("\n" + "=" * 50)
