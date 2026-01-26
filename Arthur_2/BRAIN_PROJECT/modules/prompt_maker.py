@@ -22,18 +22,29 @@ class PromptMaker:
         - Create task-specific prompts
     """
     
-    # System prompt template
-    SYSTEM_PROMPT = """You are an expert at solving ARC-AGI (Abstraction and Reasoning Corpus) puzzles.
-Your task is to analyze input-output pairs and discover the transformation rule.
+    # System prompt template - MUST output structured JSON
+    SYSTEM_PROMPT = """You are an ARC-AGI puzzle solver. Analyze input-output pairs and output a JSON action.
 
-Key principles:
-1. Look for geometric patterns (shapes, lines, symmetry)
-2. Identify color relationships and transformations
-3. Consider spatial operations (rotation, reflection, translation)
-4. Think about object relationships (containment, adjacency, grouping)
-5. Reason step by step before providing your answer
+COORDINATE SYSTEM:
+- row = vertical position (0 = top, increases downward)
+- col = horizontal position (0 = left, increases rightward)
+- dx = column shift (dx > 0 means move RIGHT)
+- dy = row shift (dy > 0 means move DOWN)
 
-Always explain your reasoning clearly before giving the final transformation rule."""
+CRITICAL: Look at the "Transformation Analysis" section in each example.
+It shows exactly how objects moved: the dx and dy values are already calculated for you.
+Use these values directly in your JSON output.
+
+OUTPUT FORMAT (MANDATORY):
+You MUST end your response with a JSON block like this:
+```json
+{"action": "translate", "params": {"dx": NUMBER, "dy": NUMBER}, "color_filter": COLOR}
+```
+
+Example: If analysis shows "dx=3, dy=0", output:
+```json
+{"action": "translate", "params": {"dx": 3, "dy": 0}, "color_filter": 2}
+```"""
 
     def __init__(self, include_grid_ascii: bool = True, include_objects: bool = True):
         """
@@ -107,7 +118,7 @@ Always explain your reasoning clearly before giving the final transformation rul
     
     def _format_pair(self, input_grid: Grid, output_grid: Optional[Grid]) -> str:
         """
-        Format an input-output pair.
+        Format an input-output pair with transformation analysis.
         
         Args:
             input_grid: The input grid
@@ -121,8 +132,51 @@ Always explain your reasoning clearly before giving the final transformation rul
         
         if output_grid:
             parts.append(self._format_grid(output_grid, "Output"))
+            
+            # Add transformation analysis
+            analysis = self._analyze_transformation(input_grid, output_grid)
+            if analysis:
+                parts.append(f"**Transformation Analysis:**\n{analysis}\n")
         
         return "\n".join(parts)
+    
+    def _analyze_transformation(self, input_grid: Grid, output_grid: Grid) -> str:
+        """
+        Analyze and describe the transformation between input and output.
+        
+        Args:
+            input_grid: The input grid
+            output_grid: The output grid
+            
+        Returns:
+            Analysis string describing the transformation
+        """
+        if not input_grid.objects or not output_grid.objects:
+            return ""
+        
+        analysis_lines = []
+        
+        # Compare objects by color
+        for in_obj in input_grid.objects:
+            # Find matching object in output (same color)
+            for out_obj in output_grid.objects:
+                if in_obj.color == out_obj.color:
+                    if in_obj.bounding_box and out_obj.bounding_box:
+                        in_row, in_col = in_obj.bounding_box[0], in_obj.bounding_box[1]
+                        out_row, out_col = out_obj.bounding_box[0], out_obj.bounding_box[1]
+                        
+                        dx = out_col - in_col  # Horizontal shift (column difference)
+                        dy = out_row - in_row  # Vertical shift (row difference)
+                        
+                        color_name = in_obj.properties.get("color_name", f"color_{in_obj.color}")
+                        analysis_lines.append(
+                            f"- {color_name} object: moved from (row={in_row}, col={in_col}) "
+                            f"to (row={out_row}, col={out_col}) → "
+                            f"**dx={dx}** (horizontal), **dy={dy}** (vertical)"
+                        )
+                    break
+        
+        return "\n".join(analysis_lines)
     
     def _format_grid(self, grid: Grid, label: str) -> str:
         """
@@ -171,7 +225,7 @@ Always explain your reasoning clearly before giving the final transformation rul
     
     def _format_object(self, obj: GeometricObject) -> str:
         """
-        Format a single object description.
+        Format a single object description with explicit coordinates.
         
         Args:
             obj: The object to describe
@@ -180,9 +234,12 @@ Always explain your reasoning clearly before giving the final transformation rul
             Description string
         """
         color_name = obj.properties.get("color_name", f"color_{obj.color}")
-        return (f"{color_name} {obj.object_type} "
-                f"(pos: {obj.bounding_box}, size: {obj.width}x{obj.height}, "
-                f"pixels: {obj.area})")
+        if obj.bounding_box:
+            min_row, min_col, max_row, max_col = obj.bounding_box
+            return (f"{color_name} {obj.object_type} "
+                    f"at TOP-LEFT corner (row={min_row}, col={min_col}), "
+                    f"size {obj.width}x{obj.height}")
+        return f"{color_name} {obj.object_type} (pixels: {obj.area})"
     
     def get_system_prompt(self) -> str:
         """
@@ -195,7 +252,7 @@ Always explain your reasoning clearly before giving the final transformation rul
     
     def create_reasoning_chain_prompt(self, task: ARCTask) -> str:
         """
-        Create a prompt that encourages step-by-step reasoning.
+        Create a prompt that encourages step-by-step reasoning with JSON output.
         
         Args:
             task: The ARCTask to reason about
@@ -206,17 +263,23 @@ Always explain your reasoning clearly before giving the final transformation rul
         base_prompt = self.create_task_prompt(task)
         
         cot_instruction = """
-## Reasoning Process
+## YOUR TASK
 
-Please follow these steps:
+1. Look at the **Transformation Analysis** in each training example above.
+2. Find the consistent dx and dy values across ALL examples.
+3. Output the JSON with those exact values.
 
-1. **Observe**: What patterns do you see in the input grids?
-2. **Compare**: How do the outputs differ from the inputs?
-3. **Hypothesize**: What transformation rule could explain all examples?
-4. **Verify**: Does your rule work for all training examples?
-5. **Apply**: Apply the rule to the test input.
+REMEMBER:
+- dx = horizontal movement (positive = RIGHT)
+- dy = vertical movement (positive = DOWN)
+- Use the dx and dy values shown in the Transformation Analysis!
 
-Show your work for each step.
+## OUTPUT (MANDATORY)
+
+End your response with:
+```json
+{"action": "translate", "params": {"dx": VALUE, "dy": VALUE}, "color_filter": COLOR}
+```
 """
         
         return base_prompt + cot_instruction

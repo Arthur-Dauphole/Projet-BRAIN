@@ -26,6 +26,7 @@ from modules import (
     LLMClient,
     ResultAnalyzer,
     Visualizer,
+    ActionExecutor,
 )
 
 
@@ -34,12 +35,12 @@ class BRAINOrchestrator:
     Main orchestrator for the BRAIN pipeline.
     
     Coordinates the flow:
-        Input -> Perception -> Prompting -> LLM -> Analysis -> Visualization
+        Input -> Perception -> Prompting -> LLM -> Execution -> Analysis -> Visualization
     """
     
     def __init__(
         self,
-        model: str = "llama3.2",
+        model: str = "llama3",
         verbose: bool = True,
         visualize: bool = True
     ):
@@ -72,11 +73,15 @@ class BRAINOrchestrator:
         self.llm_client = LLMClient(model=model)
         self._log(f"  ✓ LLM Client (Reasoning) - Model: {model}")
         
-        # Step 4: Analysis
+        # Step 4: Action Execution (THE HANDS)
+        self.executor = ActionExecutor(verbose=verbose)
+        self._log("  ✓ Action Executor (Hands)")
+        
+        # Step 5: Analysis
         self.analyzer = ResultAnalyzer()
         self._log("  ✓ Result Analyzer (Evaluation)")
         
-        # Step 5: Visualization
+        # Step 6: Visualization
         self.visualizer = Visualizer()
         self._log("  ✓ Visualizer (Dashboard)")
         
@@ -123,7 +128,8 @@ class BRAINOrchestrator:
         results = {
             "task_id": task.task_id,
             "predictions": [],
-            "analyses": []
+            "analyses": [],
+            "action_data": None
         }
         
         # === STEP 1: PERCEPTION ===
@@ -166,36 +172,86 @@ class BRAINOrchestrator:
         
         self._log(f"  Got response ({len(response.raw_text)} chars)")
         if response.reasoning:
-            self._log(f"  Reasoning extracted: {response.reasoning[:100]}...")
-        if response.predicted_grid:
-            self._log(f"  Grid extracted: {len(response.predicted_grid)}x{len(response.predicted_grid[0])}")
+            self._log(f"  Reasoning: {response.reasoning[:200]}...")
+        
+        # Check for action data (JSON instruction)
+        if response.action_data:
+            self._log(f"  ✓ Action JSON extracted: {response.action_data}")
+            results["action_data"] = response.action_data
+        else:
+            self._log("  ⚠ No action JSON found in response")
+            if response.predicted_grid:
+                self._log(f"  Fallback: Grid extracted directly ({len(response.predicted_grid)}x{len(response.predicted_grid[0])})")
         
         results["predictions"].append(response)
         
-        # === STEP 4: ANALYSIS ===
+        # === STEP 4: ACTION EXECUTION ===
         self._log("\n" + "=" * 50)
-        self._log("STEP 4: ANALYSIS (Evaluation)")
+        self._log("STEP 4: ACTION EXECUTION (The Hands)")
         self._log("=" * 50)
         
         for i, test_pair in enumerate(task.test_pairs):
+            test_input = test_pair.input_grid
+            predicted_grid = None
+            
+            if response.action_data:
+                # Execute the action on the test input
+                self._log(f"  Executing action on test input {i+1}...")
+                action_result = self.executor.execute(test_input, response.action_data)
+                
+                if action_result.success:
+                    predicted_grid = action_result.output_grid
+                    self._log(f"  ✓ Action executed: {action_result.message}")
+                else:
+                    self._log(f"  ✗ Action failed: {action_result.message}")
+            
+            # Fallback to LLM's direct grid prediction if no action
+            if predicted_grid is None and response.predicted_grid:
+                self._log("  Using LLM's direct grid prediction (fallback)")
+                predicted_grid = Grid.from_list(response.predicted_grid)
+            
+            if predicted_grid is None:
+                self._log("  ✗ No prediction available!")
+                continue
+            
+            # === STEP 5: ANALYSIS ===
+            self._log("\n" + "=" * 50)
+            self._log("STEP 5: ANALYSIS (Evaluation)")
+            self._log("=" * 50)
+            
             if test_pair.output_grid:
-                analysis = self.analyzer.analyze(response, test_pair.output_grid)
+                analysis = self.analyzer.compare_grids(predicted_grid, test_pair.output_grid)
                 results["analyses"].append(analysis)
                 
-                self._log(f"  Test {i+1}:")
-                self._log(f"    Correct: {analysis.is_correct}")
-                self._log(f"    Accuracy: {analysis.accuracy:.2%}")
+                self._log(f"  Test {i+1} Results:")
+                self._log(f"    ✓ Correct: {analysis.is_correct}")
+                self._log(f"    📊 Accuracy: {analysis.accuracy:.2%}")
                 
-                # === STEP 5: VISUALIZATION ===
+                if not analysis.is_correct and analysis.error_analysis:
+                    self._log(f"    Error details: {analysis.error_analysis.get('error_count', 'N/A')} errors")
+                
+                # === STEP 6: VISUALIZATION ===
                 if self.visualize:
                     self._log("\n" + "=" * 50)
-                    self._log("STEP 5: VISUALIZATION")
+                    self._log("STEP 6: VISUALIZATION")
                     self._log("=" * 50)
                     
-                    self.visualizer.show_analysis_dashboard(
-                        analysis,
-                        input_grid=test_pair.input_grid
+                    self.visualizer.show_comparison(
+                        test_input,
+                        predicted_grid,
+                        test_pair.output_grid,
+                        title=f"Task {task.task_id} - Test {i+1}"
                     )
+        
+        # Final summary
+        self._log("\n" + "=" * 50)
+        self._log("PIPELINE COMPLETE")
+        self._log("=" * 50)
+        
+        if results["analyses"]:
+            correct = sum(1 for a in results["analyses"] if a.is_correct)
+            total = len(results["analyses"])
+            self._log(f"  Results: {correct}/{total} correct")
         
         return results
     
@@ -255,8 +311,8 @@ def main():
     parser.add_argument(
         "--model", "-m",
         type=str,
-        default="llama3.2",
-        help="Ollama model name (default: llama3.2)"
+        default="llama3",
+        help="Ollama model name (default: llama3)"
     )
     
     parser.add_argument(

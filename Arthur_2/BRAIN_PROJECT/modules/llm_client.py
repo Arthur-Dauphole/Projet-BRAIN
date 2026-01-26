@@ -22,12 +22,14 @@ class LLMResponse:
         raw_text: The complete raw response from the LLM
         reasoning: Extracted reasoning/explanation
         predicted_grid: Extracted output grid (if parseable)
+        action_data: Extracted action JSON for the executor
         confidence: Self-reported confidence (if available)
         metadata: Additional response metadata
     """
     raw_text: str
     reasoning: Optional[str] = None
     predicted_grid: Optional[List[List[int]]] = None
+    action_data: Optional[Dict[str, Any]] = None
     confidence: Optional[float] = None
     metadata: Dict[str, Any] = None
     
@@ -47,7 +49,7 @@ class LLMClient:
         - Handle errors and retries
     """
     
-    DEFAULT_MODEL = "llama3.2"
+    DEFAULT_MODEL = "llama3"
     
     def __init__(
         self, 
@@ -145,10 +147,94 @@ class LLMClient:
         # Try to extract reasoning
         response.reasoning = self._extract_reasoning(raw_text)
         
-        # Try to extract grid
+        # Try to extract action JSON (PRIORITY - for executor)
+        response.action_data = self._extract_action_json(raw_text)
+        
+        # Try to extract grid (fallback if LLM provides one directly)
         response.predicted_grid = self._extract_grid(raw_text)
         
         return response
+    
+    def _extract_action_json(self, text: str) -> Optional[Dict[str, Any]]:
+        """
+        Extract the action JSON block from the LLM response.
+        
+        Looks for JSON blocks in the format:
+        ```json
+        {"action": "translate", "params": {"dx": 3, "dy": 0}, "color_filter": 2}
+        ```
+        
+        Args:
+            text: Raw response text
+            
+        Returns:
+            Parsed action dictionary or None
+        """
+        # Pattern 1: JSON in code block with json marker
+        json_block_pattern = r"```json\s*(\{[^`]+\})\s*```"
+        matches = re.findall(json_block_pattern, text, re.DOTALL)
+        
+        if matches:
+            # Take the last JSON block (most likely the final answer)
+            for json_str in reversed(matches):
+                try:
+                    action_data = json.loads(json_str.strip())
+                    if self._validate_action_data(action_data):
+                        return action_data
+                except json.JSONDecodeError:
+                    continue
+        
+        # Pattern 2: JSON in generic code block
+        generic_block_pattern = r"```\s*(\{[^`]+\})\s*```"
+        matches = re.findall(generic_block_pattern, text, re.DOTALL)
+        
+        if matches:
+            for json_str in reversed(matches):
+                try:
+                    action_data = json.loads(json_str.strip())
+                    if self._validate_action_data(action_data):
+                        return action_data
+                except json.JSONDecodeError:
+                    continue
+        
+        # Pattern 3: Standalone JSON object (no code block)
+        # Look for {"action": ...} pattern
+        standalone_pattern = r'(\{"action"\s*:\s*"[^"]+"\s*,\s*"params"\s*:\s*\{[^}]+\}[^}]*\})'
+        matches = re.findall(standalone_pattern, text)
+        
+        if matches:
+            for json_str in reversed(matches):
+                try:
+                    action_data = json.loads(json_str)
+                    if self._validate_action_data(action_data):
+                        return action_data
+                except json.JSONDecodeError:
+                    continue
+        
+        return None
+    
+    def _validate_action_data(self, data: dict) -> bool:
+        """
+        Validate that action data has required fields.
+        
+        Args:
+            data: Parsed JSON data
+            
+        Returns:
+            True if valid action data
+        """
+        if not isinstance(data, dict):
+            return False
+        
+        # Must have "action" field
+        if "action" not in data:
+            return False
+        
+        # Action must be a string
+        if not isinstance(data.get("action"), str):
+            return False
+        
+        return True
     
     def _extract_reasoning(self, text: str) -> Optional[str]:
         """
@@ -280,8 +366,23 @@ class LLMClient:
         """
         try:
             ollama = self._get_client()
-            models = ollama.list()
-            model_names = [m["name"] for m in models.get("models", [])]
+            response = ollama.list()
+            
+            # Handle both old and new API formats
+            # New API: response.models is a list of Model objects with .model attribute
+            # Old API: response is a dict with "models" key containing dicts with "name" key
+            model_names = []
+            
+            if hasattr(response, 'models'):
+                # New API format (ollama >= 0.4)
+                for m in response.models:
+                    if hasattr(m, 'model'):
+                        model_names.append(m.model)
+                    elif hasattr(m, 'name'):
+                        model_names.append(m.name)
+            elif isinstance(response, dict) and "models" in response:
+                # Old API format
+                model_names = [m.get("name", "") for m in response["models"]]
             
             # Check if our model is available (with or without tag)
             for name in model_names:
