@@ -51,7 +51,16 @@ class ActionExecutor:
     """
     
     # Registry of supported actions
-    SUPPORTED_ACTIONS = ["translate", "fill", "copy", "replace_color"]
+    SUPPORTED_ACTIONS = [
+        "translate", 
+        "fill", 
+        "copy", 
+        "replace_color",
+        "color_change",
+        "rotate",
+        "reflect",
+        "scale"
+    ]
     
     def __init__(self, verbose: bool = False):
         """
@@ -290,6 +299,332 @@ class ActionExecutor:
             output_grid=output_grid,
             message=f"Copied with offset dx={dx}, dy={dy}",
             details={"dx": dx, "dy": dy, "color_filter": color_filter}
+        )
+    
+    def _action_color_change(self, grid: Grid, action_data: dict) -> ActionResult:
+        """
+        Change colors according to a mapping.
+        
+        Parameters:
+            params.color_map: dict - Mapping of old_color -> new_color
+            OR
+            params.from_color: int - Single color to change from
+            params.to_color: int - Single color to change to
+        
+        Returns:
+            ActionResult with color-changed grid
+        """
+        params = action_data.get("params", {})
+        
+        # Support both color_map and from_color/to_color formats
+        color_map = params.get("color_map", {})
+        
+        if not color_map:
+            # Try single color change format
+            from_color = params.get("from_color")
+            to_color = params.get("to_color")
+            if from_color is not None and to_color is not None:
+                color_map = {int(from_color): int(to_color)}
+        
+        # Also check for "changes" key from TransformationDetector
+        if not color_map:
+            color_map = params.get("changes", {})
+        
+        if not color_map:
+            return ActionResult(
+                success=False,
+                message="No color mapping provided"
+            )
+        
+        if self.verbose:
+            print(f"  Executing COLOR_CHANGE: {color_map}")
+        
+        # Convert keys to int
+        color_map = {int(k): int(v) for k, v in color_map.items()}
+        
+        height, width = grid.data.shape
+        result_list = [[0 for _ in range(width)] for _ in range(height)]
+        
+        for r in range(height):
+            for c in range(width):
+                val = int(grid.data[r, c])
+                if val in color_map:
+                    result_list[r][c] = color_map[val]
+                else:
+                    result_list[r][c] = val
+        
+        result = np.array(result_list, dtype=np.int64)
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result),
+            message=f"Changed colors: {color_map}",
+            details={"color_map": color_map}
+        )
+    
+    def _action_rotate(self, grid: Grid, action_data: dict) -> ActionResult:
+        """
+        Rotate the grid or specific objects.
+        
+        Parameters:
+            params.angle: int - Rotation angle (90, 180, 270)
+            color_filter: int (optional) - Only rotate pixels of this color
+        
+        Returns:
+            ActionResult with rotated grid
+        """
+        params = action_data.get("params", {})
+        angle = int(params.get("angle", 90))
+        color_filter = action_data.get("color_filter")
+        
+        if angle not in [90, 180, 270]:
+            return ActionResult(
+                success=False,
+                message=f"Invalid rotation angle: {angle}. Must be 90, 180, or 270"
+            )
+        
+        if self.verbose:
+            print(f"  Executing ROTATE: angle={angle}, color_filter={color_filter}")
+        
+        k = angle // 90  # Number of 90-degree rotations
+        
+        if color_filter is None:
+            # Rotate entire grid
+            rotated = np.rot90(grid.data, k=k)
+            result = np.array(rotated, dtype=np.int64)
+        else:
+            # Rotate only specific color - more complex
+            # Extract object, rotate it, place back
+            color_filter = int(color_filter)
+            height, width = grid.data.shape
+            
+            # Find bounding box of colored pixels
+            rows, cols = np.where(grid.data == color_filter)
+            if len(rows) == 0:
+                return ActionResult(
+                    success=False,
+                    message=f"No pixels found with color {color_filter}"
+                )
+            
+            min_r, max_r = rows.min(), rows.max()
+            min_c, max_c = cols.min(), cols.max()
+            
+            # Extract the object
+            obj_height = max_r - min_r + 1
+            obj_width = max_c - min_c + 1
+            obj_data = np.zeros((obj_height, obj_width), dtype=np.int64)
+            
+            for r, c in zip(rows, cols):
+                obj_data[r - min_r, c - min_c] = color_filter
+            
+            # Rotate the object
+            rotated_obj = np.rot90(obj_data, k=k)
+            new_height, new_width = rotated_obj.shape
+            
+            # Create result grid
+            result = grid.data.copy()
+            result = np.array(result, dtype=np.int64)
+            
+            # Clear original position
+            result[grid.data == color_filter] = 0
+            
+            # Place rotated object (centered on original position)
+            center_r = (min_r + max_r) // 2
+            center_c = (min_c + max_c) // 2
+            
+            new_min_r = center_r - new_height // 2
+            new_min_c = center_c - new_width // 2
+            
+            for r in range(new_height):
+                for c in range(new_width):
+                    if rotated_obj[r, c] != 0:
+                        nr, nc = new_min_r + r, new_min_c + c
+                        if 0 <= nr < height and 0 <= nc < width:
+                            result[nr, nc] = rotated_obj[r, c]
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result),
+            message=f"Rotated by {angle}°",
+            details={"angle": angle, "color_filter": color_filter}
+        )
+    
+    def _action_reflect(self, grid: Grid, action_data: dict) -> ActionResult:
+        """
+        Reflect (mirror) the grid or specific objects.
+        
+        Parameters:
+            params.axis: str - "horizontal" (flip up-down), "vertical" (flip left-right),
+                              "diagonal_main", "diagonal_anti"
+            color_filter: int (optional) - Only reflect pixels of this color
+        
+        Returns:
+            ActionResult with reflected grid
+        """
+        params = action_data.get("params", {})
+        axis = params.get("axis", "horizontal")
+        color_filter = action_data.get("color_filter")
+        
+        if self.verbose:
+            print(f"  Executing REFLECT: axis={axis}, color_filter={color_filter}")
+        
+        if color_filter is None:
+            # Reflect entire grid
+            if axis == "horizontal":
+                reflected = np.flipud(grid.data)
+            elif axis == "vertical":
+                reflected = np.fliplr(grid.data)
+            elif axis == "diagonal_main":
+                reflected = grid.data.T
+            elif axis == "diagonal_anti":
+                reflected = np.flip(np.flip(grid.data, 0), 1).T
+            else:
+                return ActionResult(
+                    success=False,
+                    message=f"Invalid axis: {axis}"
+                )
+            result = np.array(reflected, dtype=np.int64)
+        else:
+            # Reflect only specific color
+            color_filter = int(color_filter)
+            height, width = grid.data.shape
+            
+            # Find bounding box of colored pixels
+            rows, cols = np.where(grid.data == color_filter)
+            if len(rows) == 0:
+                return ActionResult(
+                    success=False,
+                    message=f"No pixels found with color {color_filter}"
+                )
+            
+            min_r, max_r = rows.min(), rows.max()
+            min_c, max_c = cols.min(), cols.max()
+            
+            # Extract the object
+            obj_height = max_r - min_r + 1
+            obj_width = max_c - min_c + 1
+            obj_data = np.zeros((obj_height, obj_width), dtype=np.int64)
+            
+            for r, c in zip(rows, cols):
+                obj_data[r - min_r, c - min_c] = color_filter
+            
+            # Reflect the object
+            if axis == "horizontal":
+                reflected_obj = np.flipud(obj_data)
+            elif axis == "vertical":
+                reflected_obj = np.fliplr(obj_data)
+            elif axis == "diagonal_main":
+                reflected_obj = obj_data.T
+            elif axis == "diagonal_anti":
+                reflected_obj = np.flip(np.flip(obj_data, 0), 1).T
+            else:
+                return ActionResult(
+                    success=False,
+                    message=f"Invalid axis: {axis}"
+                )
+            
+            new_height, new_width = reflected_obj.shape
+            
+            # Create result grid
+            result = grid.data.copy()
+            result = np.array(result, dtype=np.int64)
+            
+            # Clear original position
+            result[grid.data == color_filter] = 0
+            
+            # Place reflected object at same top-left position
+            for r in range(new_height):
+                for c in range(new_width):
+                    if reflected_obj[r, c] != 0:
+                        nr, nc = min_r + r, min_c + c
+                        if 0 <= nr < height and 0 <= nc < width:
+                            result[nr, nc] = reflected_obj[r, c]
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result),
+            message=f"Reflected along {axis} axis",
+            details={"axis": axis, "color_filter": color_filter}
+        )
+    
+    def _action_scale(self, grid: Grid, action_data: dict) -> ActionResult:
+        """
+        Scale (resize) objects or the entire grid.
+        
+        Parameters:
+            params.factor: float - Scale factor (2 = double, 0.5 = half)
+            color_filter: int (optional) - Only scale pixels of this color
+        
+        Returns:
+            ActionResult with scaled grid
+        """
+        params = action_data.get("params", {})
+        factor = float(params.get("factor", 2))
+        color_filter = action_data.get("color_filter")
+        
+        if factor <= 0:
+            return ActionResult(
+                success=False,
+                message=f"Invalid scale factor: {factor}"
+            )
+        
+        if self.verbose:
+            print(f"  Executing SCALE: factor={factor}, color_filter={color_filter}")
+        
+        height, width = grid.data.shape
+        
+        if color_filter is None:
+            # Scale entire grid
+            new_height = int(height * factor)
+            new_width = int(width * factor)
+            
+            result = np.zeros((new_height, new_width), dtype=np.int64)
+            
+            for r in range(height):
+                for c in range(width):
+                    val = int(grid.data[r, c])
+                    # Fill the scaled region
+                    for dr in range(int(factor)):
+                        for dc in range(int(factor)):
+                            nr, nc = int(r * factor) + dr, int(c * factor) + dc
+                            if 0 <= nr < new_height and 0 <= nc < new_width:
+                                result[nr, nc] = val
+        else:
+            # Scale only specific color within same grid size
+            color_filter = int(color_filter)
+            
+            # Find bounding box
+            rows, cols = np.where(grid.data == color_filter)
+            if len(rows) == 0:
+                return ActionResult(
+                    success=False,
+                    message=f"No pixels found with color {color_filter}"
+                )
+            
+            min_r, max_r = rows.min(), rows.max()
+            min_c, max_c = cols.min(), cols.max()
+            
+            result = grid.data.copy()
+            result = np.array(result, dtype=np.int64)
+            
+            # Clear original
+            result[grid.data == color_filter] = 0
+            
+            # Draw scaled version
+            for r, c in zip(rows, cols):
+                rel_r, rel_c = r - min_r, c - min_c
+                for dr in range(int(factor)):
+                    for dc in range(int(factor)):
+                        nr = min_r + int(rel_r * factor) + dr
+                        nc = min_c + int(rel_c * factor) + dc
+                        if 0 <= nr < height and 0 <= nc < width:
+                            result[nr, nc] = color_filter
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result),
+            message=f"Scaled by factor {factor}",
+            details={"factor": factor, "color_filter": color_filter}
         )
     
     def apply_action(self, grid: Grid, action_data: dict) -> Grid:

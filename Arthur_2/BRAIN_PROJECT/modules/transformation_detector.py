@@ -123,6 +123,9 @@ class TransformationDetector:
         # Check if all translations are consistent
         if len(set(translations)) == 1:
             dx, dy = translations[0]
+            # Skip if no actual movement (dx=0 AND dy=0)
+            if dx == 0 and dy == 0:
+                return None
             return TransformationResult(
                 transformation_type="translation",
                 confidence=1.0,
@@ -134,6 +137,9 @@ class TransformationDetector:
             from collections import Counter
             most_common = Counter(translations).most_common(1)[0]
             dx, dy = most_common[0]
+            # Skip if no actual movement (dx=0 AND dy=0)
+            if dx == 0 and dy == 0:
+                return None
             confidence = most_common[1] / len(translations)
             return TransformationResult(
                 transformation_type="translation",
@@ -162,7 +168,7 @@ class TransformationDetector:
                     parameters={"angle": angle}
                 )
         
-        # Check object-level rotation
+        # Check object-level rotation (same color objects)
         if input_grid.objects and output_grid.objects:
             for in_obj in input_grid.objects:
                 for out_obj in output_grid.objects:
@@ -171,7 +177,23 @@ class TransformationDetector:
                         if obj_rotation:
                             return TransformationResult(
                                 transformation_type="rotation",
-                                confidence=0.8,
+                                confidence=1.0,  # High confidence for object rotation
+                                parameters={"angle": obj_rotation, "per_object": True, "color": in_obj.color},
+                                objects_matched=[(in_obj, out_obj)]
+                            )
+        
+        # Check object-level rotation (ignoring color - for different colored examples)
+        # This checks if the shape structure rotates regardless of color
+        if input_grid.objects and output_grid.objects:
+            for in_obj in input_grid.objects:
+                for out_obj in output_grid.objects:
+                    # Match by shape type and area, ignore color
+                    if in_obj.area == out_obj.area and in_obj.object_type == out_obj.object_type:
+                        obj_rotation = self._detect_object_rotation(in_obj, out_obj)
+                        if obj_rotation:
+                            return TransformationResult(
+                                transformation_type="rotation",
+                                confidence=0.9,  # Slightly lower since colors differ
                                 parameters={"angle": obj_rotation, "per_object": True},
                                 objects_matched=[(in_obj, out_obj)]
                             )

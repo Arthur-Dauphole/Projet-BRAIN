@@ -87,9 +87,19 @@ Input Grid → Perception → Prompting → LLM Reasoning → Execution → Anal
 | `fill` | `color`, `region` | Remplit une zone | ✅ |
 | `replace_color` | `from_color`, `to_color` | Change une couleur | ✅ |
 | `copy` | `dx`, `dy`, `color_filter` | Copie avec offset | ✅ |
-| `rotate` | `angle`, `color_filter` | Rotation | 🔜 À venir |
-| `reflect` | `axis`, `color_filter` | Réflexion | 🔜 À venir |
-| `scale` | `factor`, `color_filter` | Agrandir/réduire | 🔜 À venir |
+| `color_change` | `from_color`, `to_color` | Changement de couleur | ✅ |
+| `rotate` | `angle`, `color_filter` | Rotation 90°/180°/270° | ✅ |
+| `reflect` | `axis`, `color_filter` | Réflexion (miroir) | ✅ |
+| `scale` | `factor`, `color_filter` | Agrandir/réduire | ✅ |
+
+### Détails des axes de réflexion
+
+| Axe | Description |
+|-----|-------------|
+| `horizontal` | Miroir haut-bas (flipud) |
+| `vertical` | Miroir gauche-droite (fliplr) |
+| `diagonal_main` | Miroir diagonale principale |
+| `diagonal_anti` | Miroir anti-diagonale |
 
 ---
 
@@ -145,6 +155,13 @@ Input Grid → Perception → Prompting → LLM Reasoning → Execution → Anal
 
 ## 📝 Historique des versions
 
+### v1.1.0 (Janvier 2026)
+- ✅ Amélioration du système de prompt avec "DETECTED TRANSFORMATION" explicite
+- ✅ Correction de la détection de translation (ignore dx=0, dy=0)
+- ✅ Amélioration de la détection de rotation d'objets individuels
+- ✅ Actions `rotate`, `reflect`, `scale` fonctionnelles dans l'executor
+- ✅ Support de la détection de rotation pour objets de couleurs différentes
+
 ### v1.0.0 (Janvier 2026)
 - ✅ Pipeline complet fonctionnel
 - ✅ Détection de formes basiques et avancées
@@ -159,9 +176,20 @@ Input Grid → Perception → Prompting → LLM Reasoning → Execution → Anal
 
 ### Prochaines fonctionnalités
 
-- [ ] Actions `rotate`, `reflect`, `scale` dans l'executor
 - [ ] Détection de patterns répétitifs
 - [ ] Détection de sous-grilles
-- [ ] Support multi-objets dans les transformations
+- [ ] Support multi-objets dans les transformations (actions différentes par objet)
 - [ ] Mode batch pour évaluer plusieurs tâches
 - [ ] Export des résultats en JSON
+- [ ] Support de transformations composées (translation + rotation)
+
+---
+
+## ⚠️ Limitations connues
+
+| Limitation | Description |
+|------------|-------------|
+| Couleurs différentes entre exemples | Si chaque exemple d'entraînement a une couleur différente, la correspondance objet-à-objet peut échouer |
+| Transformations composées | Le système détecte UNE transformation, pas des combinaisons |
+| Taille de grille variable | Non supporté actuellement |
+| Objets multiples avec transformations différentes | Non supporté - tous les objets subissent la même transformation |

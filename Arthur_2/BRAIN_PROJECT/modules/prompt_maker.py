@@ -31,20 +31,41 @@ COORDINATE SYSTEM:
 - dx = column shift (dx > 0 means move RIGHT)
 - dy = row shift (dy > 0 means move DOWN)
 
-CRITICAL: Look at the "Transformation Analysis" section in each example.
-It shows exactly how objects moved: the dx and dy values are already calculated for you.
-Use these values directly in your JSON output.
+CRITICAL RULES:
+1. The "**DETECTED TRANSFORMATION**" line tells you EXACTLY which transformation to use.
+2. Apply the SAME transformation to the test input, regardless of its color.
+3. The transformation pattern is INDEPENDENT of object colors - different examples may use different colors.
+
+AVAILABLE ACTIONS:
+
+1. TRANSLATION (move objects by dx, dy):
+```json
+{"action": "translate", "params": {"dx": NUMBER, "dy": NUMBER}}
+```
+Use when DETECTED TRANSFORMATION shows "TRANSLATION".
+
+2. COLOR CHANGE (replace one color with another):
+```json
+{"action": "color_change", "params": {"from_color": OLD_COLOR, "to_color": NEW_COLOR}}
+```
+Use when DETECTED TRANSFORMATION shows "COLOR CHANGE".
+
+3. ROTATION (rotate objects):
+```json
+{"action": "rotate", "params": {"angle": 90_OR_180_OR_270}}
+```
+Use when DETECTED TRANSFORMATION shows "ROTATION".
+
+4. REFLECTION (mirror/flip):
+```json
+{"action": "reflect", "params": {"axis": "horizontal_OR_vertical"}}
+```
+Use when DETECTED TRANSFORMATION shows "REFLECTION".
+- "horizontal" = flip up-down
+- "vertical" = flip left-right
 
 OUTPUT FORMAT (MANDATORY):
-You MUST end your response with a JSON block like this:
-```json
-{"action": "translate", "params": {"dx": NUMBER, "dy": NUMBER}, "color_filter": COLOR}
-```
-
-Example: If analysis shows "dx=3, dy=0", output:
-```json
-{"action": "translate", "params": {"dx": 3, "dy": 0}, "color_filter": 2}
-```"""
+End with exactly ONE JSON block matching the DETECTED TRANSFORMATION type."""
 
     def __init__(self, include_grid_ascii: bool = True, include_objects: bool = True):
         """
@@ -149,34 +170,135 @@ Example: If analysis shows "dx=3, dy=0", output:
             output_grid: The output grid
             
         Returns:
-            Analysis string describing the transformation
+            Analysis string describing the transformation with clear DETECTED TRANSFORMATION line
         """
-        if not input_grid.objects or not output_grid.objects:
-            return ""
+        import numpy as np
         
-        analysis_lines = []
+        in_data = input_grid.data
+        out_data = output_grid.data
         
-        # Compare objects by color
-        for in_obj in input_grid.objects:
-            # Find matching object in output (same color)
-            for out_obj in output_grid.objects:
-                if in_obj.color == out_obj.color:
-                    if in_obj.bounding_box and out_obj.bounding_box:
-                        in_row, in_col = in_obj.bounding_box[0], in_obj.bounding_box[1]
-                        out_row, out_col = out_obj.bounding_box[0], out_obj.bounding_box[1]
-                        
-                        dx = out_col - in_col  # Horizontal shift (column difference)
-                        dy = out_row - in_row  # Vertical shift (row difference)
-                        
-                        color_name = in_obj.properties.get("color_name", f"color_{in_obj.color}")
-                        analysis_lines.append(
-                            f"- {color_name} object: moved from (row={in_row}, col={in_col}) "
-                            f"to (row={out_row}, col={out_col}) → "
-                            f"**dx={dx}** (horizontal), **dy={dy}** (vertical)"
-                        )
-                    break
+        # Priority 1: Check for TRANSLATION (objects moved)
+        if input_grid.objects and output_grid.objects:
+            for in_obj in input_grid.objects:
+                for out_obj in output_grid.objects:
+                    # Match objects by color and area
+                    if in_obj.color == out_obj.color and in_obj.area == out_obj.area:
+                        if in_obj.bounding_box and out_obj.bounding_box:
+                            in_row, in_col = in_obj.bounding_box[0], in_obj.bounding_box[1]
+                            out_row, out_col = out_obj.bounding_box[0], out_obj.bounding_box[1]
+                            
+                            dx = out_col - in_col
+                            dy = out_row - in_row
+                            
+                            # Only report if there's actual movement
+                            if dx != 0 or dy != 0:
+                                return f"**DETECTED TRANSFORMATION: TRANSLATION with dx={dx}, dy={dy}**"
+                        break
         
-        return "\n".join(analysis_lines)
+        # Priority 2: Check for OBJECT ROTATION (shape rotates in place)
+        if input_grid.objects and output_grid.objects:
+            for in_obj in input_grid.objects:
+                for out_obj in output_grid.objects:
+                    if in_obj.color == out_obj.color and in_obj.area == out_obj.area:
+                        # Check if dimensions are swapped (90° or 270° rotation)
+                        if in_obj.width == out_obj.height and in_obj.height == out_obj.width:
+                            # Verify it's actually a rotation by checking pixel patterns
+                            rotation_angle = self._detect_object_rotation_angle(in_obj, out_obj)
+                            if rotation_angle:
+                                return f"**DETECTED TRANSFORMATION: ROTATION with angle={rotation_angle}**"
+                        # Check for 180° rotation (same dimensions)
+                        elif in_obj.width == out_obj.width and in_obj.height == out_obj.height:
+                            rotation_angle = self._detect_object_rotation_angle(in_obj, out_obj)
+                            if rotation_angle:
+                                return f"**DETECTED TRANSFORMATION: ROTATION with angle={rotation_angle}**"
+        
+        # Priority 3: Check for GRID-LEVEL ROTATION
+        for angle in [90, 180, 270]:
+            rotated = np.rot90(in_data, k=angle // 90)
+            if rotated.shape == out_data.shape and np.array_equal(rotated, out_data):
+                return f"**DETECTED TRANSFORMATION: ROTATION with angle={angle}**"
+        
+        # Priority 4: Check for REFLECTION
+        if in_data.shape == out_data.shape:
+            if np.array_equal(np.flipud(in_data), out_data):
+                return "**DETECTED TRANSFORMATION: REFLECTION with axis=horizontal**"
+            if np.array_equal(np.fliplr(in_data), out_data):
+                return "**DETECTED TRANSFORMATION: REFLECTION with axis=vertical**"
+        
+        # Priority 5: Check for COLOR CHANGE (pixels stay in place, only color changes)
+        if in_data.shape == out_data.shape:
+            non_zero_in = set(zip(*np.where(in_data != 0)))
+            non_zero_out = set(zip(*np.where(out_data != 0)))
+            
+            # Same positions must have non-zero pixels for pure color change
+            if non_zero_in == non_zero_out and len(non_zero_in) > 0:
+                color_changes = {}
+                is_pure_color_change = True
+                
+                for r, c in non_zero_in:
+                    in_val = int(in_data[r, c])
+                    out_val = int(out_data[r, c])
+                    if in_val != out_val:
+                        if in_val in color_changes:
+                            if color_changes[in_val] != out_val:
+                                is_pure_color_change = False
+                                break
+                        else:
+                            color_changes[in_val] = out_val
+                
+                if is_pure_color_change and color_changes:
+                    from_color = list(color_changes.keys())[0]
+                    to_color = color_changes[from_color]
+                    return f"**DETECTED TRANSFORMATION: COLOR CHANGE from_color={from_color}, to_color={to_color}**"
+        
+        return "**DETECTED TRANSFORMATION: UNKNOWN**"
+    
+    def _detect_object_rotation_angle(self, in_obj: GeometricObject, out_obj: GeometricObject) -> int:
+        """
+        Detect the rotation angle between two objects by comparing their pixel patterns.
+        
+        Returns:
+            Rotation angle (90, 180, 270) or 0 if no rotation detected
+        """
+        if not in_obj.pixels or not out_obj.pixels:
+            return 0
+        
+        # Normalize pixels to origin (0,0)
+        in_min_r = min(p[0] for p in in_obj.pixels)
+        in_min_c = min(p[1] for p in in_obj.pixels)
+        in_normalized = set((p[0] - in_min_r, p[1] - in_min_c) for p in in_obj.pixels)
+        
+        out_min_r = min(p[0] for p in out_obj.pixels)
+        out_min_c = min(p[1] for p in out_obj.pixels)
+        out_normalized = set((p[0] - out_min_r, p[1] - out_min_c) for p in out_obj.pixels)
+        
+        h = max(p[0] for p in in_normalized) + 1
+        w = max(p[1] for p in in_normalized) + 1
+        
+        # Check each rotation angle
+        for angle in [90, 180, 270]:
+            rotated = set()
+            for r, c in in_normalized:
+                if angle == 90:
+                    new_r, new_c = c, h - 1 - r
+                elif angle == 180:
+                    new_r, new_c = h - 1 - r, w - 1 - c
+                elif angle == 270:
+                    new_r, new_c = w - 1 - c, r
+                else:
+                    new_r, new_c = r, c
+                rotated.add((new_r, new_c))
+            
+            # Normalize rotated pixels
+            if rotated:
+                min_r = min(p[0] for p in rotated)
+                min_c = min(p[1] for p in rotated)
+                rotated_normalized = set((p[0] - min_r, p[1] - min_c) for p in rotated)
+                
+                if rotated_normalized == out_normalized:
+                    return angle
+        
+        return 0
     
     def _format_grid(self, grid: Grid, label: str) -> str:
         """
@@ -262,23 +384,52 @@ Example: If analysis shows "dx=3, dy=0", output:
         """
         base_prompt = self.create_task_prompt(task)
         
+        # Extract the detected transformations to give a clear hint
+        transformations_summary = []
+        for i, pair in enumerate(task.train_pairs, 1):
+            analysis = self._analyze_transformation(pair.input_grid, pair.output_grid)
+            if "DETECTED TRANSFORMATION:" in analysis:
+                transformations_summary.append(f"Example {i}: {analysis}")
+        
         cot_instruction = """
+## TRANSFORMATION SUMMARY
+
+"""
+        cot_instruction += "\n".join(transformations_summary) if transformations_summary else "No clear pattern detected."
+        
+        cot_instruction += """
+
 ## YOUR TASK
 
-1. Look at the **Transformation Analysis** in each training example above.
-2. Find the consistent dx and dy values across ALL examples.
-3. Output the JSON with those exact values.
+Based on the DETECTED TRANSFORMATION above, output the corresponding JSON action.
 
-REMEMBER:
-- dx = horizontal movement (positive = RIGHT)
-- dy = vertical movement (positive = DOWN)
-- Use the dx and dy values shown in the Transformation Analysis!
+RULES:
+1. Use the EXACT transformation type shown (TRANSLATION, ROTATION, COLOR CHANGE, REFLECTION)
+2. Use the EXACT parameters shown (dx, dy, angle, from_color, to_color, axis)
+3. The transformation applies to ALL objects regardless of their specific color in the test input
 
 ## OUTPUT (MANDATORY)
 
-End your response with:
+Match the JSON format to the detected transformation type:
+
+For TRANSLATION with dx=X, dy=Y:
 ```json
-{"action": "translate", "params": {"dx": VALUE, "dy": VALUE}, "color_filter": COLOR}
+{"action": "translate", "params": {"dx": X, "dy": Y}}
+```
+
+For ROTATION with angle=A:
+```json
+{"action": "rotate", "params": {"angle": A}}
+```
+
+For COLOR CHANGE from_color=F, to_color=T:
+```json
+{"action": "color_change", "params": {"from_color": F, "to_color": T}}
+```
+
+For REFLECTION with axis=A:
+```json
+{"action": "reflect", "params": {"axis": "A"}}
 ```
 """
         

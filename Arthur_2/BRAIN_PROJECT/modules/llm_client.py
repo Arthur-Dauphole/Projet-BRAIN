@@ -180,7 +180,7 @@ class LLMClient:
                 try:
                     action_data = json.loads(json_str.strip())
                     if self._validate_action_data(action_data):
-                        return action_data
+                        return self._normalize_action_data(action_data)
                 except json.JSONDecodeError:
                     continue
         
@@ -193,7 +193,7 @@ class LLMClient:
                 try:
                     action_data = json.loads(json_str.strip())
                     if self._validate_action_data(action_data):
-                        return action_data
+                        return self._normalize_action_data(action_data)
                 except json.JSONDecodeError:
                     continue
         
@@ -207,7 +207,7 @@ class LLMClient:
                 try:
                     action_data = json.loads(json_str)
                     if self._validate_action_data(action_data):
-                        return action_data
+                        return self._normalize_action_data(action_data)
                 except json.JSONDecodeError:
                     continue
         
@@ -235,6 +235,76 @@ class LLMClient:
             return False
         
         return True
+    
+    def _normalize_action_data(self, data: dict) -> dict:
+        """
+        Normalize action data by converting color names to numbers.
+        
+        Args:
+            data: Parsed action data
+            
+        Returns:
+            Normalized action data with color names converted to integers
+        """
+        # Color name to number mapping
+        COLOR_MAP = {
+            "black": 0, "blue": 1, "red": 2, "green": 3, "yellow": 4,
+            "grey": 5, "gray": 5, "magenta": 6, "pink": 6, "orange": 7,
+            "cyan": 8, "teal": 8, "brown": 9, "maroon": 9,
+            # Also handle string numbers
+            "0": 0, "1": 1, "2": 2, "3": 3, "4": 4,
+            "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
+        }
+        
+        def convert_color(value):
+            """Convert a color value to integer."""
+            if value is None:
+                return None
+            if isinstance(value, int):
+                return value
+            if isinstance(value, str):
+                value_lower = value.lower().strip()
+                if value_lower in COLOR_MAP:
+                    return COLOR_MAP[value_lower]
+                # Try to parse as integer
+                try:
+                    return int(value)
+                except ValueError:
+                    return None
+            return None
+        
+        # Deep copy to avoid modifying original
+        result = dict(data)
+        
+        # Convert color_filter
+        if "color_filter" in result:
+            result["color_filter"] = convert_color(result["color_filter"])
+        
+        # Convert params
+        if "params" in result and isinstance(result["params"], dict):
+            params = dict(result["params"])
+            
+            # Color-related params
+            for key in ["from_color", "to_color", "color"]:
+                if key in params:
+                    params[key] = convert_color(params[key])
+            
+            # Numeric params
+            for key in ["dx", "dy", "angle", "factor"]:
+                if key in params:
+                    val = params[key]
+                    if isinstance(val, str):
+                        try:
+                            if key == "factor":
+                                params[key] = float(val)
+                            else:
+                                params[key] = int(val)
+                        except ValueError:
+                            pass
+            
+            result["params"] = params
+        
+        return result
     
     def _extract_reasoning(self, text: str) -> Optional[str]:
         """
