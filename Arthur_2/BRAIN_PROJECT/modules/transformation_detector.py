@@ -437,3 +437,195 @@ class TransformationDetector:
             descriptions.append(f"[{result.confidence:.0%}] {desc}")
         
         return "\n".join(descriptions)
+    
+    # ==================== MULTI-TRANSFORM DETECTION ====================
+    
+    def detect_per_color_transformations(self, input_grid: Grid, output_grid: Grid) -> Dict[int, TransformationResult]:
+        """
+        Detect transformations for each color separately.
+        
+        This allows detecting different transformations for different objects
+        based on their color.
+        
+        Args:
+            input_grid: The input grid (with detected objects)
+            output_grid: The output grid (with detected objects)
+            
+        Returns:
+            Dictionary mapping color -> TransformationResult
+        """
+        per_color_transforms = {}
+        
+        # Get all colors in input (excluding background 0)
+        input_colors = set(input_grid.unique_colors)
+        output_colors = set(output_grid.unique_colors)
+        
+        if self.verbose:
+            print(f"  Detecting per-color transformations...")
+            print(f"    Input colors: {input_colors}")
+            print(f"    Output colors: {output_colors}")
+        
+        # For each input color, find what transformation applies to it
+        for color in input_colors:
+            transform = self._detect_single_color_transform(
+                input_grid, output_grid, color
+            )
+            if transform:
+                per_color_transforms[color] = transform
+                if self.verbose:
+                    print(f"    Color {color}: {transform.transformation_type} - {transform.parameters}")
+        
+        return per_color_transforms
+    
+    def _detect_single_color_transform(
+        self, 
+        input_grid: Grid, 
+        output_grid: Grid, 
+        color: int
+    ) -> Optional[TransformationResult]:
+        """
+        Detect transformation for a single color.
+        
+        Checks in order:
+        1. Translation (same color appears at different position)
+        2. Rotation (shape rotates but stays same color)
+        3. Color change (same position but different color)
+        
+        Args:
+            input_grid: Input grid
+            output_grid: Output grid
+            color: The color to analyze
+            
+        Returns:
+            TransformationResult for this color, or None
+        """
+        in_data = input_grid.data
+        out_data = output_grid.data
+        
+        # Get pixels of this color in input
+        in_positions = set(zip(*np.where(in_data == color)))
+        
+        if not in_positions:
+            return None
+        
+        # Check if same color exists in output at different position (TRANSLATION)
+        out_same_color_positions = set(zip(*np.where(out_data == color)))
+        
+        if out_same_color_positions and out_same_color_positions != in_positions:
+            # Same color moved - detect translation
+            translation = self._detect_color_translation(in_positions, out_same_color_positions)
+            if translation:
+                return TransformationResult(
+                    transformation_type="translation",
+                    confidence=1.0,
+                    parameters={"dx": translation[0], "dy": translation[1], "color": color}
+                )
+        
+        # Check if color rotated (same color, rotated shape)
+        in_obj = self._get_object_by_color(input_grid, color)
+        out_obj = self._get_object_by_color(output_grid, color)
+        
+        if in_obj and out_obj:
+            rotation = self._detect_object_rotation(in_obj, out_obj)
+            if rotation:
+                return TransformationResult(
+                    transformation_type="rotation",
+                    confidence=1.0,
+                    parameters={"angle": rotation, "color": color}
+                )
+        
+        # Check if color changed (same positions but different color in output)
+        for new_color in output_grid.unique_colors:
+            if new_color == color:
+                continue
+            out_positions = set(zip(*np.where(out_data == new_color)))
+            if in_positions == out_positions:
+                # Exact same positions - color change
+                return TransformationResult(
+                    transformation_type="color_change",
+                    confidence=1.0,
+                    parameters={"from_color": color, "to_color": new_color}
+                )
+        
+        # Check if color stayed in place (no transformation)
+        if in_positions == out_same_color_positions:
+            return TransformationResult(
+                transformation_type="identity",
+                confidence=1.0,
+                parameters={"color": color}
+            )
+        
+        return None
+    
+    def _detect_color_translation(
+        self, 
+        in_positions: set, 
+        out_positions: set
+    ) -> Optional[Tuple[int, int]]:
+        """
+        Detect translation vector between two sets of positions.
+        
+        Returns:
+            (dx, dy) tuple if consistent translation found, None otherwise
+        """
+        if len(in_positions) != len(out_positions):
+            return None
+        
+        # Try to find consistent translation
+        in_list = sorted(list(in_positions))
+        out_list = sorted(list(out_positions))
+        
+        # Calculate translation for first point
+        dy = out_list[0][0] - in_list[0][0]
+        dx = out_list[0][1] - in_list[0][1]
+        
+        # Check if this translation works for all points
+        translated = set((r + dy, c + dx) for r, c in in_positions)
+        
+        if translated == out_positions:
+            return (dx, dy)
+        
+        return None
+    
+    def _get_object_by_color(self, grid: Grid, color: int) -> Optional[GeometricObject]:
+        """Get the first object with the specified color from the grid."""
+        for obj in grid.objects:
+            if obj.color == color:
+                return obj
+        return None
+    
+    def describe_per_color_transformations(self, per_color: Dict[int, TransformationResult]) -> str:
+        """
+        Generate human-readable description of per-color transformations.
+        """
+        if not per_color:
+            return "No per-color transformations detected."
+        
+        COLOR_NAMES = {
+            0: "black", 1: "blue", 2: "red", 3: "green", 4: "yellow",
+            5: "grey", 6: "magenta", 7: "orange", 8: "azure", 9: "brown"
+        }
+        
+        descriptions = []
+        for color, result in per_color.items():
+            color_name = COLOR_NAMES.get(color, f"color_{color}")
+            
+            if result.transformation_type == "translation":
+                dx = result.parameters.get("dx", 0)
+                dy = result.parameters.get("dy", 0)
+                desc = f"{color_name.upper()} ({color}): translate dx={dx}, dy={dy}"
+            elif result.transformation_type == "rotation":
+                angle = result.parameters.get("angle", 0)
+                desc = f"{color_name.upper()} ({color}): rotate {angle}°"
+            elif result.transformation_type == "color_change":
+                to_color = result.parameters.get("to_color", 0)
+                to_name = COLOR_NAMES.get(to_color, f"color_{to_color}")
+                desc = f"{color_name.upper()} ({color}): change to {to_name} ({to_color})"
+            elif result.transformation_type == "identity":
+                desc = f"{color_name.upper()} ({color}): no change"
+            else:
+                desc = f"{color_name.upper()} ({color}): {result.transformation_type}"
+            
+            descriptions.append(desc)
+        
+        return "\n".join(descriptions)

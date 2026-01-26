@@ -6,16 +6,21 @@ Main entry point for the BRAIN Project.
 Pipeline Flow:
     Input Grid -> Perception -> Prompting -> LLM Reasoning -> Analysis -> Visualization
 
+Supports:
+    - Single transformation mode (default)
+    - Multi-transform mode (--multi) for different transformations per color
+
 Usage:
-    python main.py                          # Interactive mode
-    python main.py --task data/task.json    # Solve a specific task
-    python main.py --demo                   # Run demo with sample data
+    python main.py                              # Interactive mode
+    python main.py --task data/task.json        # Solve a specific task
+    python main.py --task data/task.json --multi # Multi-transform mode
+    python main.py --demo                       # Run demo with sample data
 """
 
 import json
 import argparse
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any, List
 
 # Import all modules
 from modules import (
@@ -278,6 +283,214 @@ class BRAINOrchestrator:
         
         return results
     
+    def solve_task_multi_transform(self, task: ARCTask) -> dict:
+        """
+        Solve a task using MULTI-TRANSFORM mode.
+        
+        This mode detects and applies DIFFERENT transformations to DIFFERENT colors.
+        
+        Args:
+            task: The ARCTask to solve
+            
+        Returns:
+            Dictionary with results
+        """
+        results = {
+            "task_id": task.task_id,
+            "mode": "multi_transform",
+            "predictions": [],
+            "analyses": [],
+            "per_color_transforms": {}
+        }
+        
+        # === STEP 1a: PERCEPTION (Shapes) ===
+        self._log("=" * 50)
+        self._log("STEP 1a: PERCEPTION (Shape Detection)")
+        self._log("=" * 50)
+        
+        # Detect objects in all grids
+        for pair in task.train_pairs:
+            self.detector.detect(pair.input_grid)
+            self.detector.detect(pair.output_grid)
+            self._log(f"  Train input: {pair.input_grid}")
+            self._log(f"  Train output: {pair.output_grid}")
+        
+        for pair in task.test_pairs:
+            self.detector.detect(pair.input_grid)
+            self._log(f"  Test input: {pair.input_grid}")
+        
+        # === STEP 1b: PER-COLOR TRANSFORMATION DETECTION ===
+        self._log("\n" + "=" * 50)
+        self._log("STEP 1b: PER-COLOR TRANSFORMATION DETECTION")
+        self._log("=" * 50)
+        
+        # Detect per-color transformations from first training example
+        # (we assume the pattern is consistent across examples)
+        if task.train_pairs:
+            first_pair = task.train_pairs[0]
+            per_color_transforms = self.transformation_detector.detect_per_color_transformations(
+                first_pair.input_grid, 
+                first_pair.output_grid
+            )
+            
+            if per_color_transforms:
+                self._log("  Detected per-color transformations:")
+                desc = self.transformation_detector.describe_per_color_transformations(per_color_transforms)
+                for line in desc.split("\n"):
+                    self._log(f"    {line}")
+                results["per_color_transforms"] = per_color_transforms
+            else:
+                self._log("  ⚠ No per-color transformations detected")
+                self._log("  Falling back to single-transform mode...")
+                return self.solve_task(task)
+        
+        # === STEP 2: PROMPTING (Multi-Transform Mode) ===
+        self._log("\n" + "=" * 50)
+        self._log("STEP 2: PROMPTING (Multi-Transform Mode)")
+        self._log("=" * 50)
+        
+        prompt = self.prompt_maker.create_multi_transform_prompt(task, per_color_transforms)
+        system_prompt = self.prompt_maker.get_multi_transform_system_prompt()
+        
+        self._log(f"  Created multi-transform prompt ({len(prompt)} chars)")
+        
+        # === STEP 3: LLM REASONING ===
+        self._log("\n" + "=" * 50)
+        self._log("STEP 3: LLM REASONING (Multi-Actions)")
+        self._log("=" * 50)
+        
+        # Check LLM connection
+        if not self.llm_client.check_connection():
+            self._log("  ⚠ Warning: LLM connection issue")
+        
+        self._log("  Querying LLM for multiple actions...")
+        response = self.llm_client.query(prompt, system_prompt)
+        
+        self._log(f"  Got response ({len(response.raw_text)} chars)")
+        if response.reasoning:
+            self._log(f"  Reasoning: {response.reasoning[:200]}...")
+        
+        # Check for multi-actions
+        multi_actions = response.multi_actions
+        
+        if multi_actions:
+            self._log(f"  ✓ Multi-actions extracted: {len(multi_actions)} actions")
+            for action in multi_actions:
+                self._log(f"    - Color {action.get('color')}: {action.get('action')} {action.get('params', {})}")
+        else:
+            self._log("  ⚠ No multi-actions found in LLM response")
+            # Try to build actions from detected transformations
+            self._log("  Building actions from detected transformations...")
+            multi_actions = self._build_actions_from_transforms(per_color_transforms)
+            if multi_actions:
+                self._log(f"  ✓ Built {len(multi_actions)} actions from detected transformations")
+                for action in multi_actions:
+                    self._log(f"    - Color {action.get('color')}: {action.get('action')} {action.get('params', {})}")
+        
+        results["multi_actions"] = multi_actions
+        results["predictions"].append(response)
+        
+        # === STEP 4: ACTION EXECUTION (Multi-Actions) ===
+        self._log("\n" + "=" * 50)
+        self._log("STEP 4: ACTION EXECUTION (Multi-Transform)")
+        self._log("=" * 50)
+        
+        for i, test_pair in enumerate(task.test_pairs):
+            test_input = test_pair.input_grid
+            predicted_grid = None
+            
+            if multi_actions:
+                self._log(f"  Executing {len(multi_actions)} actions on test input {i+1}...")
+                action_result = self.executor.execute_multi_actions(test_input, multi_actions)
+                
+                if action_result.success:
+                    predicted_grid = action_result.output_grid
+                    self._log(f"  ✓ Multi-actions executed: {action_result.message}")
+                else:
+                    self._log(f"  ✗ Multi-actions failed: {action_result.message}")
+            
+            if predicted_grid is None:
+                self._log("  ✗ No prediction available!")
+                continue
+            
+            # === STEP 5: ANALYSIS ===
+            self._log("\n" + "=" * 50)
+            self._log("STEP 5: ANALYSIS (Evaluation)")
+            self._log("=" * 50)
+            
+            if test_pair.output_grid:
+                analysis = self.analyzer.compare_grids(predicted_grid, test_pair.output_grid)
+                results["analyses"].append(analysis)
+                
+                self._log(f"  Test {i+1} Results:")
+                self._log(f"    ✓ Correct: {analysis.is_correct}")
+                self._log(f"    📊 Accuracy: {analysis.accuracy:.2%}")
+                
+                if not analysis.is_correct and analysis.error_analysis:
+                    self._log(f"    Error details: {analysis.error_analysis.get('error_count', 'N/A')} errors")
+                
+                # === STEP 6: VISUALIZATION ===
+                if self.visualize:
+                    self._log("\n" + "=" * 50)
+                    self._log("STEP 6: VISUALIZATION")
+                    self._log("=" * 50)
+                    
+                    self.visualizer.show_comparison(
+                        test_input,
+                        predicted_grid,
+                        test_pair.output_grid,
+                        title=f"Task {task.task_id} - Test {i+1} (Multi-Transform)"
+                    )
+        
+        # Final summary
+        self._log("\n" + "=" * 50)
+        self._log("PIPELINE COMPLETE (Multi-Transform Mode)")
+        self._log("=" * 50)
+        
+        if results["analyses"]:
+            correct = sum(1 for a in results["analyses"] if a.is_correct)
+            total = len(results["analyses"])
+            self._log(f"  Results: {correct}/{total} correct")
+        
+        return results
+    
+    def _build_actions_from_transforms(
+        self, 
+        per_color_transforms: Dict[int, Any]
+    ) -> List[Dict[str, Any]]:
+        """
+        Build action list from detected per-color transformations.
+        
+        This is a fallback when the LLM doesn't return proper multi-actions.
+        
+        Args:
+            per_color_transforms: Dictionary of color -> TransformationResult
+            
+        Returns:
+            List of action dictionaries ready for the executor
+        """
+        actions = []
+        
+        for color, transform in per_color_transforms.items():
+            if hasattr(transform, 'transformation_type'):
+                t_type = transform.transformation_type
+                params = dict(transform.parameters)
+            else:
+                t_type = transform.get('transformation_type', 'identity')
+                params = dict(transform.get('parameters', {}))
+            
+            # Remove 'color' from params if present (it's at top level)
+            params.pop('color', None)
+            
+            action = {
+                "color": color,
+                "action": t_type,
+                "params": params
+            }
+            actions.append(action)
+        
+        return actions
+    
     def run_demo(self):
         """Run a demo with a simple task."""
         self._log("Running BRAIN Demo...")
@@ -350,6 +563,12 @@ def main():
         help="Quiet mode (less output)"
     )
     
+    parser.add_argument(
+        "--multi",
+        action="store_true",
+        help="Use multi-transform mode (different transformation per color)"
+    )
+    
     args = parser.parse_args()
     
     # Create orchestrator
@@ -365,7 +584,13 @@ def main():
     elif args.task:
         # Solve specific task
         task = brain.load_task(args.task)
-        brain.solve_task(task)
+        
+        if args.multi:
+            # Use multi-transform mode
+            brain.solve_task_multi_transform(task)
+        else:
+            # Use standard single-transform mode
+            brain.solve_task(task)
     else:
         # Interactive mode
         print("\n" + "=" * 60)

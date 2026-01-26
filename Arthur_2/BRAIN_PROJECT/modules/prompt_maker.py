@@ -5,9 +5,13 @@ Step 2 of the pipeline: Prompting
 
 Transforms the detected symbols and patterns into structured prompts
 for the LLM reasoning engine.
+
+Supports:
+    - Single transformation (all objects same transform)
+    - Multi-transform mode (different transform per color)
 """
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from .types import Grid, ARCTask, GeometricObject
 
 
@@ -434,3 +438,168 @@ For REFLECTION with axis=A:
 """
         
         return base_prompt + cot_instruction
+    
+    # ==================== MULTI-TRANSFORM SUPPORT ====================
+    
+    MULTI_TRANSFORM_SYSTEM_PROMPT = """You are an ARC-AGI puzzle solver analyzing MULTI-OBJECT transformations.
+
+Each COLOR in the grid may have a DIFFERENT transformation.
+
+COORDINATE SYSTEM:
+- dx = column shift (dx > 0 means move RIGHT)
+- dy = row shift (dy > 0 means move DOWN)
+
+CRITICAL: Look at the "PER-COLOR TRANSFORMATIONS" section. Each color has its own action.
+
+OUTPUT FORMAT (MANDATORY):
+Return a JSON ARRAY of actions, one per color:
+
+```json
+[
+  {"color": 2, "action": "translate", "params": {"dx": 2, "dy": 0}},
+  {"color": 1, "action": "rotate", "params": {"angle": 90}},
+  {"color": 3, "action": "color_change", "params": {"from_color": 3, "to_color": 4}}
+]
+```
+
+AVAILABLE ACTIONS:
+- translate: {"dx": NUMBER, "dy": NUMBER}
+- rotate: {"angle": 90 | 180 | 270}
+- color_change: {"from_color": NUMBER, "to_color": NUMBER}
+- reflect: {"axis": "horizontal" | "vertical"}
+- identity: {} (no change)
+
+IMPORTANT: Output ONE action per color found in the input."""
+    
+    def get_multi_transform_system_prompt(self) -> str:
+        """Get the system prompt for multi-transform mode."""
+        return self.MULTI_TRANSFORM_SYSTEM_PROMPT
+    
+    def create_multi_transform_prompt(
+        self, 
+        task: ARCTask, 
+        per_color_transforms: Dict[int, Any]
+    ) -> str:
+        """
+        Create a prompt for multi-object transformations.
+        
+        Args:
+            task: The ARCTask to solve
+            per_color_transforms: Dictionary of detected per-color transformations
+            
+        Returns:
+            Prompt string for multi-transform mode
+        """
+        prompt_parts = []
+        
+        # Header
+        prompt_parts.append(f"# ARC Task: {task.task_id} (MULTI-TRANSFORM MODE)\n")
+        prompt_parts.append("This task has DIFFERENT transformations for DIFFERENT colors.\n\n")
+        
+        # Training examples
+        prompt_parts.append("## Training Examples\n")
+        for i, pair in enumerate(task.train_pairs, 1):
+            prompt_parts.append(f"### Example {i}\n")
+            prompt_parts.append(self._format_grid(pair.input_grid, "Input"))
+            prompt_parts.append(self._format_grid(pair.output_grid, "Output"))
+            prompt_parts.append("")
+        
+        # Per-color transformation analysis
+        prompt_parts.append("## PER-COLOR TRANSFORMATIONS DETECTED\n")
+        prompt_parts.append(self._format_per_color_transforms(per_color_transforms))
+        prompt_parts.append("\n")
+        
+        # Test input
+        prompt_parts.append("## Test Input\n")
+        if task.test_pairs:
+            test_input = task.test_pairs[0].input_grid
+            prompt_parts.append(self._format_grid(test_input, "Input"))
+            
+            # List colors in test input
+            test_colors = test_input.unique_colors
+            prompt_parts.append(f"\n**Colors in test input:** {test_colors}\n")
+        
+        # Instructions
+        prompt_parts.append("""
+## YOUR TASK
+
+Apply the DETECTED transformations to each color in the test input.
+
+OUTPUT (MANDATORY):
+Return a JSON array with one action per color:
+
+```json
+[
+""")
+        
+        # Generate expected format based on detected transforms
+        for color, transform in per_color_transforms.items():
+            action = self._transform_to_action_hint(color, transform)
+            prompt_parts.append(f"  {action},\n")
+        
+        prompt_parts.append("""]
+```
+
+Replace the parameters with the values from the DETECTED TRANSFORMATIONS above.
+""")
+        
+        return "".join(prompt_parts)
+    
+    def _format_per_color_transforms(self, per_color_transforms: Dict[int, Any]) -> str:
+        """Format per-color transformations as a readable string."""
+        COLOR_NAMES = {
+            0: "black", 1: "blue", 2: "red", 3: "green", 4: "yellow",
+            5: "grey", 6: "magenta", 7: "orange", 8: "azure", 9: "brown"
+        }
+        
+        lines = []
+        for color, transform in per_color_transforms.items():
+            color_name = COLOR_NAMES.get(color, f"color_{color}")
+            
+            if hasattr(transform, 'transformation_type'):
+                t_type = transform.transformation_type
+                params = transform.parameters
+            else:
+                t_type = transform.get('transformation_type', 'unknown')
+                params = transform.get('parameters', {})
+            
+            if t_type == "translation":
+                dx = params.get("dx", 0)
+                dy = params.get("dy", 0)
+                lines.append(f"- **{color_name.upper()} ({color})**: TRANSLATE dx={dx}, dy={dy}")
+            elif t_type == "rotation":
+                angle = params.get("angle", 0)
+                lines.append(f"- **{color_name.upper()} ({color})**: ROTATE angle={angle}°")
+            elif t_type == "color_change":
+                to_color = params.get("to_color", 0)
+                to_name = COLOR_NAMES.get(to_color, f"color_{to_color}")
+                lines.append(f"- **{color_name.upper()} ({color})**: COLOR CHANGE to {to_name} ({to_color})")
+            elif t_type == "reflection":
+                axis = params.get("axis", "horizontal")
+                lines.append(f"- **{color_name.upper()} ({color})**: REFLECT axis={axis}")
+            elif t_type == "identity":
+                lines.append(f"- **{color_name.upper()} ({color})**: NO CHANGE (identity)")
+            else:
+                lines.append(f"- **{color_name.upper()} ({color})**: {t_type} {params}")
+        
+        return "\n".join(lines) if lines else "No per-color transformations detected."
+    
+    def _transform_to_action_hint(self, color: int, transform: Any) -> str:
+        """Convert a transformation to an action JSON hint."""
+        if hasattr(transform, 'transformation_type'):
+            t_type = transform.transformation_type
+            params = transform.parameters
+        else:
+            t_type = transform.get('transformation_type', 'unknown')
+            params = transform.get('parameters', {})
+        
+        if t_type == "translation":
+            return f'{{"color": {color}, "action": "translate", "params": {{"dx": DX, "dy": DY}}}}'
+        elif t_type == "rotation":
+            return f'{{"color": {color}, "action": "rotate", "params": {{"angle": ANGLE}}}}'
+        elif t_type == "color_change":
+            return f'{{"color": {color}, "action": "color_change", "params": {{"from_color": {color}, "to_color": TO_COLOR}}}}'
+        elif t_type == "reflection":
+            return f'{{"color": {color}, "action": "reflect", "params": {{"axis": "AXIS"}}}}'
+        else:
+            return f'{{"color": {color}, "action": "identity", "params": {{}}}}'

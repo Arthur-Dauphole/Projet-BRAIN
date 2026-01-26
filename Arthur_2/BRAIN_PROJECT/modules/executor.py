@@ -646,3 +646,194 @@ class ActionExecutor:
             if self.verbose:
                 print(f"  Action failed: {result.message}")
             return grid
+    
+    # ==================== MULTI-TRANSFORM SUPPORT ====================
+    
+    def execute_multi_actions(
+        self, 
+        grid: Grid, 
+        multi_actions: List[Dict[str, Any]]
+    ) -> ActionResult:
+        """
+        Execute multiple actions, each targeting a specific color.
+        
+        This applies different transformations to different colored objects
+        in a single grid.
+        
+        Args:
+            grid: The input Grid to transform
+            multi_actions: List of action dictionaries, each with:
+                - "color": int - The color to apply the action to
+                - "action": str - The action type
+                - "params": dict - Action-specific parameters
+        
+        Returns:
+            ActionResult with the final transformed grid
+        """
+        if not multi_actions:
+            return ActionResult(
+                success=False,
+                message="No actions provided"
+            )
+        
+        if self.verbose:
+            print(f"  Executing {len(multi_actions)} multi-actions...")
+        
+        height, width = grid.data.shape
+        
+        # Start with a blank grid (we'll rebuild it with transformed objects)
+        result_data = np.zeros((height, width), dtype=np.int64)
+        
+        # Track which pixels have been processed
+        processed_colors = set()
+        action_messages = []
+        
+        for action_entry in multi_actions:
+            color = action_entry.get("color")
+            action_type = action_entry.get("action", "").lower()
+            params = action_entry.get("params", {})
+            
+            if color is None:
+                continue
+            
+            color = int(color)
+            processed_colors.add(color)
+            
+            if self.verbose:
+                print(f"    Processing color {color}: {action_type} with {params}")
+            
+            # Extract pixels of this color from original grid
+            color_mask = grid.data == color
+            if not np.any(color_mask):
+                if self.verbose:
+                    print(f"      No pixels found for color {color}")
+                continue
+            
+            # Apply the transformation based on action type
+            if action_type == "identity":
+                # No change - just copy to result
+                result_data[color_mask] = color
+                action_messages.append(f"Color {color}: identity (no change)")
+                
+            elif action_type == "translate":
+                dx = int(params.get("dx", 0))
+                dy = int(params.get("dy", 0))
+                
+                # Apply translation
+                for r in range(height):
+                    for c in range(width):
+                        if grid.data[r, c] == color:
+                            nr, nc = r + dy, c + dx
+                            if 0 <= nr < height and 0 <= nc < width:
+                                result_data[nr, nc] = color
+                
+                action_messages.append(f"Color {color}: translate dx={dx}, dy={dy}")
+                
+            elif action_type == "rotate":
+                angle = int(params.get("angle", 90))
+                
+                # Extract object pixels
+                rows, cols = np.where(grid.data == color)
+                if len(rows) == 0:
+                    continue
+                
+                min_r, max_r = rows.min(), rows.max()
+                min_c, max_c = cols.min(), cols.max()
+                
+                # Create local object
+                obj_h = max_r - min_r + 1
+                obj_w = max_c - min_c + 1
+                obj_data = np.zeros((obj_h, obj_w), dtype=np.int64)
+                
+                for r, c in zip(rows, cols):
+                    obj_data[r - min_r, c - min_c] = color
+                
+                # Rotate
+                k = angle // 90
+                rotated_obj = np.rot90(obj_data, k=k)
+                new_h, new_w = rotated_obj.shape
+                
+                # Calculate new position (center on original center)
+                center_r = (min_r + max_r) // 2
+                center_c = (min_c + max_c) // 2
+                new_min_r = center_r - new_h // 2
+                new_min_c = center_c - new_w // 2
+                
+                # Place rotated object
+                for r in range(new_h):
+                    for c in range(new_w):
+                        if rotated_obj[r, c] != 0:
+                            nr, nc = new_min_r + r, new_min_c + c
+                            if 0 <= nr < height and 0 <= nc < width:
+                                result_data[nr, nc] = rotated_obj[r, c]
+                
+                action_messages.append(f"Color {color}: rotate {angle}°")
+                
+            elif action_type == "color_change":
+                from_color = int(params.get("from_color", color))
+                to_color = int(params.get("to_color", color))
+                
+                # Copy pixels with new color
+                for r in range(height):
+                    for c in range(width):
+                        if grid.data[r, c] == from_color:
+                            result_data[r, c] = to_color
+                
+                action_messages.append(f"Color {color}: change to {to_color}")
+                
+            elif action_type == "reflect":
+                axis = params.get("axis", "horizontal")
+                
+                # Extract object pixels
+                rows, cols = np.where(grid.data == color)
+                if len(rows) == 0:
+                    continue
+                
+                min_r, max_r = rows.min(), rows.max()
+                min_c, max_c = cols.min(), cols.max()
+                
+                # Create local object
+                obj_h = max_r - min_r + 1
+                obj_w = max_c - min_c + 1
+                obj_data = np.zeros((obj_h, obj_w), dtype=np.int64)
+                
+                for r, c in zip(rows, cols):
+                    obj_data[r - min_r, c - min_c] = color
+                
+                # Reflect
+                if axis == "horizontal":
+                    reflected_obj = np.flipud(obj_data)
+                elif axis == "vertical":
+                    reflected_obj = np.fliplr(obj_data)
+                else:
+                    reflected_obj = obj_data
+                
+                # Place reflected object at same position
+                for r in range(obj_h):
+                    for c in range(obj_w):
+                        if reflected_obj[r, c] != 0:
+                            nr, nc = min_r + r, min_c + c
+                            if 0 <= nr < height and 0 <= nc < width:
+                                result_data[nr, nc] = reflected_obj[r, c]
+                
+                action_messages.append(f"Color {color}: reflect {axis}")
+            
+            else:
+                # Unknown action - just copy original
+                result_data[color_mask] = color
+                action_messages.append(f"Color {color}: unknown action '{action_type}', copied as-is")
+        
+        # Copy any colors that weren't processed (keep them as-is)
+        for color in grid.unique_colors:
+            if color not in processed_colors:
+                color_mask = grid.data == color
+                result_data[color_mask] = color
+                if self.verbose:
+                    print(f"    Color {color}: not in actions, keeping as-is")
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result_data),
+            message=f"Executed {len(multi_actions)} actions: " + "; ".join(action_messages),
+            details={"actions_executed": len(multi_actions), "colors_processed": list(processed_colors)}
+        )

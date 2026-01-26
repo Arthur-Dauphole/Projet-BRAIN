@@ -155,6 +155,14 @@ Input Grid → Perception → Prompting → LLM Reasoning → Execution → Anal
 
 ## 📝 Historique des versions
 
+### v1.2.0 (Janvier 2026) - Multi-Transform Support
+- ✅ **NOUVEAU: Mode Multi-Transform** (`--multi`) pour transformations différentes par couleur
+- ✅ Détection de transformations par couleur (`detect_per_color_transformations`)
+- ✅ Prompts spécialisés pour multi-transform
+- ✅ Parser multi-actions dans LLMClient
+- ✅ Executor multi-actions (`execute_multi_actions`)
+- ✅ Fichiers de test: `task_multi_objects_same_transform.json`, `task_challenge_multi_transform.json`
+
 ### v1.1.0 (Janvier 2026)
 - ✅ Amélioration du système de prompt avec "DETECTED TRANSFORMATION" explicite
 - ✅ Correction de la détection de translation (ignore dx=0, dy=0)
@@ -178,10 +186,10 @@ Input Grid → Perception → Prompting → LLM Reasoning → Execution → Anal
 
 - [ ] Détection de patterns répétitifs
 - [ ] Détection de sous-grilles
-- [ ] Support multi-objets dans les transformations (actions différentes par objet)
 - [ ] Mode batch pour évaluer plusieurs tâches
 - [ ] Export des résultats en JSON
-- [ ] Support de transformations composées (translation + rotation)
+- [ ] Support de transformations composées (translation + rotation simultanées)
+- [ ] Auto-détection du mode (single vs multi-transform)
 
 ---
 
@@ -189,7 +197,23 @@ Input Grid → Perception → Prompting → LLM Reasoning → Execution → Anal
 
 | Limitation | Description |
 |------------|-------------|
-| Couleurs différentes entre exemples | Si chaque exemple d'entraînement a une couleur différente, la correspondance objet-à-objet peut échouer |
-| Transformations composées | Le système détecte UNE transformation, pas des combinaisons |
+| Couleurs différentes entre exemples | En mode standard, si chaque exemple a une couleur différente, utiliser `--multi` |
+| Transformations composées | Une seule transformation par couleur en mode multi |
 | Taille de grille variable | Non supporté actuellement |
-| Objets multiples avec transformations différentes | Non supporté - tous les objets subissent la même transformation |
+| Dépendance LLM | Le mode multi nécessite que le LLM retourne le bon format JSON |
+
+---
+
+## 🔧 Modes d'utilisation
+
+### Mode Standard (défaut)
+```bash
+python main.py --task data/task.json
+```
+Applique la MÊME transformation à TOUS les objets.
+
+### Mode Multi-Transform
+```bash
+python main.py --task data/task.json --multi
+```
+Applique des transformations DIFFÉRENTES à chaque COULEUR.
