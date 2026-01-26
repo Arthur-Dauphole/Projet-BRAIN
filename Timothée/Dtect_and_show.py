@@ -494,7 +494,7 @@ def save_results_to_json(results: Dict, filepath: str) -> None:
         json.dump(results, f, indent=2)
 
 # --- Fonction principale avec visualisation ---
-def main(visualize: bool = True, json_file: str = "Timothée\GridTestPAM_JSON"):
+def main(visualize: bool = True, json_file: str = "Timothée\GridTestPAM_JSON.json"):
     """
     Fonction principale avec option de visualisation.
     
