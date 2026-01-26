@@ -1,0 +1,801 @@
+"""
+SYSTÈME AVANCÉ DE DÉTECTION ET MATCHING DE FORMES
+- Détection précise des formes
+- Association 1:1 entre formes input/output
+- Détection de translations même avec formes immobiles
+"""
+
+import json
+import matplotlib.pyplot as plt
+import numpy as np
+from collections import defaultdict
+from typing import List, Dict, Tuple, Set, Optional
+import copy
+from dataclasses import dataclass, field
+from enum import Enum
+from scipy.spatial import distance
+
+# ============================================
+# PARTIE 1: STRUCTURES GÉOMÉTRIQUES
+# ============================================
+
+class Direction(Enum):
+    NORTH = (0, -1)
+    SOUTH = (0, 1)
+    EAST = (1, 0)
+    WEST = (-1, 0)
+
+@dataclass(frozen=True)
+class Point:
+    x: int
+    y: int
+    
+    def __add__(self, other: "Point") -> "Point":
+        return Point(self.x + other.x, self.y + other.y)
+    
+    def __hash__(self) -> int:
+        return hash((self.x, self.y))
+    
+    def distance(self, other: "Point") -> float:
+        return np.sqrt((self.x - other.x)**2 + (self.y - other.y)**2)
+
+@dataclass
+class BoundingBox:
+    min_x: int
+    min_y: int
+    max_x: int
+    max_y: int
+    
+    @property
+    def width(self) -> int:
+        return self.max_x - self.min_x + 1
+    
+    @property
+    def height(self) -> int:
+        return self.max_y - self.min_y + 1
+    
+    @property
+    def center(self) -> Point:
+        return Point((self.min_x + self.max_x) // 2, (self.min_y + self.max_y) // 2)
+    
+    @property
+    def area(self) -> int:
+        return self.width * self.height
+
+@dataclass
+class ShapeSignature:
+    """Signature unique d'une forme pour le matching"""
+    shape_type: str
+    color: int
+    width: int
+    height: int
+    area: int
+    aspect_ratio: float
+    center: Point
+    
+    def similarity(self, other: "ShapeSignature") -> float:
+        """Calcule la similarité entre deux signatures (0-1)"""
+        score = 0.0
+        
+        # Type et couleur doivent correspondre
+        if self.shape_type != other.shape_type:
+            return 0.0
+        
+        # Poids pour chaque caractéristique
+        weights = {
+            'color': 0.3,
+            'size': 0.3,
+            'aspect': 0.2,
+            'area': 0.2
+        }
+        
+        # Couleur
+        if self.color == other.color:
+            score += weights['color']
+        
+        # Taille similaire
+        size_diff = abs(self.width - other.width) + abs(self.height - other.height)
+        max_size = max(self.width, self.height, other.width, other.height)
+        if max_size > 0:
+            score += weights['size'] * (1 - size_diff / (max_size * 2))
+        
+        # Ratio d'aspect
+        aspect_diff = abs(self.aspect_ratio - other.aspect_ratio)
+        score += weights['aspect'] * (1 - min(aspect_diff, 1.0))
+        
+        # Surface
+        area_diff = abs(self.area - other.area) / max(self.area, other.area)
+        score += weights['area'] * (1 - area_diff)
+        
+        return score
+
+@dataclass
+class GeometricShape:
+    """Forme géométrique avec signature"""
+    shape_type: str
+    pixels: Set[Point]
+    color: int
+    bounding_box: BoundingBox
+    id: int = field(default_factory=lambda: id(object()))
+    
+    @property
+    def signature(self) -> ShapeSignature:
+        return ShapeSignature(
+            shape_type=self.shape_type,
+            color=self.color,
+            width=self.bounding_box.width,
+            height=self.bounding_box.height,
+            area=len(self.pixels),
+            aspect_ratio=self.bounding_box.width / max(self.bounding_box.height, 1),
+            center=self.bounding_box.center
+        )
+    
+    def get_contour(self) -> Set[Point]:
+        """Extrait le contour de la forme"""
+        contour = set()
+        for pixel in self.pixels:
+            neighbors = [
+                Point(pixel.x+1, pixel.y),
+                Point(pixel.x-1, pixel.y),
+                Point(pixel.x, pixel.y+1),
+                Point(pixel.x, pixel.y-1)
+            ]
+            if any(neighbor not in self.pixels for neighbor in neighbors):
+                contour.add(pixel)
+        return contour
+
+# ============================================
+# PARTIE 2: UTILITAIRES DE GRILLE
+# ============================================
+
+class GridUtils:
+    @staticmethod
+    def list_to_numpy(grid: List[List[int]]) -> np.ndarray:
+        return np.array(grid, dtype=int)
+    
+    @staticmethod
+    def numpy_to_list(grid: np.ndarray) -> List[List[int]]:
+        return grid.tolist()
+    
+    @staticmethod
+    def extract_connected_components(grid: np.ndarray, background: int = 0) -> List[Set[Point]]:
+        h, w = grid.shape
+        visited = np.zeros((h, w), dtype=bool)
+        components = []
+        
+        def bfs(x: int, y: int, color: int) -> Set[Point]:
+            component = set()
+            queue = [(x, y)]
+            visited[y, x] = True
+            
+            while queue:
+                cx, cy = queue.pop(0)
+                component.add(Point(cx, cy))
+                
+                for dx, dy in [(1,0),(-1,0),(0,1),(0,-1)]:
+                    nx, ny = cx + dx, cy + dy
+                    if 0 <= nx < w and 0 <= ny < h:
+                        if not visited[ny, nx] and grid[ny, nx] == color:
+                            visited[ny, nx] = True
+                            queue.append((nx, ny))
+            
+            return component
+        
+        for y in range(h):
+            for x in range(w):
+                if not visited[y, x] and grid[y, x] != background:
+                    component = bfs(x, y, grid[y, x])
+                    if component:
+                        components.append(component)
+        
+        return components
+    
+    @staticmethod
+    def compute_bounding_box(points: Set[Point]) -> BoundingBox:
+        xs = [p.x for p in points]
+        ys = [p.y for p in points]
+        return BoundingBox(min(xs), min(ys), max(xs), max(ys))
+
+# ============================================
+# PARTIE 3: DÉTECTEURS DE FORMES AMÉLIORÉS
+# ============================================
+
+class ShapeDetector:
+    """Détecteur polyvalent de formes"""
+    
+    @staticmethod
+    def detect_shapes(grid: List[List[int]], background: int = 0) -> List[GeometricShape]:
+        """Détecte tous les objets dans la grille"""
+        np_grid = GridUtils.list_to_numpy(grid)
+        components = GridUtils.extract_connected_components(np_grid, background)
+        shapes = []
+        
+        for idx, component in enumerate(components):
+            if len(component) < 1:
+                continue
+            
+            bbox = GridUtils.compute_bounding_box(component)
+            sample_point = next(iter(component))
+            color = np_grid[sample_point.y, sample_point.x]
+            
+            # Détecter le type de forme
+            shape_type = ShapeDetector._classify_shape(component, bbox)
+            
+            shape = GeometricShape(
+                shape_type=shape_type,
+                pixels=component,
+                color=color,
+                bounding_box=bbox,
+                id=idx
+            )
+            
+            shapes.append(shape)
+        
+        return shapes
+    
+    @staticmethod
+    def _classify_shape(pixels: Set[Point], bbox: BoundingBox) -> str:
+        """Classifie le type de forme"""
+        area = len(pixels)
+        bbox_area = bbox.area
+        
+        # Si la forme remplit presque toute la bounding box
+        if bbox_area > 0 and area / bbox_area > 0.9:
+            if bbox.width == bbox.height:
+                return "square"
+            elif abs(bbox.width - bbox.height) <= 2:
+                return "rectangle"
+            else:
+                return "filled_shape"
+        
+        # Si la forme est linéaire
+        xs = {p.x for p in pixels}
+        ys = {p.y for p in pixels}
+        
+        if len(ys) == 1:
+            return "horizontal_line"
+        elif len(xs) == 1:
+            return "vertical_line"
+        elif len(xs) == len(pixels) and len(ys) == len(pixels):
+            return "diagonal_line"
+        
+        # Forme complexe
+        return "blob"
+
+# ============================================
+# PARTIE 4: MATCHING DE FORMES
+# ============================================
+
+class ShapeMatcher:
+    """Associe les formes entre input et output"""
+    
+    @staticmethod
+    def match_shapes(input_shapes: List[GeometricShape], 
+                    output_shapes: List[GeometricShape],
+                    color_changes: Dict[int, int]) -> List[Tuple[GeometricShape, GeometricShape, Dict]]:
+        """
+        Trouve les paires correspondantes entre input et output.
+        Retourne: [(shape_in, shape_out, transformation)]
+        """
+        matches = []
+        used_outputs = set()
+        
+        # Pour chaque forme d'entrée, trouver la meilleure correspondance en sortie
+        for shape_in in input_shapes:
+            best_match = None
+            best_score = 0
+            best_transformation = {}
+            
+            # Couleur attendue en sortie (avec changement potentiel)
+            expected_color = color_changes.get(shape_in.color, shape_in.color)
+            
+            for shape_out in output_shapes:
+                if shape_out.id in used_outputs:
+                    continue
+                
+                # Score de similarité
+                score = shape_in.signature.similarity(shape_out.signature)
+                
+                # Ajuster pour la couleur (avec changement potentiel)
+                if shape_out.color != expected_color:
+                    score *= 0.5  # Pénalité pour changement de couleur non prévu
+                
+                if score > best_score and score > 0.6:  # Seuil de similarité
+                    best_score = score
+                    best_match = shape_out
+                    
+                    # Analyser la transformation
+                    transformation = ShapeMatcher._analyze_transformation(shape_in, shape_out)
+                    best_transformation = transformation
+            
+            if best_match:
+                matches.append((shape_in, best_match, best_transformation))
+                used_outputs.add(best_match.id)
+        
+        return matches
+    
+    @staticmethod
+    def _analyze_transformation(shape_in: GeometricShape, 
+                               shape_out: GeometricShape) -> Dict:
+        """Analyse la transformation entre deux formes"""
+        transformation = {}
+        
+        # Translation
+        dx = shape_out.bounding_box.center.x - shape_in.bounding_box.center.x
+        dy = shape_out.bounding_box.center.y - shape_in.bounding_box.center.y
+        
+        if dx != 0 or dy != 0:
+            transformation['type'] = 'translation'
+            transformation['dx'] = dx
+            transformation['dy'] = dy
+        
+        # Changement de couleur
+        if shape_in.color != shape_out.color:
+            transformation['color_change'] = (shape_in.color, shape_out.color)
+        
+        # Changement de taille
+        size_ratio = shape_out.bounding_box.area / max(shape_in.bounding_box.area, 1)
+        if abs(size_ratio - 1.0) > 0.1:  # Plus de 10% de changement
+            transformation['scaling'] = size_ratio
+        
+        return transformation
+
+# ============================================
+# PARTIE 5: EXTRACTION DE RÈGLES AVANCÉE
+# ============================================
+
+class RuleExtractor:
+    """Extrait les règles à partir des paires input/output"""
+    
+    def __init__(self):
+        self.rules = {
+            'color_changes': {},  # {old_color: new_color}
+            'translations': {},   # {color: (dx, dy)}
+            'shape_rules': [],    # Règles spécifiques aux formes
+            'global_translation': None  # Translation globale
+        }
+    
+    def extract_from_examples(self, examples: List[Dict]) -> None:
+        """Extrait les règles de plusieurs exemples"""
+        all_translations = []
+        
+        for example in examples:
+            input_grid = example["input"]
+            output_grid = example["output"]
+            
+            # Détecter les formes
+            input_shapes = ShapeDetector.detect_shapes(input_grid)
+            output_shapes = ShapeDetector.detect_shapes(output_grid)
+            
+            # Extraire les changements de couleur
+            self._extract_color_changes(input_grid, output_grid)
+            
+            # Matcher les formes
+            matches = ShapeMatcher.match_shapes(
+                input_shapes, output_shapes, self.rules['color_changes']
+            )
+            
+            # Analyser les transformations
+            for shape_in, shape_out, transformation in matches:
+                self._analyze_shape_transformation(
+                    shape_in, shape_out, transformation
+                )
+            
+            # Vérifier si c'est une translation globale
+            translation = self._detect_global_translation(input_shapes, output_shapes)
+            if translation:
+                all_translations.append(translation)
+        
+        # Déterminer la translation la plus fréquente
+        if all_translations:
+            self.rules['global_translation'] = self._most_common_translation(all_translations)
+    
+    def _extract_color_changes(self, input_grid: List[List[int]], 
+                              output_grid: List[List[int]]) -> None:
+        """Extrait les changements de couleur pixel par pixel"""
+        h, w = len(input_grid), len(input_grid[0])
+        
+        for i in range(h):
+            for j in range(w):
+                old_color = input_grid[i][j]
+                new_color = output_grid[i][j]
+                
+                if old_color != 0 and old_color != new_color:
+                    if old_color in self.rules['color_changes']:
+                        # Conflit: même couleur d'entrée → couleurs de sortie différentes
+                        if self.rules['color_changes'][old_color] != new_color:
+                            # Garder la plus fréquente ou la dernière? On garde la dernière pour l'instant
+                            pass
+                    self.rules['color_changes'][old_color] = new_color
+    
+    def _analyze_shape_transformation(self, shape_in: GeometricShape,
+                                     shape_out: GeometricShape,
+                                     transformation: Dict) -> None:
+        """Enregistre une règle de transformation de forme"""
+        if 'type' in transformation and transformation['type'] == 'translation':
+            rule = {
+                'shape_type': shape_in.shape_type,
+                'color_in': shape_in.color,
+                'color_out': shape_out.color,
+                'dx': transformation['dx'],
+                'dy': transformation['dy'],
+                'size_in': (shape_in.bounding_box.width, shape_in.bounding_box.height),
+                'size_out': (shape_out.bounding_box.width, shape_out.bounding_box.height)
+            }
+            
+            # Vérifier si c'est une règle déjà connue
+            existing_rule = None
+            for r in self.rules['shape_rules']:
+                if (r['shape_type'] == rule['shape_type'] and 
+                    r['color_in'] == rule['color_in'] and
+                    r['dx'] == rule['dx'] and r['dy'] == rule['dy']):
+                    existing_rule = r
+                    break
+            
+            if not existing_rule:
+                self.rules['shape_rules'].append(rule)
+    
+    def _detect_global_translation(self, input_shapes: List[GeometricShape],
+                                 output_shapes: List[GeometricShape]) -> Optional[Tuple[int, int]]:
+        """Détecte une translation globale de toutes les formes"""
+        if len(input_shapes) != len(output_shapes):
+            return None
+        
+        # Trier les formes par position pour les comparer
+        input_sorted = sorted(input_shapes, key=lambda s: (s.bounding_box.center.x, s.bounding_box.center.y))
+        output_sorted = sorted(output_shapes, key=lambda s: (s.bounding_box.center.x, s.bounding_box.center.y))
+        
+        translations = []
+        for in_shape, out_shape in zip(input_sorted, output_sorted):
+            dx = out_shape.bounding_box.center.x - in_shape.bounding_box.center.x
+            dy = out_shape.bounding_box.center.y - in_shape.bounding_box.center.y
+            translations.append((dx, dy))
+        
+        # Vérifier si toutes les translations sont identiques
+        if all(t == translations[0] for t in translations):
+            return translations[0]
+        
+        return None
+    
+    def _most_common_translation(self, translations: List[Tuple[int, int]]) -> Tuple[int, int]:
+        """Trouve la translation la plus fréquente"""
+        from collections import Counter
+        counter = Counter(translations)
+        return counter.most_common(1)[0][0]
+
+# ============================================
+# PARTIE 6: APPLICATION DES RÈGLES
+# ============================================
+
+class RuleApplier:
+    """Applique les règles aux nouvelles grilles"""
+    
+    def __init__(self, rules: Dict):
+        self.rules = rules
+    
+    def apply_to_grid(self, input_grid: List[List[int]]) -> List[List[int]]:
+        """Applique toutes les règles à une grille d'entrée"""
+        grid = copy.deepcopy(input_grid)
+        
+        # 1. Appliquer les changements de couleur
+        grid = self._apply_color_changes(grid)
+        
+        # 2. Détecter les formes
+        shapes = ShapeDetector.detect_shapes(grid)
+        
+        # 3. Appliquer les translations par forme
+        if self.rules['shape_rules']:
+            grid = self._apply_shape_translations(grid, shapes)
+        
+        # 4. Appliquer la translation globale
+        if self.rules.get('global_translation'):
+            grid = self._apply_global_translation(grid, shapes)
+        
+        return grid
+    
+    def _apply_color_changes(self, grid: List[List[int]]) -> List[List[int]]:
+        """Applique les changements de couleur"""
+        h, w = len(grid), len(grid[0])
+        
+        for i in range(h):
+            for j in range(w):
+                if grid[i][j] in self.rules['color_changes']:
+                    grid[i][j] = self.rules['color_changes'][grid[i][j]]
+        
+        return grid
+    
+    def _apply_shape_translations(self, grid: List[List[int]], 
+                                 shapes: List[GeometricShape]) -> List[List[int]]:
+        """Applique les translations spécifiques aux formes"""
+        result_grid = copy.deepcopy(grid)
+        
+        for rule in self.rules['shape_rules']:
+            for shape in shapes:
+                # Vérifier si la forme correspond à la règle
+                if (shape.shape_type == rule['shape_type'] and 
+                    shape.color == rule['color_in']):
+                    
+                    # Translater chaque pixel de la forme
+                    for pixel in shape.pixels:
+                        # Effacer l'ancienne position
+                        if (0 <= pixel.y < len(result_grid) and 
+                            0 <= pixel.x < len(result_grid[0])):
+                            result_grid[pixel.y][pixel.x] = 0
+                        
+                        # Nouvelle position
+                        new_x = pixel.x + rule['dx']
+                        new_y = pixel.y + rule['dy']
+                        
+                        if (0 <= new_y < len(result_grid) and 
+                            0 <= new_x < len(result_grid[0])):
+                            # Appliquer le changement de couleur si spécifié
+                            new_color = rule.get('color_out', rule['color_in'])
+                            result_grid[new_y][new_x] = new_color
+        
+        return result_grid
+    
+    def _apply_global_translation(self, grid: List[List[int]],
+                                 shapes: List[GeometricShape]) -> List[List[int]]:
+        """Applique une translation globale à toutes les formes"""
+        result_grid = [[0 for _ in range(len(grid[0]))] for _ in range(len(grid))]
+        
+        dx, dy = self.rules['global_translation']
+        
+        # Copier le fond d'abord
+        for y in range(len(grid)):
+            for x in range(len(grid[0])):
+                if grid[y][x] != 0:
+                    new_x = x + dx
+                    new_y = y + dy
+                    
+                    if (0 <= new_y < len(result_grid) and 
+                        0 <= new_x < len(result_grid[0])):
+                        result_grid[new_y][new_x] = grid[y][x]
+        
+        return result_grid
+
+# ============================================
+# PARTIE 7: VISUALISATION
+# ============================================
+
+class ColorMapper:
+    COLOR_MAP = {
+        0: "#000000", 1: "#0074D9", 2: "#FF4136", 3: "#2ECC40",
+        4: "#FFDC00", 5: "#AAAAAA", 6: "#F012BE", 7: "#FF851B",
+        8: "#7FDBFF", 9: "#870C25"
+    }
+    
+    @staticmethod
+    def hex(color_code: int) -> str:
+        return ColorMapper.COLOR_MAP.get(color_code, "#FFFFFF")
+
+def grid_to_rgb(grid: List[List[int]]) -> np.ndarray:
+    h, w = len(grid), len(grid[0])
+    rgb_array = np.zeros((h, w, 3))
+    
+    for y in range(h):
+        for x in range(w):
+            hex_color = ColorMapper.hex(grid[y][x])
+            hex_color = hex_color.lstrip('#')
+            rgb = tuple(int(hex_color[i:i+2], 16) / 255.0 
+                       for i in (0, 2, 4))
+            rgb_array[y, x] = rgb
+    
+    return rgb_array
+
+def visualize_analysis(input_grid: List[List[int]], 
+                      output_grid: List[List[int]],
+                      input_shapes: List[GeometricShape],
+                      output_shapes: List[GeometricShape],
+                      matches: List[Tuple[GeometricShape, GeometricShape, Dict]]):
+    """Visualise l'analyse complète avec matching"""
+    fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+    
+    # Grille input avec formes
+    ax1 = axes[0, 0]
+    ax1.imshow(grid_to_rgb(input_grid))
+    for shape in input_shapes:
+        bbox = shape.bounding_box
+        rect = plt.Rectangle((bbox.min_x-0.5, bbox.min_y-0.5), 
+                            bbox.width, bbox.height,
+                            linewidth=2, edgecolor='white', facecolor='none')
+        ax1.add_patch(rect)
+        ax1.text(bbox.min_x, bbox.min_y-1, f"{shape.shape_type[:3]}-{shape.color}", 
+                color='white', fontsize=8, fontweight='bold')
+    ax1.set_title("INPUT - Formes détectées", fontsize=12, fontweight='bold')
+    
+    # Grille output avec formes
+    ax2 = axes[0, 1]
+    ax2.imshow(grid_to_rgb(output_grid))
+    for shape in output_shapes:
+        bbox = shape.bounding_box
+        rect = plt.Rectangle((bbox.min_x-0.5, bbox.min_y-0.5), 
+                            bbox.width, bbox.height,
+                            linewidth=2, edgecolor='white', facecolor='none')
+        ax2.add_patch(rect)
+        ax2.text(bbox.min_x, bbox.min_y-1, f"{shape.shape_type[:3]}-{shape.color}", 
+                color='white', fontsize=8, fontweight='bold')
+    ax2.set_title("OUTPUT - Formes détectées", fontsize=12, fontweight='bold')
+    
+    # Matching entre formes
+    ax3 = axes[1, 0]
+    ax3.axis('off')
+    match_text = "ASSOCIATIONS FORME-À-FORME:\n\n"
+    
+    for i, (shape_in, shape_out, transformation) in enumerate(matches):
+        dx = transformation.get('dx', 0)
+        dy = transformation.get('dy', 0)
+        color_change = transformation.get('color_change')
+        
+        match_text += f"Forme {i+1}:\n"
+        match_text += f"  Input: {shape_in.shape_type} couleur {shape_in.color}\n"
+        match_text += f"  Output: {shape_out.shape_type} couleur {shape_out.color}\n"
+        
+        if dx != 0 or dy != 0:
+            match_text += f"  → Translation: ({dx}, {dy})\n"
+        
+        if color_change:
+            match_text += f"  → Changement couleur: {color_change[0]}→{color_change[1]}\n"
+        
+        match_text += "\n"
+    
+    if not matches:
+        match_text += "Aucune association trouvée"
+    
+    ax3.text(0.1, 0.5, match_text, fontsize=10, verticalalignment='center',
+             bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
+    ax3.set_title("Matching des Formes", fontsize=12, fontweight='bold')
+    
+    # Règles extraites
+    ax4 = axes[1, 1]
+    ax4.axis('off')
+    
+    rules_text = "RÈGLES EXTRACTES:\n\n"
+    
+    # Créer un extracteur temporaire pour cet exemple
+    extractor = RuleExtractor()
+    extractor.extract_from_examples([{"input": input_grid, "output": output_grid}])
+    
+    if extractor.rules['color_changes']:
+        rules_text += "Changements de couleur:\n"
+        for old, new in extractor.rules['color_changes'].items():
+            rules_text += f"  {old} → {new}\n"
+    
+    if extractor.rules['shape_rules']:
+        rules_text += "\nTranslations de formes:\n"
+        for rule in extractor.rules['shape_rules']:
+            rules_text += f"  {rule['shape_type']} {rule['color_in']}: ({rule['dx']}, {rule['dy']})\n"
+    
+    if extractor.rules['global_translation']:
+        dx, dy = extractor.rules['global_translation']
+        rules_text += f"\nTranslation globale: ({dx}, {dy})"
+    
+    ax4.text(0.1, 0.5, rules_text, fontsize=10, verticalalignment='center',
+             bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.8))
+    ax4.set_title("Règles Extraites", fontsize=12, fontweight='bold')
+    
+    plt.suptitle("ANALYSE COMPLÈTE DES FORMES", fontsize=16, fontweight='bold', y=0.95)
+    plt.tight_layout()
+    plt.show()
+
+# ============================================
+# PARTIE 8: FONCTIONS PRINCIPALES
+# ============================================
+
+def analyze_single_example(input_grid: List[List[int]], output_grid: List[List[int]]):
+    """Analyse un seul exemple en détail"""
+    print("=== ANALYSE DÉTAILLÉE D'UN EXEMPLE ===")
+    
+    # Détecter les formes
+    input_shapes = ShapeDetector.detect_shapes(input_grid)
+    output_shapes = ShapeDetector.detect_shapes(output_grid)
+    
+    print(f"Formes détectées en input: {len(input_shapes)}")
+    print(f"Formes détectées en output: {len(output_shapes)}")
+    
+    # Extraire les changements de couleur
+    extractor = RuleExtractor()
+    extractor._extract_color_changes(input_grid, output_grid)
+    
+    # Matcher les formes
+    matches = ShapeMatcher.match_shapes(
+        input_shapes, output_shapes, extractor.rules['color_changes']
+    )
+    
+    print(f"\nAssociations trouvées: {len(matches)}")
+    
+    # Visualiser
+    visualize_analysis(input_grid, output_grid, input_shapes, output_shapes, matches)
+    
+    # Extraire les règles complètes
+    extractor.extract_from_examples([{"input": input_grid, "output": output_grid}])
+    
+    return extractor.rules
+
+def solve_test_cases(train_examples: List[Dict], test_cases: List[Dict]) -> List[List[List[int]]]:
+    """Résout les cas de test en utilisant les règles des exemples"""
+    # Extraire les règles de tous les exemples d'entraînement
+    extractor = RuleExtractor()
+    extractor.extract_from_examples(train_examples)
+    
+    print("\n=== RÈGLES EXTRACTES (tous exemples) ===")
+    print(f"Changements de couleur: {extractor.rules['color_changes']}")
+    print(f"Règles de formes: {len(extractor.rules['shape_rules'])}")
+    if extractor.rules['global_translation']:
+        print(f"Translation globale: {extractor.rules['global_translation']}")
+    
+    # Appliquer aux tests
+    applier = RuleApplier(extractor.rules)
+    results = []
+    
+    for i, test in enumerate(test_cases):
+        print(f"\n=== TEST {i+1} ===")
+        
+        input_grid = test["input"]
+        output_grid = applier.apply_to_grid(input_grid)
+        results.append(output_grid)
+        
+        # Afficher la prédiction
+        print("Input:")
+        for row in input_grid[:5]:  # Afficher seulement 5 premières lignes
+            print("  " + str(row))
+        if len(input_grid) > 5:
+            print("  ...")
+        
+        print("\nPrédiction:")
+        for row in output_grid[:5]:
+            print("  " + str(row))
+        if len(output_grid) > 5:
+            print("  ...")
+    
+    return results
+
+def main():
+    """Fonction principale"""
+    # Charger les données
+    import sys
+    
+    json_file = input("Nom du fichier JSON (défaut: grid_data.json): ").strip()
+    if not json_file:
+        json_file = "grid_data.json"
+    
+    try:
+        with open(json_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        print(f"Fichier '{json_file}' non trouvé.")
+        return
+    
+    # Analyser chaque exemple d'entraînement en détail
+    if "train" in data:
+        print("=== ANALYSE DES EXEMPLES D'ENTRAÎNEMENT ===")
+        for i, example in enumerate(data["train"]):
+            print(f"\n--- Exemple {i+1} ---")
+            rules = analyze_single_example(example["input"], example["output"])
+    
+    # Résoudre les tests
+    if "test" in data or "Test" in data:
+        test_key = "Test" if "Test" in data else "test"
+        test_cases = data[test_key]
+        
+        print("\n" + "="*50)
+        print("RÉSOLUTION DES TESTS")
+        print("="*50)
+        
+        results = solve_test_cases(data["train"], test_cases)
+        
+        # Sauvegarder les résultats
+        output_data = {
+            "test_results": [
+                {"input": test["input"], "output": result}
+                for test, result in zip(test_cases, results)
+            ]
+        }
+        
+        with open("grid_results.json", 'w', encoding='utf-8') as f:
+            json.dump(output_data, f, indent=2)
+        
+        print(f"\nRésultats sauvegardés dans 'grid_results.json'")
+
+if __name__ == "__main__":
+    main()

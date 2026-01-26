@@ -609,6 +609,7 @@ if __name__ == "__main__":
     visualize_input = input("Voulez-vous afficher les visualisations? (oui/non): ").strip().lower()
     visualize = visualize_input in ["oui", "o", "yes", "y"]
     
+    
     # Demander le nom du fichier JSON
     json_file = input("Nom du fichier JSON (défaut: grid_data.json): ").strip()
     if not json_file:
