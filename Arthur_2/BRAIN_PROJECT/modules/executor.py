@@ -59,7 +59,8 @@ class ActionExecutor:
         "color_change",
         "rotate",
         "reflect",
-        "scale"
+        "scale",
+        "draw_line"
     ]
     
     def __init__(self, verbose: bool = False):
@@ -364,11 +365,12 @@ class ActionExecutor:
     
     def _action_rotate(self, grid: Grid, action_data: dict) -> ActionResult:
         """
-        Rotate the grid or specific objects.
+        Rotate the grid or specific objects around their centroid.
         
         Parameters:
             params.angle: int - Rotation angle (90, 180, 270)
             color_filter: int (optional) - Only rotate pixels of this color
+                         If not provided, will auto-detect the non-background color
         
         Returns:
             ActionResult with rotated grid
@@ -383,6 +385,14 @@ class ActionExecutor:
                 message=f"Invalid rotation angle: {angle}. Must be 90, 180, or 270"
             )
         
+        # Auto-detect color if not provided and there's only one non-background color
+        if color_filter is None:
+            unique_colors = [c for c in grid.unique_colors if c != 0]
+            if len(unique_colors) == 1:
+                color_filter = unique_colors[0]
+                if self.verbose:
+                    print(f"  Auto-detected color_filter: {color_filter}")
+        
         if self.verbose:
             print(f"  Executing ROTATE: angle={angle}, color_filter={color_filter}")
         
@@ -393,12 +403,11 @@ class ActionExecutor:
             rotated = np.rot90(grid.data, k=k)
             result = np.array(rotated, dtype=np.int64)
         else:
-            # Rotate only specific color - more complex
-            # Extract object, rotate it, place back
+            # Rotate only specific color using centroid-based rotation
             color_filter = int(color_filter)
             height, width = grid.data.shape
             
-            # Find bounding box of colored pixels
+            # Find pixels of this color
             rows, cols = np.where(grid.data == color_filter)
             if len(rows) == 0:
                 return ActionResult(
@@ -406,20 +415,17 @@ class ActionExecutor:
                     message=f"No pixels found with color {color_filter}"
                 )
             
+            # Calculate centroid (center of mass)
+            centroid_r = np.mean(rows)
+            centroid_c = np.mean(cols)
+            
+            # Get bounding box for reference
             min_r, max_r = rows.min(), rows.max()
             min_c, max_c = cols.min(), cols.max()
             
-            # Extract the object
-            obj_height = max_r - min_r + 1
-            obj_width = max_c - min_c + 1
-            obj_data = np.zeros((obj_height, obj_width), dtype=np.int64)
-            
-            for r, c in zip(rows, cols):
-                obj_data[r - min_r, c - min_c] = color_filter
-            
-            # Rotate the object
-            rotated_obj = np.rot90(obj_data, k=k)
-            new_height, new_width = rotated_obj.shape
+            if self.verbose:
+                print(f"    Centroid: ({centroid_r:.1f}, {centroid_c:.1f})")
+                print(f"    Bounding box: ({min_r}, {min_c}) to ({max_r}, {max_c})")
             
             # Create result grid
             result = grid.data.copy()
@@ -428,24 +434,49 @@ class ActionExecutor:
             # Clear original position
             result[grid.data == color_filter] = 0
             
-            # Place rotated object (centered on original position)
-            center_r = (min_r + max_r) // 2
-            center_c = (min_c + max_c) // 2
+            # Rotate each pixel around the centroid
+            rotated_pixels = []
+            for r, c in zip(rows, cols):
+                # Translate to centroid origin
+                rel_r = r - centroid_r
+                rel_c = c - centroid_c
+                
+                # Apply rotation
+                if angle == 90:
+                    # 90° clockwise: (r, c) -> (c, -r)
+                    new_rel_r = rel_c
+                    new_rel_c = -rel_r
+                elif angle == 180:
+                    # 180°: (r, c) -> (-r, -c)
+                    new_rel_r = -rel_r
+                    new_rel_c = -rel_c
+                elif angle == 270:
+                    # 270° clockwise (90° counter-clockwise): (r, c) -> (-c, r)
+                    new_rel_r = -rel_c
+                    new_rel_c = rel_r
+                else:
+                    new_rel_r, new_rel_c = rel_r, rel_c
+                
+                # Translate back from centroid
+                new_r = round(new_rel_r + centroid_r)
+                new_c = round(new_rel_c + centroid_c)
+                
+                rotated_pixels.append((new_r, new_c))
             
-            new_min_r = center_r - new_height // 2
-            new_min_c = center_c - new_width // 2
+            # Place rotated pixels
+            pixels_placed = 0
+            for new_r, new_c in rotated_pixels:
+                if 0 <= new_r < height and 0 <= new_c < width:
+                    result[new_r, new_c] = color_filter
+                    pixels_placed += 1
             
-            for r in range(new_height):
-                for c in range(new_width):
-                    if rotated_obj[r, c] != 0:
-                        nr, nc = new_min_r + r, new_min_c + c
-                        if 0 <= nr < height and 0 <= nc < width:
-                            result[nr, nc] = rotated_obj[r, c]
+            if self.verbose:
+                print(f"    Placed {pixels_placed}/{len(rotated_pixels)} rotated pixels")
         
         return ActionResult(
             success=True,
             output_grid=Grid(data=result),
-            message=f"Rotated by {angle}°",
+            message=f"Rotated by {angle}° around centroid",
             details={"angle": angle, "color_filter": color_filter}
         )
     
@@ -457,6 +488,7 @@ class ActionExecutor:
             params.axis: str - "horizontal" (flip up-down), "vertical" (flip left-right),
                               "diagonal_main", "diagonal_anti"
             color_filter: int (optional) - Only reflect pixels of this color
+                         If not provided, will auto-detect the non-background color
         
         Returns:
             ActionResult with reflected grid
@@ -464,6 +496,14 @@ class ActionExecutor:
         params = action_data.get("params", {})
         axis = params.get("axis", "horizontal")
         color_filter = action_data.get("color_filter")
+        
+        # Auto-detect color if not provided and there's only one non-background color
+        if color_filter is None:
+            unique_colors = [c for c in grid.unique_colors if c != 0]
+            if len(unique_colors) == 1:
+                color_filter = unique_colors[0]
+                if self.verbose:
+                    print(f"  Auto-detected color_filter: {color_filter}")
         
         if self.verbose:
             print(f"  Executing REFLECT: axis={axis}, color_filter={color_filter}")
@@ -626,6 +666,148 @@ class ActionExecutor:
             message=f"Scaled by factor {factor}",
             details={"factor": factor, "color_filter": color_filter}
         )
+    
+    def _action_draw_line(self, grid: Grid, action_data: dict) -> ActionResult:
+        """
+        Draw a line between two points of the same color.
+        
+        This action detects exactly 2 pixels of a specific color and draws
+        a line connecting them using Bresenham's line algorithm.
+        
+        Parameters:
+            color_filter: int - The color of the two points to connect
+            OR
+            params.point1: dict - {"row": int, "col": int} first point
+            params.point2: dict - {"row": int, "col": int} second point
+            params.color: int - Color to draw the line with
+        
+        Returns:
+            ActionResult with the grid containing the drawn line
+        """
+        params = action_data.get("params", {})
+        color_filter = action_data.get("color_filter")
+        
+        # Try to get explicit points from params
+        point1 = params.get("point1")
+        point2 = params.get("point2")
+        line_color = params.get("color")
+        
+        if self.verbose:
+            print(f"  Executing DRAW_LINE: color_filter={color_filter}, params={params}")
+        
+        height, width = grid.data.shape
+        result = grid.data.copy()
+        result = np.array(result, dtype=np.int64)
+        
+        # If explicit points are given, use them
+        if point1 and point2:
+            r1, c1 = point1.get("row", 0), point1.get("col", 0)
+            r2, c2 = point2.get("row", 0), point2.get("col", 0)
+            
+            if line_color is None:
+                # Try to infer color from the grid at those positions
+                line_color = int(grid.data[r1, c1]) if grid.data[r1, c1] != 0 else 1
+        else:
+            # Auto-detect: find exactly 2 pixels of the specified color
+            if color_filter is None:
+                # Find any color with exactly 2 pixels
+                for color in range(1, 10):  # Colors 1-9
+                    positions = list(zip(*np.where(grid.data == color)))
+                    if len(positions) == 2:
+                        color_filter = color
+                        break
+            
+            if color_filter is None:
+                return ActionResult(
+                    success=False,
+                    message="Could not find two points to connect. Specify color_filter or params.point1/point2."
+                )
+            
+            color_filter = int(color_filter)
+            positions = list(zip(*np.where(grid.data == color_filter)))
+            
+            if len(positions) != 2:
+                return ActionResult(
+                    success=False,
+                    message=f"Expected exactly 2 pixels of color {color_filter}, found {len(positions)}"
+                )
+            
+            r1, c1 = positions[0]
+            r2, c2 = positions[1]
+            line_color = color_filter
+        
+        if self.verbose:
+            print(f"    Drawing line from ({r1}, {c1}) to ({r2}, {c2}) with color {line_color}")
+        
+        # Draw the line using Bresenham's algorithm
+        line_pixels = self._bresenham_line(r1, c1, r2, c2)
+        
+        for r, c in line_pixels:
+            if 0 <= r < height and 0 <= c < width:
+                result[r, c] = line_color
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result),
+            message=f"Drew line from ({r1}, {c1}) to ({r2}, {c2}) with color {line_color}",
+            details={
+                "point1": {"row": int(r1), "col": int(c1)},
+                "point2": {"row": int(r2), "col": int(c2)},
+                "color": int(line_color),
+                "pixels_drawn": len(line_pixels)
+            }
+        )
+    
+    def _bresenham_line(self, r1: int, c1: int, r2: int, c2: int) -> List[tuple]:
+        """
+        Generate all pixel coordinates for a line between two points.
+        Uses Bresenham's line algorithm for clean integer-based line drawing.
+        
+        Args:
+            r1, c1: Starting point (row, col)
+            r2, c2: Ending point (row, col)
+            
+        Returns:
+            List of (row, col) tuples forming the line
+        """
+        pixels = []
+        
+        dr = abs(r2 - r1)
+        dc = abs(c2 - c1)
+        
+        sr = 1 if r1 < r2 else -1
+        sc = 1 if c1 < c2 else -1
+        
+        if dc > dr:
+            # Line is more horizontal
+            err = dc // 2
+            r = r1
+            c = c1
+            while True:
+                pixels.append((r, c))
+                if c == c2:
+                    break
+                err -= dr
+                if err < 0:
+                    r += sr
+                    err += dc
+                c += sc
+        else:
+            # Line is more vertical or diagonal
+            err = dr // 2
+            r = r1
+            c = c1
+            while True:
+                pixels.append((r, c))
+                if r == r2:
+                    break
+                err -= dc
+                if err < 0:
+                    c += sc
+                    err += dr
+                r += sr
+        
+        return pixels
     
     def apply_action(self, grid: Grid, action_data: dict) -> Grid:
         """
@@ -817,6 +999,28 @@ class ActionExecutor:
                                 result_data[nr, nc] = reflected_obj[r, c]
                 
                 action_messages.append(f"Color {color}: reflect {axis}")
+            
+            elif action_type == "draw_line":
+                # Find the two points of this color and draw a line between them
+                rows, cols = np.where(grid.data == color)
+                positions = list(zip(rows, cols))
+                
+                if len(positions) == 2:
+                    r1, c1 = positions[0]
+                    r2, c2 = positions[1]
+                    
+                    # Draw line using Bresenham
+                    line_pixels = self._bresenham_line(r1, c1, r2, c2)
+                    
+                    for r, c in line_pixels:
+                        if 0 <= r < height and 0 <= c < width:
+                            result_data[r, c] = color
+                    
+                    action_messages.append(f"Color {color}: draw_line from ({r1},{c1}) to ({r2},{c2})")
+                else:
+                    # Just copy as-is if not exactly 2 points
+                    result_data[grid.data == color] = color
+                    action_messages.append(f"Color {color}: draw_line skipped (need exactly 2 points, found {len(positions)})")
             
             else:
                 # Unknown action - just copy original

@@ -9,6 +9,7 @@ Detects:
     - Reflection (horizontal, vertical, diagonal)
     - Color changes
     - Scaling
+    - Draw line (connecting two points)
 """
 
 from typing import List, Tuple, Optional, Dict, Any
@@ -68,17 +69,23 @@ class TransformationDetector:
         results = []
         
         # Try to detect various transformations
+        # Order matters! Reflection is checked BEFORE rotation because
+        # for same-dimension shapes, reflection is more likely than 180° rotation
+        
         translation = self.detect_translation(input_grid, output_grid)
         if translation:
             results.append(translation)
         
-        rotation = self.detect_rotation(input_grid, output_grid)
-        if rotation:
-            results.append(rotation)
-        
+        # Check reflection BEFORE rotation
         reflection = self.detect_reflection(input_grid, output_grid)
         if reflection:
             results.append(reflection)
+        
+        # Only check rotation if reflection wasn't found
+        if not reflection:
+            rotation = self.detect_rotation(input_grid, output_grid)
+            if rotation:
+                results.append(rotation)
         
         color_change = self.detect_color_change(input_grid, output_grid)
         if color_change:
@@ -87,6 +94,16 @@ class TransformationDetector:
         scaling = self.detect_scaling(input_grid, output_grid)
         if scaling:
             results.append(scaling)
+        
+        draw_line = self.detect_draw_line(input_grid, output_grid)
+        if draw_line:
+            results.append(draw_line)
+        
+        # Blob-specific transformation detection (only if nothing else found)
+        if not results:
+            blob_transform = self.detect_blob_transformation(input_grid, output_grid)
+            if blob_transform:
+                results.append(blob_transform)
         
         # Sort by confidence
         results.sort(key=lambda x: x.confidence, reverse=True)
@@ -202,7 +219,7 @@ class TransformationDetector:
     
     def detect_reflection(self, input_grid: Grid, output_grid: Grid) -> Optional[TransformationResult]:
         """
-        Detect if the grid is reflected (mirrored).
+        Detect if the grid or objects are reflected (mirrored).
         
         Returns:
             TransformationResult with axis if reflection detected
@@ -213,6 +230,27 @@ class TransformationDetector:
         if in_data.shape != out_data.shape:
             return None
         
+        # First, check OBJECT-LEVEL reflection (before grid-level)
+        # This is important for shapes that are reflected within their bounding box
+        if input_grid.objects and output_grid.objects:
+            for in_obj in input_grid.objects:
+                for out_obj in output_grid.objects:
+                    # Match by color, area, and same dimensions (reflection keeps dimensions)
+                    if (in_obj.color == out_obj.color and 
+                        in_obj.area == out_obj.area and
+                        in_obj.width == out_obj.width and 
+                        in_obj.height == out_obj.height):
+                        
+                        obj_reflection = self._detect_object_reflection(in_obj, out_obj)
+                        if obj_reflection:
+                            return TransformationResult(
+                                transformation_type="reflection",
+                                confidence=1.0,  # High confidence for object reflection
+                                parameters={"axis": obj_reflection, "per_object": True, "color": in_obj.color},
+                                objects_matched=[(in_obj, out_obj)]
+                            )
+        
+        # Grid-level reflection checks
         # Horizontal reflection (flip up-down)
         if np.array_equal(np.flipud(in_data), out_data):
             return TransformationResult(
@@ -246,6 +284,65 @@ class TransformationDetector:
                     confidence=1.0,
                     parameters={"axis": "diagonal_anti"}
                 )
+        
+        return None
+    
+    def _detect_object_reflection(self, in_obj: GeometricObject, out_obj: GeometricObject) -> Optional[str]:
+        """
+        Detect if an object has been reflected (mirrored) within its bounding box.
+        
+        Args:
+            in_obj: Input object
+            out_obj: Output object
+            
+        Returns:
+            "horizontal" or "vertical" if reflection detected, None otherwise
+        """
+        if not in_obj.pixels or not out_obj.pixels:
+            return None
+        
+        # Normalize both objects to origin
+        in_min_r = min(p[0] for p in in_obj.pixels)
+        in_min_c = min(p[1] for p in in_obj.pixels)
+        in_normalized = frozenset((p[0] - in_min_r, p[1] - in_min_c) for p in in_obj.pixels)
+        
+        out_min_r = min(p[0] for p in out_obj.pixels)
+        out_min_c = min(p[1] for p in out_obj.pixels)
+        out_normalized = frozenset((p[0] - out_min_r, p[1] - out_min_c) for p in out_obj.pixels)
+        
+        # If identical, no reflection (might be identity or translation)
+        if in_normalized == out_normalized:
+            return None
+        
+        # Get dimensions of normalized shape
+        in_h = max(p[0] for p in in_normalized) + 1
+        in_w = max(p[1] for p in in_normalized) + 1
+        
+        # Check vertical reflection (flip left-right)
+        vertical_reflected = set()
+        for r, c in in_normalized:
+            vertical_reflected.add((r, in_w - 1 - c))
+        # Re-normalize
+        if vertical_reflected:
+            vr_min_r = min(p[0] for p in vertical_reflected)
+            vr_min_c = min(p[1] for p in vertical_reflected)
+            vertical_reflected = frozenset((p[0] - vr_min_r, p[1] - vr_min_c) for p in vertical_reflected)
+        
+        if vertical_reflected == out_normalized:
+            return "vertical"
+        
+        # Check horizontal reflection (flip up-down)
+        horizontal_reflected = set()
+        for r, c in in_normalized:
+            horizontal_reflected.add((in_h - 1 - r, c))
+        # Re-normalize
+        if horizontal_reflected:
+            hr_min_r = min(p[0] for p in horizontal_reflected)
+            hr_min_c = min(p[1] for p in horizontal_reflected)
+            horizontal_reflected = frozenset((p[0] - hr_min_r, p[1] - hr_min_c) for p in horizontal_reflected)
+        
+        if horizontal_reflected == out_normalized:
+            return "horizontal"
         
         return None
     
@@ -330,6 +427,321 @@ class TransformationDetector:
             )
         
         return None
+    
+    def detect_draw_line(self, input_grid: Grid, output_grid: Grid) -> Optional[TransformationResult]:
+        """
+        Detect if two points in the input are connected by a line in the output.
+        
+        Checks:
+        1. Input has exactly 2 isolated pixels of the same color
+        2. Output has a line connecting those 2 points
+        
+        Returns:
+            TransformationResult with line endpoints if detected
+        """
+        # Analyze per-color to find pairs of points
+        for color in input_grid.unique_colors:
+            # Get positions of this color in input
+            in_positions = list(zip(*np.where(input_grid.data == color)))
+            
+            # We need exactly 2 pixels (two points)
+            if len(in_positions) != 2:
+                continue
+            
+            # Get positions of this color in output
+            out_positions = set(zip(*np.where(output_grid.data == color)))
+            
+            # Check if output has more pixels (a line was drawn)
+            if len(out_positions) <= 2:
+                continue
+            
+            # Verify that the original 2 points are in the output
+            if not all((r, c) in out_positions for r, c in in_positions):
+                continue
+            
+            # Check if output forms a valid line between the 2 points
+            p1, p2 = in_positions[0], in_positions[1]
+            expected_line = self._get_line_pixels(p1, p2)
+            
+            if set(expected_line) == out_positions:
+                return TransformationResult(
+                    transformation_type="draw_line",
+                    confidence=1.0,
+                    parameters={
+                        "color": color,
+                        "point1": {"row": p1[0], "col": p1[1]},
+                        "point2": {"row": p2[0], "col": p2[1]},
+                        "line_type": self._classify_line_type(p1, p2)
+                    }
+                )
+        
+        return None
+    
+    def _get_line_pixels(self, p1: Tuple[int, int], p2: Tuple[int, int]) -> List[Tuple[int, int]]:
+        """
+        Get all pixels that form a line between two points using Bresenham's algorithm.
+        
+        Args:
+            p1: (row, col) of first point
+            p2: (row, col) of second point
+            
+        Returns:
+            List of (row, col) tuples forming the line
+        """
+        r1, c1 = p1
+        r2, c2 = p2
+        
+        pixels = []
+        
+        dr = abs(r2 - r1)
+        dc = abs(c2 - c1)
+        
+        sr = 1 if r1 < r2 else -1
+        sc = 1 if c1 < c2 else -1
+        
+        if dc > dr:
+            # More horizontal than vertical
+            err = dc // 2
+            r = r1
+            for c in range(c1, c2 + sc, sc):
+                pixels.append((r, c))
+                err -= dr
+                if err < 0:
+                    r += sr
+                    err += dc
+        else:
+            # More vertical than horizontal (or diagonal)
+            err = dr // 2
+            c = c1
+            for r in range(r1, r2 + sr, sr):
+                pixels.append((r, c))
+                err -= dc
+                if err < 0:
+                    c += sc
+                    err += dr
+        
+        return pixels
+    
+    def _classify_line_type(self, p1: Tuple[int, int], p2: Tuple[int, int]) -> str:
+        """
+        Classify the type of line between two points.
+        
+        Returns:
+            "horizontal", "vertical", or "diagonal"
+        """
+        r1, c1 = p1
+        r2, c2 = p2
+        
+        if r1 == r2:
+            return "horizontal"
+        elif c1 == c2:
+            return "vertical"
+        else:
+            return "diagonal"
+    
+    # ==================== BLOB TRANSFORMATION DETECTION ====================
+    
+    def detect_blob_transformation(
+        self, 
+        input_grid: Grid, 
+        output_grid: Grid
+    ) -> Optional[TransformationResult]:
+        """
+        Detect transformations applied to blob (irregular) shapes.
+        
+        Blobs are compared using shape signatures to detect:
+        - Translation (same shape, different position)
+        - Rotation (same shape but rotated)
+        - Reflection (same shape but mirrored)
+        - Color change (same shape and position, different color)
+        
+        Returns:
+            TransformationResult if a blob transformation is detected
+        """
+        # Find blob objects in both grids
+        in_blobs = [obj for obj in input_grid.objects if "blob" in obj.object_type]
+        out_blobs = [obj for obj in output_grid.objects if "blob" in obj.object_type]
+        
+        if not in_blobs and not out_blobs:
+            return None
+        
+        # If no blobs in either grid, also check for any irregular objects
+        if not in_blobs:
+            in_blobs = [obj for obj in input_grid.objects 
+                       if obj.object_type not in ["square", "rectangle", "horizontal_line", 
+                                                   "vertical_line", "point"]]
+        if not out_blobs:
+            out_blobs = [obj for obj in output_grid.objects 
+                        if obj.object_type not in ["square", "rectangle", "horizontal_line", 
+                                                    "vertical_line", "point"]]
+        
+        if not in_blobs or not out_blobs:
+            return None
+        
+        # Try to match blobs
+        for in_blob in in_blobs:
+            for out_blob in out_blobs:
+                transform = self._detect_blob_transform(in_blob, out_blob)
+                if transform:
+                    return transform
+        
+        return None
+    
+    def _detect_blob_transform(
+        self, 
+        in_obj: GeometricObject, 
+        out_obj: GeometricObject
+    ) -> Optional[TransformationResult]:
+        """
+        Detect the transformation between two specific blob objects.
+        """
+        if not in_obj.pixels or not out_obj.pixels:
+            return None
+        
+        # Normalize both shapes to origin
+        in_norm = self._normalize_blob(in_obj.pixels)
+        out_norm = self._normalize_blob(out_obj.pixels)
+        
+        # Check for direct match (translation or color change)
+        if in_norm == out_norm:
+            # Calculate translation
+            in_min_r = min(p[0] for p in in_obj.pixels)
+            in_min_c = min(p[1] for p in in_obj.pixels)
+            out_min_r = min(p[0] for p in out_obj.pixels)
+            out_min_c = min(p[1] for p in out_obj.pixels)
+            
+            dx = out_min_c - in_min_c
+            dy = out_min_r - in_min_r
+            
+            # Check for color change
+            if in_obj.color != out_obj.color:
+                if dx == 0 and dy == 0:
+                    return TransformationResult(
+                        transformation_type="color_change",
+                        confidence=0.95,
+                        parameters={
+                            "from_color": in_obj.color,
+                            "to_color": out_obj.color,
+                            "shape_type": in_obj.object_type
+                        },
+                        objects_matched=[(in_obj, out_obj)]
+                    )
+                else:
+                    # Both translation and color change
+                    return TransformationResult(
+                        transformation_type="translation_and_color",
+                        confidence=0.90,
+                        parameters={
+                            "dx": dx, "dy": dy,
+                            "from_color": in_obj.color,
+                            "to_color": out_obj.color
+                        },
+                        objects_matched=[(in_obj, out_obj)]
+                    )
+            elif dx != 0 or dy != 0:
+                return TransformationResult(
+                    transformation_type="translation",
+                    confidence=0.95,
+                    parameters={"dx": dx, "dy": dy, "shape_type": in_obj.object_type},
+                    objects_matched=[(in_obj, out_obj)]
+                )
+        
+        # Check for rotations
+        for angle in [90, 180, 270]:
+            rotated = self._rotate_blob(in_norm, angle)
+            if rotated == out_norm:
+                return TransformationResult(
+                    transformation_type="rotation",
+                    confidence=0.95,
+                    parameters={
+                        "angle": angle, 
+                        "per_object": True,
+                        "shape_type": in_obj.object_type,
+                        "color": in_obj.color
+                    },
+                    objects_matched=[(in_obj, out_obj)]
+                )
+        
+        # Check for reflections
+        for axis in ["horizontal", "vertical"]:
+            reflected = self._reflect_blob(in_norm, axis)
+            if reflected == out_norm:
+                return TransformationResult(
+                    transformation_type="reflection",
+                    confidence=0.95,
+                    parameters={
+                        "axis": axis,
+                        "shape_type": in_obj.object_type,
+                        "color": in_obj.color
+                    },
+                    objects_matched=[(in_obj, out_obj)]
+                )
+        
+        return None
+    
+    def _normalize_blob(self, pixels: List[Tuple[int, int]]) -> frozenset:
+        """Normalize blob pixels to origin (0,0)."""
+        if not pixels:
+            return frozenset()
+        
+        min_r = min(p[0] for p in pixels)
+        min_c = min(p[1] for p in pixels)
+        
+        return frozenset((p[0] - min_r, p[1] - min_c) for p in pixels)
+    
+    def _rotate_blob(self, pixels: frozenset, angle: int) -> frozenset:
+        """Rotate normalized blob pixels and re-normalize."""
+        if not pixels:
+            return frozenset()
+        
+        pixels_list = list(pixels)
+        h = max(p[0] for p in pixels_list) + 1
+        w = max(p[1] for p in pixels_list) + 1
+        
+        rotated = []
+        for r, c in pixels_list:
+            if angle == 90:
+                new_r, new_c = c, h - 1 - r
+            elif angle == 180:
+                new_r, new_c = h - 1 - r, w - 1 - c
+            elif angle == 270:
+                new_r, new_c = w - 1 - c, r
+            else:
+                new_r, new_c = r, c
+            rotated.append((new_r, new_c))
+        
+        # Re-normalize
+        if rotated:
+            min_r = min(p[0] for p in rotated)
+            min_c = min(p[1] for p in rotated)
+            return frozenset((p[0] - min_r, p[1] - min_c) for p in rotated)
+        return frozenset()
+    
+    def _reflect_blob(self, pixels: frozenset, axis: str) -> frozenset:
+        """Reflect normalized blob pixels and re-normalize."""
+        if not pixels:
+            return frozenset()
+        
+        pixels_list = list(pixels)
+        h = max(p[0] for p in pixels_list) + 1
+        w = max(p[1] for p in pixels_list) + 1
+        
+        reflected = []
+        for r, c in pixels_list:
+            if axis == "horizontal":
+                new_r, new_c = h - 1 - r, c
+            elif axis == "vertical":
+                new_r, new_c = r, w - 1 - c
+            else:
+                new_r, new_c = r, c
+            reflected.append((new_r, new_c))
+        
+        # Re-normalize
+        if reflected:
+            min_r = min(p[0] for p in reflected)
+            min_c = min(p[1] for p in reflected)
+            return frozenset((p[0] - min_r, p[1] - min_c) for p in reflected)
+        return frozenset()
     
     def _objects_match(self, obj1: GeometricObject, obj2: GeometricObject, 
                        check_position: bool = True) -> bool:

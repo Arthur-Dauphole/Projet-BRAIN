@@ -153,13 +153,21 @@ class SymbolDetector:
             pixels=pixels
         )
         
-        # Add additional properties
+        # Basic properties
         obj.properties["color_name"] = self.COLOR_NAMES.get(color, "unknown")
         obj.properties["is_filled"] = self._is_filled(pixels, obj.bounding_box)
         obj.properties["density"] = obj.area / (obj.width * obj.height) if obj.width * obj.height > 0 else 0
         obj.properties["is_convex"] = self._is_convex(pixels, obj.bounding_box)
         obj.properties["has_hole"] = self._has_hole(pixels, obj.bounding_box)
         obj.properties["centroid"] = self._compute_centroid(pixels)
+        
+        # Advanced blob properties (useful for transformation detection)
+        obj.properties["perimeter"] = self._compute_perimeter(pixels)
+        obj.properties["compactness"] = self._compute_compactness(pixels)
+        obj.properties["shape_signature"] = self._compute_shape_signature(pixels, obj.bounding_box)
+        obj.properties["corner_count"] = self._count_corners(pixels)
+        obj.properties["orientation"] = self._compute_orientation(pixels)
+        obj.properties["aspect_ratio"] = obj.width / obj.height if obj.height > 0 else 1.0
         
         return obj
     
@@ -224,6 +232,132 @@ class SymbolDetector:
         cols = [p[1] for p in pixels]
         return (sum(rows) / len(rows), sum(cols) / len(cols))
     
+    def _compute_perimeter(self, pixels: List[Tuple[int, int]]) -> int:
+        """
+        Compute the perimeter of the object (boundary pixels count).
+        A pixel is on the boundary if it has at least one empty neighbor.
+        """
+        pixel_set = set(pixels)
+        perimeter = 0
+        
+        for r, c in pixels:
+            # Check 4-neighbors
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                if (r + dr, c + dc) not in pixel_set:
+                    perimeter += 1
+        
+        return perimeter
+    
+    def _compute_compactness(self, pixels: List[Tuple[int, int]]) -> float:
+        """
+        Compute compactness (circularity) of the shape.
+        Compactness = 4π * Area / Perimeter²
+        A perfect circle has compactness = 1, more complex shapes have lower values.
+        """
+        if len(pixels) < 2:
+            return 1.0
+        
+        perimeter = self._compute_perimeter(pixels)
+        if perimeter == 0:
+            return 1.0
+        
+        area = len(pixels)
+        compactness = (4 * 3.14159 * area) / (perimeter ** 2)
+        return min(1.0, compactness)  # Cap at 1.0
+    
+    def _compute_shape_signature(
+        self, 
+        pixels: List[Tuple[int, int]], 
+        bbox: Tuple[int, int, int, int]
+    ) -> str:
+        """
+        Compute a unique signature for the shape that is translation-invariant.
+        This helps identify if two blobs have the same shape.
+        
+        Returns a normalized binary string representation.
+        """
+        if not pixels or bbox is None:
+            return ""
+        
+        min_r, min_c, max_r, max_c = bbox
+        height = max_r - min_r + 1
+        width = max_c - min_c + 1
+        
+        # Create normalized grid
+        pixel_set = set(pixels)
+        signature = []
+        
+        for r in range(min_r, max_r + 1):
+            row_sig = ""
+            for c in range(min_c, max_c + 1):
+                row_sig += "1" if (r, c) in pixel_set else "0"
+            signature.append(row_sig)
+        
+        return "|".join(signature)
+    
+    def _count_corners(self, pixels: List[Tuple[int, int]]) -> int:
+        """
+        Count the number of corner pixels in the shape.
+        A corner is a pixel where exactly 2 orthogonal neighbors are present.
+        """
+        pixel_set = set(pixels)
+        corners = 0
+        
+        for r, c in pixels:
+            # Get orthogonal neighbors
+            neighbors = [
+                (r - 1, c) in pixel_set,  # up
+                (r + 1, c) in pixel_set,  # down
+                (r, c - 1) in pixel_set,  # left
+                (r, c + 1) in pixel_set,  # right
+            ]
+            
+            neighbor_count = sum(neighbors)
+            
+            # Check for L-shaped corner patterns (exactly 2 adjacent neighbors that form a corner)
+            if neighbor_count == 2:
+                # Check if the 2 neighbors are adjacent (forming an L)
+                up, down, left, right = neighbors
+                if (up and left) or (up and right) or (down and left) or (down and right):
+                    corners += 1
+            elif neighbor_count == 1:
+                # End point (tip of a shape)
+                corners += 1
+        
+        return corners
+    
+    def _compute_orientation(self, pixels: List[Tuple[int, int]]) -> str:
+        """
+        Compute the principal orientation of the shape.
+        Returns "horizontal", "vertical", "diagonal", or "symmetric".
+        """
+        if len(pixels) < 2:
+            return "symmetric"
+        
+        rows = [p[0] for p in pixels]
+        cols = [p[1] for p in pixels]
+        
+        height = max(rows) - min(rows) + 1
+        width = max(cols) - min(cols) + 1
+        
+        if width > height * 1.5:
+            return "horizontal"
+        elif height > width * 1.5:
+            return "vertical"
+        elif abs(width - height) <= 1:
+            return "symmetric"
+        else:
+            # Check for diagonal orientation using covariance
+            centroid = self._compute_centroid(pixels)
+            
+            # Compute covariance
+            cov_sum = sum((r - centroid[0]) * (c - centroid[1]) for r, c in pixels)
+            
+            if abs(cov_sum) > len(pixels) * 0.3:
+                return "diagonal"
+            else:
+                return "symmetric"
+    
     def _classify_shape(self, pixels: List[Tuple[int, int]]) -> str:
         """
         Classify the shape type based on pixel arrangement.
@@ -287,8 +421,8 @@ class SymbolDetector:
         if self._is_l_shape(pixel_set, min_r, min_c, max_r, max_c, height, width, area):
             return "L_shape"
         
-        # === DEFAULT: BLOB ===
-        return "blob"
+        # === DEFAULT: BLOB (with sub-classification) ===
+        return self._classify_blob(pixel_set, min_r, min_c, max_r, max_c, height, width, area)
     
     def _is_diagonal_line(self, pixels: List[Tuple[int, int]], 
                           min_r: int, min_c: int, height: int, width: int) -> bool:
@@ -444,6 +578,45 @@ class SymbolDetector:
         
         return False
     
+    def _classify_blob(self, pixel_set: set, min_r: int, min_c: int,
+                       max_r: int, max_c: int, height: int, width: int, area: int) -> str:
+        """
+        Classify a blob into more specific sub-types based on its properties.
+        
+        Returns a descriptive blob type like:
+        - "blob_compact" for round-ish shapes
+        - "blob_elongated" for long shapes
+        - "blob_sparse" for shapes with low density
+        - "blob_complex" for shapes with holes or many corners
+        - "blob" for generic irregular shapes
+        """
+        pixels = list(pixel_set)
+        
+        # Calculate properties
+        density = area / (height * width) if height * width > 0 else 0
+        aspect_ratio = max(width / height, height / width) if min(height, width) > 0 else 1
+        compactness = self._compute_compactness(pixels)
+        has_hole = self._has_hole(pixels, (min_r, min_c, max_r, max_c))
+        corner_count = self._count_corners(pixels)
+        
+        # Classify based on properties
+        if has_hole:
+            return "blob_with_hole"
+        
+        if compactness > 0.7 and density > 0.7:
+            return "blob_compact"
+        
+        if aspect_ratio > 2.5:
+            return "blob_elongated"
+        
+        if density < 0.4:
+            return "blob_sparse"
+        
+        if corner_count > 6:
+            return "blob_complex"
+        
+        return "blob"
+    
     def _is_filled(
         self, 
         pixels: List[Tuple[int, int]], 
@@ -553,3 +726,161 @@ class SymbolDetector:
             descriptions.append(desc)
         
         return "\n".join(descriptions)
+    
+    # ==================== BLOB COMPARISON METHODS ====================
+    
+    def compare_shapes(self, obj1: GeometricObject, obj2: GeometricObject) -> dict:
+        """
+        Compare two objects to determine if they have the same shape.
+        
+        Args:
+            obj1: First object
+            obj2: Second object
+            
+        Returns:
+            Dictionary with comparison results:
+            - same_shape: bool - True if identical shape
+            - is_rotated: int - Rotation angle if rotated (0, 90, 180, 270), None if not
+            - is_reflected: str - Reflection axis if reflected, None if not
+            - is_scaled: float - Scale factor if scaled, None if not
+        """
+        result = {
+            "same_shape": False,
+            "is_rotated": None,
+            "is_reflected": None,
+            "is_scaled": None,
+        }
+        
+        if not obj1.pixels or not obj2.pixels:
+            return result
+        
+        # Normalize both shapes to origin
+        norm1 = self._normalize_pixels(obj1.pixels)
+        norm2 = self._normalize_pixels(obj2.pixels)
+        
+        # Check if identical
+        if norm1 == norm2:
+            result["same_shape"] = True
+            return result
+        
+        # Check for rotations
+        for angle in [90, 180, 270]:
+            rotated = self._rotate_normalized_pixels(norm1, angle)
+            if rotated == norm2:
+                result["same_shape"] = True
+                result["is_rotated"] = angle
+                return result
+        
+        # Check for reflections
+        for axis, reflected in [
+            ("horizontal", self._reflect_normalized_pixels(norm1, "horizontal")),
+            ("vertical", self._reflect_normalized_pixels(norm1, "vertical")),
+        ]:
+            if reflected == norm2:
+                result["same_shape"] = True
+                result["is_reflected"] = axis
+                return result
+        
+        # Check for scaling (if areas are proportional)
+        if obj1.area > 0 and obj2.area > 0:
+            scale = (obj2.area / obj1.area) ** 0.5
+            if abs(scale - round(scale)) < 0.1:
+                # Integer scale factor - could be scaled
+                result["is_scaled"] = round(scale)
+        
+        return result
+    
+    def _normalize_pixels(self, pixels: List[Tuple[int, int]]) -> frozenset:
+        """
+        Normalize pixels to origin (0,0) for shape comparison.
+        """
+        if not pixels:
+            return frozenset()
+        
+        min_r = min(p[0] for p in pixels)
+        min_c = min(p[1] for p in pixels)
+        
+        return frozenset((p[0] - min_r, p[1] - min_c) for p in pixels)
+    
+    def _rotate_normalized_pixels(self, pixels: frozenset, angle: int) -> frozenset:
+        """
+        Rotate normalized pixels by the given angle and re-normalize.
+        """
+        if not pixels:
+            return frozenset()
+        
+        pixels_list = list(pixels)
+        h = max(p[0] for p in pixels_list) + 1
+        w = max(p[1] for p in pixels_list) + 1
+        
+        rotated = []
+        for r, c in pixels_list:
+            if angle == 90:
+                new_r, new_c = c, h - 1 - r
+            elif angle == 180:
+                new_r, new_c = h - 1 - r, w - 1 - c
+            elif angle == 270:
+                new_r, new_c = w - 1 - c, r
+            else:
+                new_r, new_c = r, c
+            rotated.append((new_r, new_c))
+        
+        # Re-normalize
+        min_r = min(p[0] for p in rotated)
+        min_c = min(p[1] for p in rotated)
+        
+        return frozenset((p[0] - min_r, p[1] - min_c) for p in rotated)
+    
+    def _reflect_normalized_pixels(self, pixels: frozenset, axis: str) -> frozenset:
+        """
+        Reflect normalized pixels along the given axis and re-normalize.
+        """
+        if not pixels:
+            return frozenset()
+        
+        pixels_list = list(pixels)
+        h = max(p[0] for p in pixels_list) + 1
+        w = max(p[1] for p in pixels_list) + 1
+        
+        reflected = []
+        for r, c in pixels_list:
+            if axis == "horizontal":
+                new_r, new_c = h - 1 - r, c
+            elif axis == "vertical":
+                new_r, new_c = r, w - 1 - c
+            else:
+                new_r, new_c = r, c
+            reflected.append((new_r, new_c))
+        
+        # Re-normalize
+        min_r = min(p[0] for p in reflected)
+        min_c = min(p[1] for p in reflected)
+        
+        return frozenset((p[0] - min_r, p[1] - min_c) for p in reflected)
+    
+    def find_matching_object(
+        self, 
+        target: GeometricObject, 
+        candidates: List[GeometricObject],
+        match_color: bool = True
+    ) -> Optional[Tuple[GeometricObject, dict]]:
+        """
+        Find an object in candidates that matches the target shape.
+        
+        Args:
+            target: The object to match
+            candidates: List of potential matches
+            match_color: If True, only match objects of the same color
+            
+        Returns:
+            Tuple of (matched_object, comparison_result) or None
+        """
+        for candidate in candidates:
+            if match_color and candidate.color != target.color:
+                continue
+            
+            comparison = self.compare_shapes(target, candidate)
+            if comparison["same_shape"]:
+                return (candidate, comparison)
+        
+        return None

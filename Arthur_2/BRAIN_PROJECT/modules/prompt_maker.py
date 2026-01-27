@@ -54,19 +54,29 @@ Use when DETECTED TRANSFORMATION shows "TRANSLATION".
 ```
 Use when DETECTED TRANSFORMATION shows "COLOR CHANGE".
 
-3. ROTATION (rotate objects):
+3. ROTATION (rotate objects around their centroid):
 ```json
-{"action": "rotate", "params": {"angle": 90_OR_180_OR_270}}
+{"action": "rotate", "params": {"angle": 90_OR_180_OR_270}, "color_filter": COLOR_OF_OBJECT}
 ```
 Use when DETECTED TRANSFORMATION shows "ROTATION".
+- color_filter = the color of the object to rotate (find it from the test input)
+- The object rotates around its center of mass (centroid)
 
-4. REFLECTION (mirror/flip):
+4. REFLECTION (mirror/flip an object):
 ```json
-{"action": "reflect", "params": {"axis": "horizontal_OR_vertical"}}
+{"action": "reflect", "params": {"axis": "horizontal_OR_vertical"}, "color_filter": COLOR_OF_OBJECT}
 ```
 Use when DETECTED TRANSFORMATION shows "REFLECTION".
-- "horizontal" = flip up-down
-- "vertical" = flip left-right
+- "horizontal" = flip up-down (mirror vertically)
+- "vertical" = flip left-right (mirror horizontally)
+- color_filter = the color of the object to reflect (find it from the test input)
+
+5. DRAW LINE (connect two points with a line):
+```json
+{"action": "draw_line", "color_filter": COLOR_OF_THE_TWO_POINTS}
+```
+Use when DETECTED TRANSFORMATION shows "DRAW LINE".
+The system will automatically find the 2 pixels of that color and draw a line between them.
 
 OUTPUT FORMAT (MANDATORY):
 End with exactly ONE JSON block matching the DETECTED TRANSFORMATION type."""
@@ -199,7 +209,23 @@ End with exactly ONE JSON block matching the DETECTED TRANSFORMATION type."""
                                 return f"**DETECTED TRANSFORMATION: TRANSLATION with dx={dx}, dy={dy}**"
                         break
         
-        # Priority 2: Check for OBJECT ROTATION (shape rotates in place)
+        # Priority 2: Check for OBJECT REFLECTION (object level - BEFORE rotation!)
+        # Reflection is prioritized over rotation because for same-dimension shapes,
+        # a reflection is more likely than a 180° rotation
+        if input_grid.objects and output_grid.objects:
+            for in_obj in input_grid.objects:
+                for out_obj in output_grid.objects:
+                    # Match by color and area, AND same dimensions (reflection keeps dimensions)
+                    if (in_obj.color == out_obj.color and 
+                        in_obj.area == out_obj.area and
+                        in_obj.width == out_obj.width and 
+                        in_obj.height == out_obj.height):
+                        reflection = self._detect_object_reflection(in_obj, out_obj)
+                        if reflection:
+                            return f"**DETECTED TRANSFORMATION: REFLECTION with axis={reflection} (use color_filter with the color from TEST input)**"
+        
+        # Priority 3: Check for OBJECT ROTATION (shape rotates in place)
+        # Only check rotation if reflection wasn't detected
         if input_grid.objects and output_grid.objects:
             for in_obj in input_grid.objects:
                 for out_obj in output_grid.objects:
@@ -209,27 +235,52 @@ End with exactly ONE JSON block matching the DETECTED TRANSFORMATION type."""
                             # Verify it's actually a rotation by checking pixel patterns
                             rotation_angle = self._detect_object_rotation_angle(in_obj, out_obj)
                             if rotation_angle:
-                                return f"**DETECTED TRANSFORMATION: ROTATION with angle={rotation_angle}**"
-                        # Check for 180° rotation (same dimensions)
+                                return f"**DETECTED TRANSFORMATION: ROTATION with angle={rotation_angle} (use color_filter with the color from TEST input)**"
+                        # Check for 180° rotation (same dimensions) - only if not a reflection
                         elif in_obj.width == out_obj.width and in_obj.height == out_obj.height:
-                            rotation_angle = self._detect_object_rotation_angle(in_obj, out_obj)
-                            if rotation_angle:
-                                return f"**DETECTED TRANSFORMATION: ROTATION with angle={rotation_angle}**"
+                            # Double-check it's not a reflection first
+                            reflection = self._detect_object_reflection(in_obj, out_obj)
+                            if not reflection:
+                                rotation_angle = self._detect_object_rotation_angle(in_obj, out_obj)
+                                if rotation_angle:
+                                    return f"**DETECTED TRANSFORMATION: ROTATION with angle={rotation_angle} (use color_filter with the color from TEST input)**"
         
-        # Priority 3: Check for GRID-LEVEL ROTATION
+        # Priority 4: Check for GRID-LEVEL ROTATION
         for angle in [90, 180, 270]:
             rotated = np.rot90(in_data, k=angle // 90)
             if rotated.shape == out_data.shape and np.array_equal(rotated, out_data):
                 return f"**DETECTED TRANSFORMATION: ROTATION with angle={angle}**"
         
-        # Priority 4: Check for REFLECTION
+        # Priority 5: Check for REFLECTION (grid level)
         if in_data.shape == out_data.shape:
             if np.array_equal(np.flipud(in_data), out_data):
                 return "**DETECTED TRANSFORMATION: REFLECTION with axis=horizontal**"
             if np.array_equal(np.fliplr(in_data), out_data):
                 return "**DETECTED TRANSFORMATION: REFLECTION with axis=vertical**"
         
-        # Priority 5: Check for COLOR CHANGE (pixels stay in place, only color changes)
+        # Priority 5: Check for DRAW LINE (2 points become a connected line)
+        if in_data.shape == out_data.shape:
+            for color in range(1, 10):  # Check colors 1-9
+                in_positions = list(zip(*np.where(in_data == color)))
+                out_positions = set(zip(*np.where(out_data == color)))
+                
+                # We need exactly 2 input points and more output points (line drawn)
+                if len(in_positions) == 2 and len(out_positions) > 2:
+                    # Check if input points are in output
+                    if all((r, c) in out_positions for r, c in in_positions):
+                        p1, p2 = in_positions[0], in_positions[1]
+                        
+                        # Classify line type
+                        if p1[0] == p2[0]:
+                            line_type = "horizontal"
+                        elif p1[1] == p2[1]:
+                            line_type = "vertical"
+                        else:
+                            line_type = "diagonal"
+                        
+                        return f"**DETECTED TRANSFORMATION: DRAW LINE between two points of color {color} ({line_type} line)**"
+        
+        # Priority 6: Check for COLOR CHANGE (pixels stay in place, only color changes)
         if in_data.shape == out_data.shape:
             non_zero_in = set(zip(*np.where(in_data != 0)))
             non_zero_out = set(zip(*np.where(out_data != 0)))
@@ -256,6 +307,55 @@ End with exactly ONE JSON block matching the DETECTED TRANSFORMATION type."""
                     return f"**DETECTED TRANSFORMATION: COLOR CHANGE from_color={from_color}, to_color={to_color}**"
         
         return "**DETECTED TRANSFORMATION: UNKNOWN**"
+    
+    def _detect_object_reflection(self, in_obj: GeometricObject, out_obj: GeometricObject) -> Optional[str]:
+        """
+        Detect if an object has been reflected (mirrored).
+        
+        Returns:
+            "horizontal" or "vertical" if reflection detected, None otherwise
+        """
+        import numpy as np
+        
+        if not in_obj.pixels or not out_obj.pixels:
+            return None
+        
+        # Normalize both objects to origin
+        in_min_r = min(p[0] for p in in_obj.pixels)
+        in_min_c = min(p[1] for p in in_obj.pixels)
+        in_normalized = frozenset((p[0] - in_min_r, p[1] - in_min_c) for p in in_obj.pixels)
+        
+        out_min_r = min(p[0] for p in out_obj.pixels)
+        out_min_c = min(p[1] for p in out_obj.pixels)
+        out_normalized = frozenset((p[0] - out_min_r, p[1] - out_min_c) for p in out_obj.pixels)
+        
+        # Get dimensions of normalized shape
+        in_h = max(p[0] for p in in_normalized) + 1
+        in_w = max(p[1] for p in in_normalized) + 1
+        
+        # Check vertical reflection (flip left-right)
+        vertical_reflected = frozenset((r, in_w - 1 - c) for r, c in in_normalized)
+        # Re-normalize
+        if vertical_reflected:
+            vr_min_r = min(p[0] for p in vertical_reflected)
+            vr_min_c = min(p[1] for p in vertical_reflected)
+            vertical_reflected = frozenset((p[0] - vr_min_r, p[1] - vr_min_c) for p in vertical_reflected)
+        
+        if vertical_reflected == out_normalized:
+            return "vertical"
+        
+        # Check horizontal reflection (flip up-down)
+        horizontal_reflected = frozenset((in_h - 1 - r, c) for r, c in in_normalized)
+        # Re-normalize
+        if horizontal_reflected:
+            hr_min_r = min(p[0] for p in horizontal_reflected)
+            hr_min_c = min(p[1] for p in horizontal_reflected)
+            horizontal_reflected = frozenset((p[0] - hr_min_r, p[1] - hr_min_c) for p in horizontal_reflected)
+        
+        if horizontal_reflected == out_normalized:
+            return "horizontal"
+        
+        return None
     
     def _detect_object_rotation_angle(self, in_obj: GeometricObject, out_obj: GeometricObject) -> int:
         """
