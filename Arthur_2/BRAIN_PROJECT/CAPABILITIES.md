@@ -218,7 +218,7 @@ ou
 - ✅ **Dossiers horodatés** - Chaque batch crée `results/batch_YYYYMMDD_HHMMSS/`
 - ✅ **Rapports multiples** - `summary.json`, `tasks.csv`, `README.txt`
 - ✅ **Exécution non-bloquante** - Visualisations désactivées pendant l'exécution
-- ✅ **Visualisation récapitulative** - Affichage de tous les tests à la fin du batch
+- ✅ **Navigateur interactif** - Parcourir les résultats avec boutons ◀/▶ et flèches clavier
 - ✅ **Images sauvegardées** - `batch_summary.png` + images individuelles par tâche
 - ✅ **Statistiques agrégées** - Accuracy moyenne, temps d'exécution, comptage des transformations
 - ✅ Options: `--limit`, `--pattern`, `--output`, `--no-viz`
@@ -348,7 +348,16 @@ results/
 #### Exécution non-bloquante
 
 En mode batch, les visualisations sont **automatiquement désactivées pendant l'exécution** pour permettre un traitement sans interruption. À la fin du batch :
-- Une **visualisation récapitulative** s'affiche avec tous les tests côte à côte
+- Un **navigateur interactif** s'ouvre pour parcourir les résultats
 - Les images sont **sauvegardées** dans le dossier `images/`
+
+#### Navigateur interactif
+
+À la fin du batch, une fenêtre interactive s'ouvre avec :
+- **Input | Predicted | Expected | Difference** pour chaque tâche
+- **Boutons ◀ Previous / Next ▶** pour naviguer
+- **Flèches clavier** ← → pour navigation rapide
+- **Touche Q** pour quitter
+- **Statistiques** affichées en bas (n correct, accuracy moyenne)
 
 Pour désactiver l'affichage final : `python main.py --batch data/ --no-viz`

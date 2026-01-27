@@ -545,3 +545,168 @@ class Visualizer:
         plt.close(fig)
         
         return fig
+    
+    def create_interactive_browser(
+        self,
+        task_visuals: List[Dict[str, Any]],
+        title: str = "Batch Results Browser"
+    ):
+        """
+        Create an interactive browser to navigate through batch results.
+        
+        Uses matplotlib widgets for Previous/Next navigation.
+        
+        Args:
+            task_visuals: List of dicts with keys:
+                - task_id: str
+                - input_grid: Grid or array
+                - predicted_grid: Grid or array (can be None)
+                - expected_grid: Grid or array (can be None)
+                - is_correct: bool
+                - accuracy: float
+            title: Window title
+        """
+        _ensure_matplotlib()
+        from matplotlib.widgets import Button
+        
+        if not task_visuals:
+            print("No tasks to display")
+            return
+        
+        # State
+        current_idx = [0]  # Use list to allow modification in nested function
+        n_tasks = len(task_visuals)
+        
+        # Calculate stats
+        n_correct = sum(1 for t in task_visuals if t.get('is_correct', False))
+        avg_acc = sum(t.get('accuracy', 0) for t in task_visuals) / max(1, n_tasks)
+        
+        # Create figure with space for buttons
+        fig = plt.figure(figsize=(16, 6))
+        
+        # Create grid spec for layout
+        gs = fig.add_gridspec(2, 4, height_ratios=[10, 1], hspace=0.3)
+        
+        # Axes for grids
+        ax_input = fig.add_subplot(gs[0, 0])
+        ax_pred = fig.add_subplot(gs[0, 1])
+        ax_exp = fig.add_subplot(gs[0, 2])
+        ax_diff = fig.add_subplot(gs[0, 3])
+        
+        axes = [ax_input, ax_pred, ax_exp, ax_diff]
+        
+        # Button axes
+        ax_prev = fig.add_subplot(gs[1, 0])
+        ax_info = fig.add_subplot(gs[1, 1:3])
+        ax_next = fig.add_subplot(gs[1, 3])
+        
+        # Info text area
+        ax_info.axis('off')
+        info_text = ax_info.text(
+            0.5, 0.5, "", 
+            ha='center', va='center',
+            fontsize=12,
+            transform=ax_info.transAxes
+        )
+        
+        def update_display():
+            """Update the display with current task."""
+            idx = current_idx[0]
+            task = task_visuals[idx]
+            
+            # Clear all axes
+            for ax in axes:
+                ax.clear()
+            
+            # Get data
+            task_id = task.get('task_id', f'Task {idx+1}')
+            is_correct = task.get('is_correct', False)
+            accuracy = task.get('accuracy', 0.0)
+            
+            # Input grid
+            if task.get('input_grid') is not None:
+                self.show_grid(task['input_grid'], "Input", ax=ax_input)
+            else:
+                ax_input.text(0.5, 0.5, "No Data", ha='center', va='center',
+                            fontsize=12, transform=ax_input.transAxes)
+                ax_input.set_title("Input")
+            
+            # Predicted grid
+            if task.get('predicted_grid') is not None:
+                self.show_grid(task['predicted_grid'], "Predicted", ax=ax_pred)
+            else:
+                ax_pred.text(0.5, 0.5, "No\nPrediction", ha='center', va='center',
+                           fontsize=12, color='gray', transform=ax_pred.transAxes)
+                ax_pred.set_title("Predicted")
+                ax_pred.axis('off')
+            
+            # Expected grid
+            if task.get('expected_grid') is not None:
+                self.show_grid(task['expected_grid'], "Expected", ax=ax_exp)
+            else:
+                ax_exp.text(0.5, 0.5, "No Data", ha='center', va='center',
+                          fontsize=12, transform=ax_exp.transAxes)
+                ax_exp.set_title("Expected")
+            
+            # Difference
+            if task.get('predicted_grid') is not None and task.get('expected_grid') is not None:
+                self._show_diff(task['predicted_grid'], task['expected_grid'], ax=ax_diff)
+            else:
+                ax_diff.axis('off')
+                ax_diff.set_title("Difference")
+            
+            # Update title
+            status = "✓ CORRECT" if is_correct else f"✗ INCORRECT ({accuracy:.1%})"
+            status_color = "green" if is_correct else "red"
+            fig.suptitle(
+                f"{task_id}: {status}",
+                fontsize=14, 
+                color=status_color,
+                fontweight='bold'
+            )
+            
+            # Update info text
+            info_text.set_text(
+                f"Task {idx+1} / {n_tasks}  |  "
+                f"Overall: {n_correct}/{n_tasks} correct ({n_correct/n_tasks:.0%})  |  "
+                f"Avg accuracy: {avg_acc:.1%}"
+            )
+            
+            fig.canvas.draw_idle()
+        
+        def on_prev(event):
+            """Go to previous task."""
+            current_idx[0] = (current_idx[0] - 1) % n_tasks
+            update_display()
+        
+        def on_next(event):
+            """Go to next task."""
+            current_idx[0] = (current_idx[0] + 1) % n_tasks
+            update_display()
+        
+        # Create buttons
+        btn_prev = Button(ax_prev, '◀ Previous', color='lightgray', hovercolor='lightblue')
+        btn_prev.on_clicked(on_prev)
+        
+        btn_next = Button(ax_next, 'Next ▶', color='lightgray', hovercolor='lightblue')
+        btn_next.on_clicked(on_next)
+        
+        # Add keyboard navigation
+        def on_key(event):
+            if event.key == 'left':
+                on_prev(event)
+            elif event.key == 'right':
+                on_next(event)
+            elif event.key == 'escape' or event.key == 'q':
+                plt.close(fig)
+        
+        fig.canvas.mpl_connect('key_press_event', on_key)
+        
+        # Initial display
+        update_display()
+        
+        # Window title
+        fig.canvas.manager.set_window_title(title)
+        
+        plt.tight_layout()
+        plt.show()

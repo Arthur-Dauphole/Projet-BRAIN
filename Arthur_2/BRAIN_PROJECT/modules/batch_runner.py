@@ -551,7 +551,8 @@ class BatchRunner:
         self,
         result: BatchResult,
         images_dir: str,
-        show_summary: bool = True
+        show_summary: bool = True,
+        interactive: bool = True
     ):
         """
         Generate all visualization images for the batch.
@@ -559,7 +560,8 @@ class BatchRunner:
         Args:
             result: BatchResult with task data
             images_dir: Directory to save images
-            show_summary: Whether to display the summary
+            show_summary: Whether to display the visualization
+            interactive: Use interactive browser (True) or static summary (False)
         """
         from modules.visualizer import Visualizer
         
@@ -593,16 +595,33 @@ class BatchRunner:
                     save_path=str(task_image_path)
                 )
         
-        # Create and save batch summary
+        # Create and save batch summary image
         if task_visuals:
             summary_path = images_path / "batch_summary.png"
             visualizer.create_batch_summary(
                 task_visuals=task_visuals,
                 title=f"Batch Results: {result.run_folder}",
                 save_path=str(summary_path),
-                show=show_summary
+                show=False  # Don't show static summary if using interactive
             )
-            self._log(f"📊 Summary visualization created")
+            self._log(f"📊 Images saved to: {images_path}/")
+            
+            # Show interactive browser or static summary
+            if show_summary and task_visuals:
+                if interactive:
+                    self._log(f"🖥️  Opening interactive browser (use ◀/▶ or arrow keys to navigate, Q to quit)")
+                    visualizer.create_interactive_browser(
+                        task_visuals=task_visuals,
+                        title=f"Batch Results: {result.run_folder}"
+                    )
+                else:
+                    # Show static summary
+                    visualizer.create_batch_summary(
+                        task_visuals=task_visuals,
+                        title=f"Batch Results: {result.run_folder}",
+                        save_path=None,
+                        show=True
+                    )
     
     def _generate_readme(self, result: BatchResult, filepath: str):
         """Generate a quick summary README file."""
