@@ -620,12 +620,13 @@ Examples:
     if args.batch:
         from modules.batch_runner import BatchRunner
         
-        # IMPORTANT: Always disable visualization in batch mode
+        # IMPORTANT: Always disable visualization DURING batch execution
         # This allows the batch to run without user interaction
+        # Visualization is shown AT THE END with all results
         runner = BatchRunner(
             model=args.model,
             verbose=not args.quiet,
-            visualize=False,  # ALWAYS False for batch - no popups!
+            visualize=False,  # ALWAYS False during batch - no popups!
             multi_mode=args.multi
         )
         
@@ -638,7 +639,13 @@ Examples:
         runner.print_summary(result)
         
         # Save all results to timestamped folder
-        result_folder = runner.save_results(result, args.output)
+        # show_summary=True displays the visual recap at the end
+        result_folder = runner.save_results(
+            result, 
+            args.output,
+            save_images=True,
+            show_summary=not args.no_viz  # Show visual summary unless --no-viz
+        )
         
         print(f"\n✅ Batch complete! Results in: {result_folder}")
         

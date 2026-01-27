@@ -1,0 +1,253 @@
+{
+  "summary": {
+    "total_tasks": 12,
+    "successful_tasks": 12,
+    "correct_tasks": 6,
+    "failed_tasks": 0,
+    "success_rate": "100.0%",
+    "correctness_rate": "50.0%",
+    "overall_accuracy": "70.5%",
+    "accuracy_when_successful": "70.5%"
+  },
+  "timing": {
+    "total_time_seconds": 145.28,
+    "avg_time_per_task_seconds": 12.11
+  },
+  "transformation_stats": {
+    "color_change": 4,
+    "reflection": 5,
+    "rotation": 12,
+    "translation": 10,
+    "draw_line": 3
+  },
+  "action_stats": {
+    "color_change": 1,
+    "reflect": 1,
+    "translate": 5,
+    "draw_line": 1,
+    "rotate": 1
+  },
+  "metadata": {
+    "run_timestamp": "2026-01-27T14:56:42.900996",
+    "run_folder": "batch_20260127_145642",
+    "model_used": "llama3",
+    "pattern_used": "task_*.json",
+    "directory": "data/"
+  },
+  "task_results": [
+    {
+      "task_id": "task_blob_color_change",
+      "task_file": "data/task_blob_color_change.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 12.724631071090698,
+      "detected_transformations": [
+        "color_change",
+        "color_change"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8"
+    },
+    {
+      "task_id": "task_blob_reflection",
+      "task_file": "data/task_blob_reflection.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 10.500302791595459,
+      "detected_transformations": [
+        "reflection",
+        "reflection"
+      ],
+      "action_used": "reflect",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8"
+    },
+    {
+      "task_id": "task_blob_rotation",
+      "task_file": "data/task_blob_rotation.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.0,
+      "execution_time": 6.794102191925049,
+      "detected_transformations": [
+        "rotation",
+        "rotation"
+      ],
+      "action_used": null,
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8"
+    },
+    {
+      "task_id": "task_blob_translation",
+      "task_file": "data/task_blob_translation.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 11.257457256317139,
+      "detected_transformations": [
+        "translation",
+        "translation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "10x10"
+    },
+    {
+      "task_id": "task_challenge_multi_transform",
+      "task_file": "data/task_challenge_multi_transform.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.8833333333333333,
+      "execution_time": 13.93317985534668,
+      "detected_transformations": [
+        "rotation",
+        "rotation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "10x12"
+    },
+    {
+      "task_id": "task_color_change",
+      "task_file": "data/task_color_change.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.0,
+      "execution_time": 10.67974591255188,
+      "detected_transformations": [
+        "color_change",
+        "rotation",
+        "color_change",
+        "rotation"
+      ],
+      "action_used": null,
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8"
+    },
+    {
+      "task_id": "task_draw_line",
+      "task_file": "data/task_draw_line.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 22.302211046218872,
+      "detected_transformations": [
+        "draw_line",
+        "draw_line",
+        "rotation",
+        "draw_line"
+      ],
+      "action_used": "draw_line",
+      "error_message": null,
+      "num_train_examples": 3,
+      "num_test_examples": 1,
+      "grid_size": "10x10"
+    },
+    {
+      "task_id": "task_l_shape",
+      "task_file": "data/task_l_shape.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 8.940587997436523,
+      "detected_transformations": [
+        "translation",
+        "translation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "10x10"
+    },
+    {
+      "task_id": "task_multi_objects",
+      "task_file": "data/task_multi_objects.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.0,
+      "execution_time": 11.451865911483765,
+      "detected_transformations": [
+        "rotation",
+        "translation",
+        "rotation",
+        "translation"
+      ],
+      "action_used": null,
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8"
+    },
+    {
+      "task_id": "task_multi_objects_same_transform",
+      "task_file": "data/task_multi_objects_same_transform.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 16.19795799255371,
+      "detected_transformations": [
+        "translation",
+        "rotation",
+        "translation",
+        "rotation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "10x10"
+    },
+    {
+      "task_id": "task_reflection",
+      "task_file": "data/task_reflection.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.7777777777777778,
+      "execution_time": 8.45582890510559,
+      "detected_transformations": [
+        "translation",
+        "reflection",
+        "translation",
+        "reflection"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "6x6"
+    },
+    {
+      "task_id": "task_rotation_90",
+      "task_file": "data/task_rotation_90.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.7959183673469388,
+      "execution_time": 12.035583019256592,
+      "detected_transformations": [
+        "reflection",
+        "rotation"
+      ],
+      "action_used": "rotate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "7x7"
+    }
+  ]
+}

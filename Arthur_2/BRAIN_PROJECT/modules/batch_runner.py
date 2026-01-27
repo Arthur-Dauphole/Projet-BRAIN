@@ -44,8 +44,27 @@ class TaskResult:
     num_test_examples: int = 0
     grid_size: Optional[str] = None  # e.g., "10x10"
     
+    # Grid data for visualization (not serialized to JSON)
+    input_grid: Any = field(default=None, repr=False)
+    predicted_grid: Any = field(default=None, repr=False)
+    expected_grid: Any = field(default=None, repr=False)
+    
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        """Convert to dict, excluding grid data."""
+        return {
+            'task_id': self.task_id,
+            'task_file': self.task_file,
+            'success': self.success,
+            'is_correct': self.is_correct,
+            'accuracy': self.accuracy,
+            'execution_time': self.execution_time,
+            'detected_transformations': self.detected_transformations,
+            'action_used': self.action_used,
+            'error_message': self.error_message,
+            'num_train_examples': self.num_train_examples,
+            'num_test_examples': self.num_test_examples,
+            'grid_size': self.grid_size,
+        }
 
 
 @dataclass 
@@ -187,7 +206,7 @@ class BatchRunner:
             task_file: Path to the task JSON file
             
         Returns:
-            TaskResult with all metrics
+            TaskResult with all metrics and grid data for visualization
         """
         orchestrator = self._get_orchestrator()
         
@@ -209,10 +228,13 @@ class BatchRunner:
             result.num_train_examples = len(task.train_pairs)
             result.num_test_examples = len(task.test_pairs)
             
-            # Get grid size from first test input
+            # Store input and expected grids for visualization
             if task.test_pairs:
                 grid = task.test_pairs[0].input_grid
                 result.grid_size = f"{grid.height}x{grid.width}"
+                result.input_grid = grid
+                if task.test_pairs[0].output_grid:
+                    result.expected_grid = task.test_pairs[0].output_grid
             
             # Solve task
             if self.multi_mode:
@@ -239,12 +261,15 @@ class BatchRunner:
                 if isinstance(action, dict):
                     result.action_used = action.get("action", "unknown")
             
-            # Get accuracy
+            # Get accuracy and predicted grid
             if solve_result.get("analyses"):
                 analyses = solve_result["analyses"]
                 if analyses:
                     result.accuracy = analyses[0].accuracy
                     result.is_correct = analyses[0].is_correct
+                    # Store predicted grid for visualization
+                    if hasattr(analyses[0], 'predicted_grid'):
+                        result.predicted_grid = analyses[0].predicted_grid
             
         except Exception as e:
             result.success = False
@@ -462,7 +487,13 @@ class BatchRunner:
         
         self._log(f"📄 CSV saved to: {filepath}")
     
-    def save_results(self, result: BatchResult, output_dir: str = "results/") -> str:
+    def save_results(
+        self, 
+        result: BatchResult, 
+        output_dir: str = "results/",
+        save_images: bool = True,
+        show_summary: bool = True
+    ) -> str:
         """
         Save all batch results to a timestamped folder.
         
@@ -472,10 +503,15 @@ class BatchRunner:
                     summary.json      # Full report
                     tasks.csv         # Task-level results
                     README.txt        # Quick summary
+                    images/           # Visual results
+                        batch_summary.png
+                        task_xxx.png (individual tasks)
         
         Args:
             result: BatchResult to save
             output_dir: Base directory for results
+            save_images: Whether to save visualization images
+            show_summary: Whether to display the summary visualization
             
         Returns:
             Path to the created folder
@@ -496,9 +532,77 @@ class BatchRunner:
         readme_path = folder_path / "README.txt"
         self._generate_readme(result, str(readme_path))
         
+        # Generate visualizations
+        if save_images:
+            images_path = folder_path / "images"
+            images_path.mkdir(exist_ok=True)
+            
+            self._generate_visualizations(
+                result, 
+                str(images_path),
+                show_summary=show_summary
+            )
+        
         self._log(f"\n📁 Results saved to: {folder_path}/")
         
         return str(folder_path)
+    
+    def _generate_visualizations(
+        self,
+        result: BatchResult,
+        images_dir: str,
+        show_summary: bool = True
+    ):
+        """
+        Generate all visualization images for the batch.
+        
+        Args:
+            result: BatchResult with task data
+            images_dir: Directory to save images
+            show_summary: Whether to display the summary
+        """
+        from modules.visualizer import Visualizer
+        
+        visualizer = Visualizer()
+        images_path = Path(images_dir)
+        
+        # Prepare task visuals data
+        task_visuals = []
+        
+        for task_result in result.task_results:
+            visual_data = {
+                'task_id': task_result.task_id,
+                'input_grid': task_result.input_grid,
+                'predicted_grid': task_result.predicted_grid,
+                'expected_grid': task_result.expected_grid,
+                'is_correct': task_result.is_correct,
+                'accuracy': task_result.accuracy,
+            }
+            task_visuals.append(visual_data)
+            
+            # Save individual task image if we have the grids
+            if task_result.input_grid is not None and task_result.expected_grid is not None:
+                task_image_path = images_path / f"{task_result.task_id}.png"
+                visualizer.create_task_detail_image(
+                    task_id=task_result.task_id,
+                    input_grid=task_result.input_grid,
+                    predicted_grid=task_result.predicted_grid,
+                    expected_grid=task_result.expected_grid,
+                    is_correct=task_result.is_correct,
+                    accuracy=task_result.accuracy,
+                    save_path=str(task_image_path)
+                )
+        
+        # Create and save batch summary
+        if task_visuals:
+            summary_path = images_path / "batch_summary.png"
+            visualizer.create_batch_summary(
+                task_visuals=task_visuals,
+                title=f"Batch Results: {result.run_folder}",
+                save_path=str(summary_path),
+                show=show_summary
+            )
+            self._log(f"📊 Summary visualization created")
     
     def _generate_readme(self, result: BatchResult, filepath: str):
         """Generate a quick summary README file."""

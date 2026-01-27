@@ -344,3 +344,204 @@ class Visualizer:
         
         plt.tight_layout()
         plt.show()
+    
+    def create_batch_summary(
+        self,
+        task_visuals: List[Dict[str, Any]],
+        title: str = "Batch Evaluation Results",
+        save_path: Optional[str] = None,
+        show: bool = True,
+        max_cols: int = 4
+    ):
+        """
+        Create a summary visualization of all batch results.
+        
+        Each task is shown as a row with: Input | Predicted | Expected | Status
+        
+        Args:
+            task_visuals: List of dicts with keys:
+                - task_id: str
+                - input_grid: Grid or array
+                - predicted_grid: Grid or array (can be None)
+                - expected_grid: Grid or array (can be None)
+                - is_correct: bool
+                - accuracy: float
+            title: Overall title
+            save_path: Path to save the figure (optional)
+            show: Whether to display the figure
+            max_cols: Max tasks per row in grid layout
+            
+        Returns:
+            The matplotlib figure object
+        """
+        _ensure_matplotlib()
+        
+        n_tasks = len(task_visuals)
+        if n_tasks == 0:
+            return None
+        
+        # Calculate grid dimensions
+        # Each task needs 3 columns: Input, Predicted, Expected
+        cols_per_task = 3
+        
+        # Determine layout
+        if n_tasks <= 4:
+            # Single row for few tasks
+            n_rows = 1
+            n_cols = n_tasks * cols_per_task
+            fig_width = 3 * n_tasks
+            fig_height = 4
+        else:
+            # Grid layout for many tasks
+            tasks_per_row = min(max_cols, n_tasks)
+            n_rows = (n_tasks + tasks_per_row - 1) // tasks_per_row
+            n_cols = tasks_per_row * cols_per_task
+            fig_width = 3 * tasks_per_row
+            fig_height = 3.5 * n_rows
+        
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height))
+        
+        # Ensure axes is always 2D
+        if n_rows == 1 and n_cols == 1:
+            axes = np.array([[axes]])
+        elif n_rows == 1:
+            axes = axes.reshape(1, -1)
+        elif n_cols == 1:
+            axes = axes.reshape(-1, 1)
+        
+        # Hide all axes initially
+        for row in axes:
+            for ax in row:
+                ax.axis('off')
+        
+        # Plot each task
+        for i, task_data in enumerate(task_visuals):
+            if n_tasks <= 4:
+                row_idx = 0
+                col_offset = i * cols_per_task
+            else:
+                tasks_per_row = min(max_cols, n_tasks)
+                row_idx = i // tasks_per_row
+                col_offset = (i % tasks_per_row) * cols_per_task
+            
+            task_id = task_data.get('task_id', f'Task {i+1}')
+            is_correct = task_data.get('is_correct', False)
+            accuracy = task_data.get('accuracy', 0.0)
+            
+            # Status indicator
+            status = "✓" if is_correct else f"✗ {accuracy:.0%}"
+            status_color = "green" if is_correct else "red"
+            
+            # Input grid
+            ax_input = axes[row_idx, col_offset]
+            ax_input.axis('on')
+            if task_data.get('input_grid') is not None:
+                self.show_grid(task_data['input_grid'], "", ax=ax_input)
+            ax_input.set_title(f"{task_id}\nInput", fontsize=8)
+            
+            # Predicted grid
+            ax_pred = axes[row_idx, col_offset + 1]
+            ax_pred.axis('on')
+            if task_data.get('predicted_grid') is not None:
+                self.show_grid(task_data['predicted_grid'], "", ax=ax_pred)
+                ax_pred.set_title(f"Predicted\n{status}", fontsize=8, color=status_color)
+            else:
+                ax_pred.text(0.5, 0.5, "No\nPrediction", ha='center', va='center',
+                           fontsize=10, color='gray', transform=ax_pred.transAxes)
+                ax_pred.set_title("Predicted", fontsize=8)
+            
+            # Expected grid
+            ax_exp = axes[row_idx, col_offset + 2]
+            ax_exp.axis('on')
+            if task_data.get('expected_grid') is not None:
+                self.show_grid(task_data['expected_grid'], "", ax=ax_exp)
+            ax_exp.set_title("Expected", fontsize=8)
+        
+        # Add overall title with summary stats
+        n_correct = sum(1 for t in task_visuals if t.get('is_correct', False))
+        avg_acc = sum(t.get('accuracy', 0) for t in task_visuals) / max(1, n_tasks)
+        
+        fig.suptitle(
+            f"{title}\n{n_correct}/{n_tasks} correct ({n_correct/n_tasks:.0%}) | Avg accuracy: {avg_acc:.1%}",
+            fontsize=12,
+            fontweight='bold'
+        )
+        
+        plt.tight_layout()
+        
+        # Save if path provided
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight', facecolor='white')
+            print(f"📊 Batch summary saved to: {save_path}")
+        
+        # Show if requested
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+        
+        return fig
+    
+    def create_task_detail_image(
+        self,
+        task_id: str,
+        input_grid,
+        predicted_grid,
+        expected_grid,
+        is_correct: bool,
+        accuracy: float,
+        save_path: Optional[str] = None
+    ):
+        """
+        Create a detailed comparison image for a single task.
+        
+        Args:
+            task_id: Task identifier
+            input_grid: Input grid
+            predicted_grid: Predicted output (can be None)
+            expected_grid: Expected output
+            is_correct: Whether prediction was correct
+            accuracy: Accuracy percentage
+            save_path: Path to save the image
+            
+        Returns:
+            The matplotlib figure object
+        """
+        _ensure_matplotlib()
+        
+        fig, axes = plt.subplots(1, 4, figsize=(14, 4))
+        
+        # Input
+        self.show_grid(input_grid, "Input", ax=axes[0])
+        
+        # Predicted
+        if predicted_grid is not None:
+            self.show_grid(predicted_grid, "Predicted", ax=axes[1])
+        else:
+            axes[1].text(0.5, 0.5, "No Prediction", ha='center', va='center',
+                        fontsize=12, color='gray', transform=axes[1].transAxes)
+            axes[1].set_title("Predicted")
+            axes[1].axis('off')
+        
+        # Expected
+        self.show_grid(expected_grid, "Expected", ax=axes[2])
+        
+        # Difference
+        if predicted_grid is not None:
+            self._show_diff(predicted_grid, expected_grid, ax=axes[3])
+        else:
+            axes[3].axis('off')
+        
+        # Title with status
+        status = "✓ CORRECT" if is_correct else f"✗ INCORRECT ({accuracy:.1%})"
+        color = "green" if is_correct else "red"
+        fig.suptitle(f"{task_id}: {status}", fontsize=14, color=color, fontweight='bold')
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight', facecolor='white')
+        
+        plt.close(fig)
+        
+        return fig

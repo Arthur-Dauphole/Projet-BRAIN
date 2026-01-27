@@ -217,9 +217,11 @@ ou
 - ✅ **Module BatchRunner** - Exécute toutes les tâches et collecte des statistiques
 - ✅ **Dossiers horodatés** - Chaque batch crée `results/batch_YYYYMMDD_HHMMSS/`
 - ✅ **Rapports multiples** - `summary.json`, `tasks.csv`, `README.txt`
-- ✅ **Exécution non-bloquante** - Visualisations désactivées automatiquement en batch
+- ✅ **Exécution non-bloquante** - Visualisations désactivées pendant l'exécution
+- ✅ **Visualisation récapitulative** - Affichage de tous les tests à la fin du batch
+- ✅ **Images sauvegardées** - `batch_summary.png` + images individuelles par tâche
 - ✅ **Statistiques agrégées** - Accuracy moyenne, temps d'exécution, comptage des transformations
-- ✅ Options: `--limit`, `--pattern`, `--output`
+- ✅ Options: `--limit`, `--pattern`, `--output`, `--no-viz`
 
 ### v1.4.0 (Janvier 2026) - Blob Support Avancé
 - ✅ **NOUVEAU: Sous-types de blobs** - `blob_compact`, `blob_elongated`, `blob_sparse`, `blob_complex`, `blob_with_hole`
@@ -331,15 +333,22 @@ python main.py --batch data/ --multi --limit 5
 
 #### Dossier de sortie horodaté
 
-Chaque batch crée un dossier dédié :
+Chaque batch crée un dossier dédié avec visualisations :
 ```
 results/
   batch_20260127_143545/
-    summary.json    # Rapport complet avec métriques
-    tasks.csv       # Résultats par tâche (pour Excel/Python)
-    README.txt      # Résumé rapide
+    summary.json           # Rapport complet avec métriques
+    tasks.csv              # Résultats par tâche (pour Excel/Python)
+    README.txt             # Résumé rapide
+    images/
+      batch_summary.png    # Vue d'ensemble de tous les tests
+      task_xxx.png         # Image détaillée par tâche
 ```
 
 #### Exécution non-bloquante
 
-En mode batch, les visualisations sont **automatiquement désactivées** pour permettre une exécution sans interruption. Toutes les tâches sont traitées d'un coup, puis les résultats sont affichés à la fin.
+En mode batch, les visualisations sont **automatiquement désactivées pendant l'exécution** pour permettre un traitement sans interruption. À la fin du batch :
+- Une **visualisation récapitulative** s'affiche avec tous les tests côte à côte
+- Les images sont **sauvegardées** dans le dossier `images/`
+
+Pour désactiver l'affichage final : `python main.py --batch data/ --no-viz`
