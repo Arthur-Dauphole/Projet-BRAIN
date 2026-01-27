@@ -15,6 +15,7 @@ from .llm_client import LLMClient, LLMResponse
 from .executor import ActionExecutor, ActionResult
 from .analyzer import ResultAnalyzer
 from .visualizer import Visualizer
+from .batch_runner import BatchRunner, BatchResult, TaskResult, run_batch_evaluation
 
 __all__ = [
     # Data Types
@@ -33,4 +34,9 @@ __all__ = [
     "ActionResult",             # Step 4: Execution result
     "ResultAnalyzer",           # Step 5: Analysis
     "Visualizer",               # Step 6: Visualization
+    # Batch Evaluation
+    "BatchRunner",              # Batch task evaluation
+    "BatchResult",              # Batch results structure
+    "TaskResult",               # Single task result
+    "run_batch_evaluation",     # Convenience function
 ]

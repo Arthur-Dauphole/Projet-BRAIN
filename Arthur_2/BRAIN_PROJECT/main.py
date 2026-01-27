@@ -9,12 +9,16 @@ Pipeline Flow:
 Supports:
     - Single transformation mode (default)
     - Multi-transform mode (--multi) for different transformations per color
+    - Batch evaluation mode (--batch) for running multiple tasks
 
 Usage:
-    python main.py                              # Interactive mode
-    python main.py --task data/task.json        # Solve a specific task
-    python main.py --task data/task.json --multi # Multi-transform mode
-    python main.py --demo                       # Run demo with sample data
+    python main.py                                    # Interactive mode
+    python main.py --task data/task.json              # Solve a specific task
+    python main.py --task data/task.json --multi      # Multi-transform mode
+    python main.py --demo                             # Run demo with sample data
+    python main.py --batch data/                      # Run all tasks in directory
+    python main.py --batch data/ --limit 10           # Run first 10 tasks
+    python main.py --batch data/ --output results/    # Save reports to directory
 """
 
 import json
@@ -529,21 +533,41 @@ class BRAINOrchestrator:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="BRAIN Project - Neuro-Symbolic ARC-AGI Solver"
+        description="BRAIN Project - Neuro-Symbolic ARC-AGI Solver",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python main.py --demo                          # Run demo
+  python main.py --task data/task.json           # Solve a single task
+  python main.py --batch data/                   # Run all tasks in data/
+  python main.py --batch data/ --limit 5         # Run first 5 tasks
+  python main.py --batch data/ --output results/ # Save reports
+        """
     )
     
-    parser.add_argument(
+    # Mode selection (mutually exclusive)
+    mode_group = parser.add_mutually_exclusive_group()
+    
+    mode_group.add_argument(
         "--task", "-t",
         type=str,
-        help="Path to task JSON file"
+        help="Path to task JSON file (single task mode)"
     )
     
-    parser.add_argument(
+    mode_group.add_argument(
         "--demo", "-d",
         action="store_true",
         help="Run demo mode"
     )
     
+    mode_group.add_argument(
+        "--batch", "-b",
+        type=str,
+        metavar="DIR",
+        help="Run batch evaluation on all tasks in directory"
+    )
+    
+    # General options
     parser.add_argument(
         "--model", "-m",
         type=str,
@@ -569,8 +593,58 @@ def main():
         help="Use multi-transform mode (different transformation per color)"
     )
     
+    # Batch-specific options
+    parser.add_argument(
+        "--pattern", "-p",
+        type=str,
+        default="task_*.json",
+        help="File pattern for batch mode (default: task_*.json)"
+    )
+    
+    parser.add_argument(
+        "--output", "-o",
+        type=str,
+        default="results/",
+        help="Output directory for batch reports (default: results/)"
+    )
+    
+    parser.add_argument(
+        "--limit", "-l",
+        type=int,
+        help="Maximum number of tasks to run in batch mode"
+    )
+    
     args = parser.parse_args()
     
+    # === BATCH MODE ===
+    if args.batch:
+        from modules.batch_runner import BatchRunner
+        
+        # IMPORTANT: Always disable visualization in batch mode
+        # This allows the batch to run without user interaction
+        runner = BatchRunner(
+            model=args.model,
+            verbose=not args.quiet,
+            visualize=False,  # ALWAYS False for batch - no popups!
+            multi_mode=args.multi
+        )
+        
+        result = runner.run_batch(
+            directory=args.batch,
+            pattern=args.pattern,
+            limit=args.limit
+        )
+        
+        runner.print_summary(result)
+        
+        # Save all results to timestamped folder
+        result_folder = runner.save_results(result, args.output)
+        
+        print(f"\n✅ Batch complete! Results in: {result_folder}")
+        
+        return
+    
+    # === SINGLE TASK / DEMO MODE ===
     # Create orchestrator
     brain = BRAINOrchestrator(
         model=args.model,
@@ -592,13 +666,15 @@ def main():
             # Use standard single-transform mode
             brain.solve_task(task)
     else:
-        # Interactive mode
+        # Interactive mode - show help
         print("\n" + "=" * 60)
         print("  BRAIN Project - Neuro-Symbolic ARC-AGI Solver")
         print("=" * 60)
         print("\nUsage:")
-        print("  python main.py --demo           # Run demo")
-        print("  python main.py --task FILE.json # Solve a task")
+        print("  python main.py --demo                    # Run demo")
+        print("  python main.py --task FILE.json          # Solve a task")
+        print("  python main.py --batch data/             # Batch evaluation")
+        print("  python main.py --batch data/ --limit 10  # Run first 10 tasks")
         print("\nFor help: python main.py --help")
 
 

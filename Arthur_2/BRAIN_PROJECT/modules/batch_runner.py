@@ -1,0 +1,605 @@
+"""
+batch_runner.py - Batch Task Evaluation Module
+===============================================
+Run multiple ARC tasks and collect statistics.
+
+Features:
+    - Execute all task_*.json files in a directory
+    - Collect accuracy, timing, and transformation statistics
+    - Generate JSON/CSV reports in timestamped folders
+    - Support for filtering by task name pattern
+    - Non-blocking execution (no visualization during batch)
+
+Usage:
+    from modules.batch_runner import BatchRunner
+    
+    runner = BatchRunner(model="llama3")
+    results = runner.run_batch("data/", pattern="task_*.json")
+    runner.print_summary(results)
+    runner.save_results(results, "results/")  # Creates timestamped folder
+"""
+
+import json
+import time
+import glob
+from pathlib import Path
+from dataclasses import dataclass, field, asdict
+from typing import List, Dict, Any, Optional
+from datetime import datetime
+
+
+@dataclass
+class TaskResult:
+    """Result of a single task evaluation."""
+    task_id: str
+    task_file: str
+    success: bool
+    is_correct: bool
+    accuracy: float
+    execution_time: float  # seconds
+    detected_transformations: List[str] = field(default_factory=list)
+    action_used: Optional[str] = None
+    error_message: Optional[str] = None
+    num_train_examples: int = 0
+    num_test_examples: int = 0
+    grid_size: Optional[str] = None  # e.g., "10x10"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass 
+class BatchResult:
+    """Aggregated results from a batch run."""
+    total_tasks: int = 0
+    successful_tasks: int = 0
+    correct_tasks: int = 0
+    failed_tasks: int = 0
+    
+    total_time: float = 0.0
+    avg_time_per_task: float = 0.0
+    
+    overall_accuracy: float = 0.0
+    accuracy_when_successful: float = 0.0
+    
+    transformation_counts: Dict[str, int] = field(default_factory=dict)
+    action_counts: Dict[str, int] = field(default_factory=dict)
+    
+    task_results: List[TaskResult] = field(default_factory=list)
+    
+    # Metadata
+    run_timestamp: str = ""
+    run_folder: str = ""  # Timestamped folder name
+    model_used: str = ""
+    pattern_used: str = ""
+    directory: str = ""
+    
+    def to_dict(self) -> Dict[str, Any]:
+        result = {
+            "summary": {
+                "total_tasks": self.total_tasks,
+                "successful_tasks": self.successful_tasks,
+                "correct_tasks": self.correct_tasks,
+                "failed_tasks": self.failed_tasks,
+                "success_rate": f"{self.successful_tasks/max(1,self.total_tasks):.1%}",
+                "correctness_rate": f"{self.correct_tasks/max(1,self.total_tasks):.1%}",
+                "overall_accuracy": f"{self.overall_accuracy:.1%}",
+                "accuracy_when_successful": f"{self.accuracy_when_successful:.1%}",
+            },
+            "timing": {
+                "total_time_seconds": round(self.total_time, 2),
+                "avg_time_per_task_seconds": round(self.avg_time_per_task, 2),
+            },
+            "transformation_stats": self.transformation_counts,
+            "action_stats": self.action_counts,
+            "metadata": {
+                "run_timestamp": self.run_timestamp,
+                "run_folder": self.run_folder,
+                "model_used": self.model_used,
+                "pattern_used": self.pattern_used,
+                "directory": self.directory,
+            },
+            "task_results": [r.to_dict() for r in self.task_results]
+        }
+        return result
+
+
+class BatchRunner:
+    """
+    Run multiple ARC tasks and collect statistics.
+    
+    Example:
+        runner = BatchRunner(model="llama3", verbose=True)
+        results = runner.run_batch("data/", pattern="task_*.json")
+        runner.print_summary(results)
+        runner.save_report(results, "batch_results.json")
+    """
+    
+    def __init__(
+        self,
+        model: str = "llama3",
+        verbose: bool = True,
+        visualize: bool = False,  # Default off for batch
+        multi_mode: bool = False
+    ):
+        """
+        Initialize the batch runner.
+        
+        Args:
+            model: LLM model name for Ollama
+            verbose: Print progress messages
+            visualize: Show visualizations (usually False for batch)
+            multi_mode: Use multi-transform mode
+        """
+        self.model = model
+        self.verbose = verbose
+        self.visualize = visualize
+        self.multi_mode = multi_mode
+        
+        # Lazy import to avoid circular imports
+        self._orchestrator = None
+    
+    def _get_orchestrator(self):
+        """Lazy initialization of orchestrator."""
+        if self._orchestrator is None:
+            # Import here to avoid circular imports
+            from main import BRAINOrchestrator
+            self._orchestrator = BRAINOrchestrator(
+                model=self.model,
+                verbose=False,  # Quiet during batch
+                visualize=self.visualize
+            )
+        return self._orchestrator
+    
+    def _log(self, message: str):
+        """Print message if verbose mode."""
+        if self.verbose:
+            print(message)
+    
+    def find_tasks(self, directory: str, pattern: str = "task_*.json") -> List[Path]:
+        """
+        Find all task files matching the pattern.
+        
+        Args:
+            directory: Directory to search
+            pattern: Glob pattern for task files
+            
+        Returns:
+            List of Path objects for matching files
+        """
+        dir_path = Path(directory)
+        if not dir_path.exists():
+            raise FileNotFoundError(f"Directory not found: {directory}")
+        
+        # Find matching files
+        files = list(dir_path.glob(pattern))
+        
+        # Sort alphabetically for consistent ordering
+        files.sort(key=lambda p: p.name)
+        
+        return files
+    
+    def run_single_task(self, task_file: Path) -> TaskResult:
+        """
+        Run a single task and return the result.
+        
+        Args:
+            task_file: Path to the task JSON file
+            
+        Returns:
+            TaskResult with all metrics
+        """
+        orchestrator = self._get_orchestrator()
+        
+        result = TaskResult(
+            task_id=task_file.stem,
+            task_file=str(task_file),
+            success=False,
+            is_correct=False,
+            accuracy=0.0,
+            execution_time=0.0
+        )
+        
+        start_time = time.time()
+        
+        try:
+            # Load task
+            task = orchestrator.load_task(str(task_file))
+            
+            result.num_train_examples = len(task.train_pairs)
+            result.num_test_examples = len(task.test_pairs)
+            
+            # Get grid size from first test input
+            if task.test_pairs:
+                grid = task.test_pairs[0].input_grid
+                result.grid_size = f"{grid.height}x{grid.width}"
+            
+            # Solve task
+            if self.multi_mode:
+                solve_result = orchestrator.solve_task_multi_transform(task)
+            else:
+                solve_result = orchestrator.solve_task(task)
+            
+            # Extract results
+            result.success = True
+            
+            # Get detected transformations
+            if "detected_transformations" in solve_result:
+                for trans_list in solve_result["detected_transformations"]:
+                    if trans_list:
+                        for t in trans_list:
+                            if hasattr(t, 'transformation_type'):
+                                result.detected_transformations.append(t.transformation_type)
+                            elif isinstance(t, dict) and 'transformation_type' in t:
+                                result.detected_transformations.append(t['transformation_type'])
+            
+            # Get action used
+            if "action_data" in solve_result and solve_result["action_data"]:
+                action = solve_result["action_data"]
+                if isinstance(action, dict):
+                    result.action_used = action.get("action", "unknown")
+            
+            # Get accuracy
+            if solve_result.get("analyses"):
+                analyses = solve_result["analyses"]
+                if analyses:
+                    result.accuracy = analyses[0].accuracy
+                    result.is_correct = analyses[0].is_correct
+            
+        except Exception as e:
+            result.success = False
+            result.error_message = str(e)
+        
+        result.execution_time = time.time() - start_time
+        
+        return result
+    
+    def run_batch(
+        self,
+        directory: str,
+        pattern: str = "task_*.json",
+        limit: Optional[int] = None
+    ) -> BatchResult:
+        """
+        Run all tasks in a directory and collect statistics.
+        
+        Args:
+            directory: Directory containing task files
+            pattern: Glob pattern for task files
+            limit: Maximum number of tasks to run (None for all)
+            
+        Returns:
+            BatchResult with aggregated statistics
+        """
+        # Find tasks
+        task_files = self.find_tasks(directory, pattern)
+        
+        if limit:
+            task_files = task_files[:limit]
+        
+        self._log(f"\n{'='*60}")
+        self._log(f"  BRAIN Batch Evaluation")
+        self._log(f"{'='*60}")
+        self._log(f"  Directory: {directory}")
+        self._log(f"  Pattern: {pattern}")
+        self._log(f"  Tasks found: {len(task_files)}")
+        self._log(f"  Model: {self.model}")
+        self._log(f"  Mode: {'Multi-transform' if self.multi_mode else 'Single-transform'}")
+        self._log(f"{'='*60}\n")
+        
+        if not task_files:
+            self._log("No tasks found!")
+            return BatchResult()
+        
+        # Create timestamped folder name
+        timestamp = datetime.now()
+        run_folder = f"batch_{timestamp.strftime('%Y%m%d_%H%M%S')}"
+        
+        # Initialize result
+        batch_result = BatchResult(
+            total_tasks=len(task_files),
+            run_timestamp=timestamp.isoformat(),
+            run_folder=run_folder,
+            model_used=self.model,
+            pattern_used=pattern,
+            directory=str(directory)
+        )
+        
+        start_time = time.time()
+        
+        # Run each task
+        for i, task_file in enumerate(task_files):
+            self._log(f"[{i+1}/{len(task_files)}] Running: {task_file.name}")
+            
+            result = self.run_single_task(task_file)
+            batch_result.task_results.append(result)
+            
+            # Update counters
+            if result.success:
+                batch_result.successful_tasks += 1
+                if result.is_correct:
+                    batch_result.correct_tasks += 1
+            else:
+                batch_result.failed_tasks += 1
+            
+            # Count transformations
+            for trans in result.detected_transformations:
+                batch_result.transformation_counts[trans] = \
+                    batch_result.transformation_counts.get(trans, 0) + 1
+            
+            # Count actions
+            if result.action_used:
+                batch_result.action_counts[result.action_used] = \
+                    batch_result.action_counts.get(result.action_used, 0) + 1
+            
+            # Progress indicator
+            status = "✓" if result.is_correct else ("⚠" if result.success else "✗")
+            acc_str = f"{result.accuracy:.0%}" if result.success else "N/A"
+            time_str = f"{result.execution_time:.1f}s"
+            self._log(f"       {status} Accuracy: {acc_str}, Time: {time_str}")
+        
+        # Calculate aggregates
+        batch_result.total_time = time.time() - start_time
+        batch_result.avg_time_per_task = batch_result.total_time / max(1, len(task_files))
+        
+        # Calculate accuracy metrics
+        successful_results = [r for r in batch_result.task_results if r.success]
+        if successful_results:
+            batch_result.overall_accuracy = sum(r.accuracy for r in batch_result.task_results) / len(batch_result.task_results)
+            batch_result.accuracy_when_successful = sum(r.accuracy for r in successful_results) / len(successful_results)
+        
+        return batch_result
+    
+    def print_summary(self, result: BatchResult):
+        """
+        Print a formatted summary of batch results.
+        
+        Args:
+            result: BatchResult to summarize
+        """
+        print("\n" + "=" * 60)
+        print("  BATCH EVALUATION SUMMARY")
+        print("=" * 60)
+        
+        print(f"\n📊 RESULTS:")
+        print(f"   Total tasks:      {result.total_tasks}")
+        print(f"   Successful:       {result.successful_tasks} ({result.successful_tasks/max(1,result.total_tasks):.1%})")
+        print(f"   Correct (100%):   {result.correct_tasks} ({result.correct_tasks/max(1,result.total_tasks):.1%})")
+        print(f"   Failed:           {result.failed_tasks}")
+        
+        print(f"\n📈 ACCURACY:")
+        print(f"   Overall:          {result.overall_accuracy:.1%}")
+        print(f"   When successful:  {result.accuracy_when_successful:.1%}")
+        
+        print(f"\n⏱️  TIMING:")
+        print(f"   Total time:       {result.total_time:.1f}s")
+        print(f"   Avg per task:     {result.avg_time_per_task:.1f}s")
+        
+        if result.transformation_counts:
+            print(f"\n🔄 TRANSFORMATIONS DETECTED:")
+            for trans, count in sorted(result.transformation_counts.items(), key=lambda x: -x[1]):
+                print(f"   {trans}: {count}")
+        
+        if result.action_counts:
+            print(f"\n🎯 ACTIONS EXECUTED:")
+            for action, count in sorted(result.action_counts.items(), key=lambda x: -x[1]):
+                print(f"   {action}: {count}")
+        
+        # Show failed tasks
+        failed = [r for r in result.task_results if not r.success]
+        if failed:
+            print(f"\n❌ FAILED TASKS ({len(failed)}):")
+            for r in failed[:5]:  # Show first 5
+                print(f"   - {r.task_id}: {r.error_message}")
+            if len(failed) > 5:
+                print(f"   ... and {len(failed)-5} more")
+        
+        # Show incorrect tasks (success but not 100%)
+        incorrect = [r for r in result.task_results if r.success and not r.is_correct]
+        if incorrect:
+            print(f"\n⚠️  INCORRECT TASKS ({len(incorrect)}):")
+            for r in sorted(incorrect, key=lambda x: x.accuracy)[:5]:
+                print(f"   - {r.task_id}: {r.accuracy:.1%}")
+            if len(incorrect) > 5:
+                print(f"   ... and {len(incorrect)-5} more")
+        
+        print("\n" + "=" * 60)
+    
+    def save_report(self, result: BatchResult, filepath: str):
+        """
+        Save batch results to a JSON file.
+        
+        Args:
+            result: BatchResult to save
+            filepath: Path for the JSON file
+        """
+        path = Path(filepath)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(path, 'w') as f:
+            json.dump(result.to_dict(), f, indent=2)
+        
+        self._log(f"\n📄 Report saved to: {filepath}")
+    
+    def generate_csv_report(self, result: BatchResult, filepath: str):
+        """
+        Save task-level results to a CSV file.
+        
+        Args:
+            result: BatchResult to save
+            filepath: Path for the CSV file
+        """
+        import csv
+        
+        path = Path(filepath)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            
+            # Header
+            writer.writerow([
+                'task_id', 'success', 'is_correct', 'accuracy', 
+                'execution_time', 'transformations', 'action_used',
+                'grid_size', 'train_examples', 'test_examples', 'error'
+            ])
+            
+            # Data rows
+            for r in result.task_results:
+                writer.writerow([
+                    r.task_id,
+                    r.success,
+                    r.is_correct,
+                    f"{r.accuracy:.4f}",
+                    f"{r.execution_time:.2f}",
+                    "|".join(r.detected_transformations),
+                    r.action_used or "",
+                    r.grid_size or "",
+                    r.num_train_examples,
+                    r.num_test_examples,
+                    r.error_message or ""
+                ])
+        
+        self._log(f"📄 CSV saved to: {filepath}")
+    
+    def save_results(self, result: BatchResult, output_dir: str = "results/") -> str:
+        """
+        Save all batch results to a timestamped folder.
+        
+        Creates a folder structure like:
+            results/
+                batch_20260127_143545/
+                    summary.json      # Full report
+                    tasks.csv         # Task-level results
+                    README.txt        # Quick summary
+        
+        Args:
+            result: BatchResult to save
+            output_dir: Base directory for results
+            
+        Returns:
+            Path to the created folder
+        """
+        # Create timestamped folder
+        folder_path = Path(output_dir) / result.run_folder
+        folder_path.mkdir(parents=True, exist_ok=True)
+        
+        # Save JSON report
+        json_path = folder_path / "summary.json"
+        self.save_report(result, str(json_path))
+        
+        # Save CSV report
+        csv_path = folder_path / "tasks.csv"
+        self.generate_csv_report(result, str(csv_path))
+        
+        # Generate quick summary README
+        readme_path = folder_path / "README.txt"
+        self._generate_readme(result, str(readme_path))
+        
+        self._log(f"\n📁 Results saved to: {folder_path}/")
+        
+        return str(folder_path)
+    
+    def _generate_readme(self, result: BatchResult, filepath: str):
+        """Generate a quick summary README file."""
+        lines = [
+            "=" * 50,
+            "BRAIN Batch Evaluation Results",
+            "=" * 50,
+            "",
+            f"Run timestamp: {result.run_timestamp}",
+            f"Model: {result.model_used}",
+            f"Directory: {result.directory}",
+            f"Pattern: {result.pattern_used}",
+            "",
+            "RESULTS:",
+            f"  Total tasks:       {result.total_tasks}",
+            f"  Successful:        {result.successful_tasks} ({result.successful_tasks/max(1,result.total_tasks):.1%})",
+            f"  Correct (100%):    {result.correct_tasks} ({result.correct_tasks/max(1,result.total_tasks):.1%})",
+            f"  Failed:            {result.failed_tasks}",
+            "",
+            "ACCURACY:",
+            f"  Overall:           {result.overall_accuracy:.1%}",
+            f"  When successful:   {result.accuracy_when_successful:.1%}",
+            "",
+            "TIMING:",
+            f"  Total time:        {result.total_time:.1f}s",
+            f"  Avg per task:      {result.avg_time_per_task:.1f}s",
+            "",
+            "FILES:",
+            "  summary.json  - Full detailed report",
+            "  tasks.csv     - Task-level results for analysis",
+            "",
+            "=" * 50,
+        ]
+        
+        with open(filepath, 'w') as f:
+            f.write("\n".join(lines))
+
+
+def run_batch_evaluation(
+    directory: str = "data/",
+    pattern: str = "task_*.json",
+    model: str = "llama3",
+    output_dir: str = "results/",
+    multi_mode: bool = False,
+    limit: Optional[int] = None
+) -> BatchResult:
+    """
+    Convenience function to run a batch evaluation.
+    
+    Creates a timestamped folder with all results:
+        results/batch_YYYYMMDD_HHMMSS/
+            summary.json
+            tasks.csv
+            README.txt
+    
+    Args:
+        directory: Directory containing task files
+        pattern: Glob pattern for task files
+        model: LLM model name
+        output_dir: Base directory for output (timestamped folder created inside)
+        multi_mode: Use multi-transform mode
+        limit: Maximum number of tasks
+        
+    Returns:
+        BatchResult with all statistics
+    """
+    runner = BatchRunner(
+        model=model,
+        verbose=True,
+        visualize=False,  # IMPORTANT: No visualization during batch
+        multi_mode=multi_mode
+    )
+    
+    result = runner.run_batch(directory, pattern, limit)
+    runner.print_summary(result)
+    
+    # Save all results to timestamped folder
+    runner.save_results(result, output_dir)
+    
+    return result
+
+
+if __name__ == "__main__":
+    # Quick test
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Run batch task evaluation")
+    parser.add_argument("--dir", "-d", default="data/", help="Task directory")
+    parser.add_argument("--pattern", "-p", default="task_*.json", help="File pattern")
+    parser.add_argument("--model", "-m", default="llama3", help="LLM model")
+    parser.add_argument("--output", "-o", default="results/", help="Output directory")
+    parser.add_argument("--limit", "-l", type=int, help="Max tasks to run")
+    parser.add_argument("--multi", action="store_true", help="Multi-transform mode")
+    
+    args = parser.parse_args()
+    
+    run_batch_evaluation(
+        directory=args.dir,
+        pattern=args.pattern,
+        model=args.model,
+        output_dir=args.output,
+        multi_mode=args.multi,
+        limit=args.limit
+    )

@@ -1,7 +1,7 @@
 # BRAIN Project - Capacités du Système
 
 > **Dernière mise à jour :** Janvier 2026  
-> **Version :** 1.4.0
+> **Version :** 1.5.0
 
 ---
 
@@ -212,6 +212,15 @@ ou
 
 ## 📝 Historique des versions
 
+### v1.5.0 (Janvier 2026) - Batch Evaluation Mode
+- ✅ **NOUVEAU: Mode Batch** (`--batch DIR`) pour évaluer plusieurs tâches automatiquement
+- ✅ **Module BatchRunner** - Exécute toutes les tâches et collecte des statistiques
+- ✅ **Dossiers horodatés** - Chaque batch crée `results/batch_YYYYMMDD_HHMMSS/`
+- ✅ **Rapports multiples** - `summary.json`, `tasks.csv`, `README.txt`
+- ✅ **Exécution non-bloquante** - Visualisations désactivées automatiquement en batch
+- ✅ **Statistiques agrégées** - Accuracy moyenne, temps d'exécution, comptage des transformations
+- ✅ Options: `--limit`, `--pattern`, `--output`
+
 ### v1.4.0 (Janvier 2026) - Blob Support Avancé
 - ✅ **NOUVEAU: Sous-types de blobs** - `blob_compact`, `blob_elongated`, `blob_sparse`, `blob_complex`, `blob_with_hole`
 - ✅ **Propriétés avancées** - `perimeter`, `compactness`, `corner_count`, `orientation`, `aspect_ratio`, `shape_signature`
@@ -257,10 +266,11 @@ ou
 
 - [ ] Détection de patterns répétitifs
 - [ ] Détection de sous-grilles
-- [ ] Mode batch pour évaluer plusieurs tâches
-- [ ] Export des résultats en JSON
+- [x] ~~Mode batch pour évaluer plusieurs tâches~~ ✅ v1.5.0
+- [x] ~~Export des résultats en JSON~~ ✅ v1.5.0
 - [ ] Support de transformations composées (translation + rotation simultanées)
 - [ ] Auto-détection du mode (single vs multi-transform)
+- [ ] Parallélisation des évaluations batch
 
 ---
 
@@ -288,3 +298,48 @@ Applique la MÊME transformation à TOUS les objets.
 python main.py --task data/task.json --multi
 ```
 Applique des transformations DIFFÉRENTES à chaque COULEUR.
+
+### Mode Batch (Évaluation en lot)
+```bash
+# Exécuter toutes les tâches dans data/
+python main.py --batch data/
+
+# Limiter à 10 tâches
+python main.py --batch data/ --limit 10
+
+# Filtrer par pattern
+python main.py --batch data/ --pattern "task_blob_*.json"
+
+# Spécifier le dossier de sortie
+python main.py --batch data/ --output results/
+
+# Combiner avec mode multi-transform
+python main.py --batch data/ --multi --limit 5
+```
+
+#### Statistiques collectées
+
+| Métrique | Description |
+|----------|-------------|
+| `total_tasks` | Nombre total de tâches |
+| `successful_tasks` | Tâches exécutées sans erreur |
+| `correct_tasks` | Tâches avec 100% d'accuracy |
+| `overall_accuracy` | Accuracy moyenne sur toutes les tâches |
+| `avg_time_per_task` | Temps moyen par tâche |
+| `transformation_counts` | Comptage par type de transformation |
+| `action_counts` | Comptage par action exécutée |
+
+#### Dossier de sortie horodaté
+
+Chaque batch crée un dossier dédié :
+```
+results/
+  batch_20260127_143545/
+    summary.json    # Rapport complet avec métriques
+    tasks.csv       # Résultats par tâche (pour Excel/Python)
+    README.txt      # Résumé rapide
+```
+
+#### Exécution non-bloquante
+
+En mode batch, les visualisations sont **automatiquement désactivées** pour permettre une exécution sans interruption. Toutes les tâches sont traitées d'un coup, puis les résultats sont affichés à la fin.
