@@ -158,14 +158,19 @@ class BatchRunner:
         # Lazy import to avoid circular imports
         self._orchestrator = None
     
-    def _get_orchestrator(self):
-        """Lazy initialization of orchestrator."""
-        if self._orchestrator is None:
+    def _get_orchestrator(self, fresh: bool = False):
+        """
+        Lazy initialization of orchestrator.
+        
+        Args:
+            fresh: If True, create a new orchestrator (useful for debugging)
+        """
+        if self._orchestrator is None or fresh:
             # Import here to avoid circular imports
             from main import BRAINOrchestrator
             self._orchestrator = BRAINOrchestrator(
                 model=self.model,
-                verbose=False,  # Quiet during batch
+                verbose=False,  # Keep quiet during batch - only show progress
                 visualize=self.visualize
             )
         return self._orchestrator

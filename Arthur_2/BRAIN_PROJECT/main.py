@@ -269,6 +269,20 @@ class BRAINOrchestrator:
             action_to_use = response.action_data or results.get("action_data")
             
             if action_to_use:
+                # CRITICAL FIX: For draw_line, always detect color from TEST input
+                # The LLM might return the training color instead of test color
+                if action_to_use.get("action") == "draw_line":
+                    import numpy as np
+                    test_data = test_input.data
+                    for c in range(1, 10):
+                        if np.sum(test_data == c) == 2:
+                            old_color = action_to_use.get("color_filter")
+                            if old_color != c:
+                                self._log(f"  🔧 Fixing draw_line color: {old_color} -> {c}")
+                            action_to_use = dict(action_to_use)  # Make a copy
+                            action_to_use["color_filter"] = c
+                            break
+                
                 # Execute the action on the test input
                 self._log(f"  Executing action on test input {i+1}...")
                 action_result = self.executor.execute(test_input, action_to_use)
@@ -550,13 +564,24 @@ class BRAINOrchestrator:
                                 }
                             }
                         elif t_type == "rotation":
-                            action = {
-                                "action": "rotate",
-                                "params": {"angle": params.get("angle", 90)}
-                            }
-                            if color_filter:
-                                action["color_filter"] = color_filter
-                            return action
+                            angle = params.get("angle", 90)
+                            is_grid_level = params.get("grid_level", False)
+                            
+                            if is_grid_level:
+                                # Grid-level rotation
+                                return {
+                                    "action": "rotate",
+                                    "params": {"angle": angle, "grid_level": True}
+                                }
+                            else:
+                                # Object-level rotation
+                                action = {
+                                    "action": "rotate",
+                                    "params": {"angle": angle}
+                                }
+                                if color_filter:
+                                    action["color_filter"] = color_filter
+                                return action
                         elif t_type == "reflection":
                             axis = params.get("axis", "horizontal")
                             # Check if this is grid-level or object-level reflection
@@ -585,19 +610,26 @@ class BRAINOrchestrator:
                             }
                         elif t_type == "draw_line":
                             # draw_line needs color_filter to find the 2 points
-                            draw_color = params.get("color") or color_filter
+                            # ALWAYS detect color from TEST INPUT (not training examples)
+                            # because the test may use a different color
+                            draw_color = None
+                            if task.test_pairs:
+                                import numpy as np
+                                test_data = task.test_pairs[0].input_grid.data
+                                for c in range(1, 10):
+                                    count = int(np.sum(test_data == c))
+                                    if count == 2:
+                                        draw_color = c
+                                        self._log(f"  Auto-detected draw_line color from test: {draw_color}")
+                                        break
+                            
+                            # Fallback to training color if test detection failed
                             if draw_color is None:
-                                # Try to get from test input - find color with exactly 2 pixels
-                                if task.test_pairs:
-                                    import numpy as np
-                                    test_data = task.test_pairs[0].input_grid.data
-                                    for c in range(1, 10):
-                                        if np.sum(test_data == c) == 2:
-                                            draw_color = c
-                                            break
+                                draw_color = params.get("color") or color_filter or 1
+                            
                             return {
                                 "action": "draw_line",
-                                "color_filter": draw_color or 1
+                                "color_filter": draw_color
                             }
         
         return None

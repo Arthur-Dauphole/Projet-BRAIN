@@ -69,33 +69,52 @@ class TransformationDetector:
         results = []
         
         # Try to detect various transformations
-        # Order matters! Reflection is checked BEFORE rotation because
-        # for same-dimension shapes, reflection is more likely than 180° rotation
+        # Order matters! 
         
+        # PRIORITY 0: Check draw_line FIRST (very specific: 2 points → line)
+        # If detected with 100% confidence, return immediately
+        draw_line = self.detect_draw_line(input_grid, output_grid)
+        if draw_line and draw_line.confidence >= 1.0:
+            return [draw_line]  # Return immediately - this is a clear draw_line task
+        
+        # PRIORITY 0.5: Check GRID-LEVEL reflection BEFORE anything else
+        # This is a very specific pattern: entire grid flipped
+        grid_reflection = self._detect_grid_level_reflection(input_grid, output_grid)
+        if grid_reflection and grid_reflection.confidence >= 1.0:
+            return [grid_reflection]  # Return immediately - this is a clear grid-level reflection
+        
+        # PRIORITY 0.6: Check GRID-LEVEL rotation
+        grid_rotation = self._detect_grid_level_rotation(input_grid, output_grid)
+        if grid_rotation and grid_rotation.confidence >= 1.0:
+            return [grid_rotation]  # Return immediately - this is a clear grid-level rotation
+        
+        # PRIORITY 1: Translation (but only if no grid-level transform was found)
         translation = self.detect_translation(input_grid, output_grid)
         if translation:
             results.append(translation)
         
-        # Check reflection BEFORE rotation
+        # PRIORITY 2: Check reflection BEFORE rotation (object-level)
         reflection = self.detect_reflection(input_grid, output_grid)
         if reflection:
             results.append(reflection)
         
-        # Only check rotation if reflection wasn't found
-        if not reflection:
-            rotation = self.detect_rotation(input_grid, output_grid)
-            if rotation:
-                results.append(rotation)
+        # PRIORITY 3: Check rotation (object-level)
+        # Allow rotation even if reflection was found - they might be different
+        rotation = self.detect_rotation(input_grid, output_grid)
+        if rotation:
+            results.append(rotation)
         
+        # PRIORITY 4: Color change
         color_change = self.detect_color_change(input_grid, output_grid)
         if color_change:
             results.append(color_change)
         
+        # PRIORITY 5: Scaling
         scaling = self.detect_scaling(input_grid, output_grid)
         if scaling:
             results.append(scaling)
         
-        draw_line = self.detect_draw_line(input_grid, output_grid)
+        # Add draw_line if detected but not with 100% confidence
         if draw_line:
             results.append(draw_line)
         
@@ -109,6 +128,59 @@ class TransformationDetector:
         results.sort(key=lambda x: x.confidence, reverse=True)
         
         return results
+    
+    def _detect_grid_level_reflection(self, input_grid: Grid, output_grid: Grid) -> Optional[TransformationResult]:
+        """
+        Detect if the entire grid is reflected (flipped).
+        
+        This checks for exact np.flipud or np.fliplr matches.
+        Returns immediately if found with 100% confidence.
+        """
+        in_data = input_grid.data
+        out_data = output_grid.data
+        
+        if in_data.shape != out_data.shape:
+            return None
+        
+        # Check horizontal reflection (flip up-down)
+        if np.array_equal(np.flipud(in_data), out_data):
+            return TransformationResult(
+                transformation_type="reflection",
+                confidence=1.0,
+                parameters={"axis": "horizontal", "grid_level": True}
+            )
+        
+        # Check vertical reflection (flip left-right)
+        if np.array_equal(np.fliplr(in_data), out_data):
+            return TransformationResult(
+                transformation_type="reflection",
+                confidence=1.0,
+                parameters={"axis": "vertical", "grid_level": True}
+            )
+        
+        return None
+    
+    def _detect_grid_level_rotation(self, input_grid: Grid, output_grid: Grid) -> Optional[TransformationResult]:
+        """
+        Detect if the entire grid is rotated.
+        
+        This checks for exact np.rot90 matches at 90, 180, 270 degrees.
+        Returns immediately if found with 100% confidence.
+        """
+        in_data = input_grid.data
+        out_data = output_grid.data
+        
+        # Check each rotation angle
+        for angle in [90, 180, 270]:
+            rotated = np.rot90(in_data, k=angle // 90)
+            if rotated.shape == out_data.shape and np.array_equal(rotated, out_data):
+                return TransformationResult(
+                    transformation_type="rotation",
+                    confidence=1.0,
+                    parameters={"angle": angle, "grid_level": True}
+                )
+        
+        return None
     
     def detect_translation(self, input_grid: Grid, output_grid: Grid) -> Optional[TransformationResult]:
         """

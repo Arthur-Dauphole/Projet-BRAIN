@@ -369,8 +369,9 @@ class ActionExecutor:
         
         Parameters:
             params.angle: int - Rotation angle (90, 180, 270)
+            params.grid_level: bool - If True, rotate entire grid (no color_filter auto-detection)
             color_filter: int (optional) - Only rotate pixels of this color
-                         If not provided, will auto-detect the non-background color
+                         If not provided and grid_level=False, will auto-detect the non-background color
         
         Returns:
             ActionResult with rotated grid
@@ -378,6 +379,7 @@ class ActionExecutor:
         params = action_data.get("params", {})
         angle = int(params.get("angle", 90))
         color_filter = action_data.get("color_filter")
+        grid_level = params.get("grid_level", False)
         
         if angle not in [90, 180, 270]:
             return ActionResult(
@@ -385,8 +387,11 @@ class ActionExecutor:
                 message=f"Invalid rotation angle: {angle}. Must be 90, 180, or 270"
             )
         
-        # Auto-detect color if not provided and there's only one non-background color
-        if color_filter is None:
+        # Auto-detect color ONLY if:
+        # - color_filter is not provided
+        # - grid_level is False (not a grid-level rotation)
+        # - there's only one non-background color
+        if color_filter is None and not grid_level:
             unique_colors = [c for c in grid.unique_colors if c != 0]
             if len(unique_colors) == 1:
                 color_filter = unique_colors[0]

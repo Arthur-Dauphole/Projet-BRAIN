@@ -189,6 +189,44 @@ Example 5 - DRAW LINE:
         in_data = input_grid.data
         out_data = output_grid.data
         
+        # Priority 0: Check for DRAW LINE FIRST (very specific: 2 points → connected line)
+        # This must be checked early because it's a unique pattern
+        if in_data.shape == out_data.shape:
+            for color in range(1, 10):  # Check colors 1-9
+                in_positions = list(zip(*np.where(in_data == color)))
+                out_positions = set(zip(*np.where(out_data == color)))
+                
+                # We need exactly 2 input points and more output points (line drawn)
+                if len(in_positions) == 2 and len(out_positions) > 2:
+                    # Check if input points are in output
+                    if all((r, c) in out_positions for r, c in in_positions):
+                        p1, p2 = in_positions[0], in_positions[1]
+                        
+                        # Classify line type
+                        if p1[0] == p2[0]:
+                            line_type = "horizontal"
+                        elif p1[1] == p2[1]:
+                            line_type = "vertical"
+                        else:
+                            line_type = "diagonal"
+                        
+                        return f"**DETECTED TRANSFORMATION: DRAW LINE color={color} ({line_type})**"
+        
+        # Priority 0.5: Check for GRID-LEVEL REFLECTION (entire grid flipped)
+        # MUST be checked BEFORE translation to avoid false positive
+        if in_data.shape == out_data.shape:
+            if np.array_equal(np.flipud(in_data), out_data):
+                return "**DETECTED TRANSFORMATION: REFLECTION with axis=horizontal (GRID-LEVEL)**"
+            if np.array_equal(np.fliplr(in_data), out_data):
+                return "**DETECTED TRANSFORMATION: REFLECTION with axis=vertical (GRID-LEVEL)**"
+        
+        # Priority 0.6: Check for GRID-LEVEL ROTATION (entire grid rotated)
+        # MUST be checked BEFORE object-level rotation
+        for angle in [90, 180, 270]:
+            rotated = np.rot90(in_data, k=angle // 90)
+            if rotated.shape == out_data.shape and np.array_equal(rotated, out_data):
+                return f"**DETECTED TRANSFORMATION: ROTATION with angle={angle} (GRID-LEVEL)**"
+        
         # Priority 1: Check for TRANSLATION (objects moved)
         if input_grid.objects and output_grid.objects:
             for in_obj in input_grid.objects:
@@ -243,43 +281,7 @@ Example 5 - DRAW LINE:
                                 if rotation_angle:
                                     return f"**DETECTED TRANSFORMATION: ROTATION with angle={rotation_angle} (use color_filter with the color from TEST input)**"
         
-        # Priority 4: Check for GRID-LEVEL REFLECTION (entire grid flipped)
-        # This should be checked BEFORE grid-level rotation to avoid confusion
-        if in_data.shape == out_data.shape:
-            if np.array_equal(np.flipud(in_data), out_data):
-                return "**DETECTED TRANSFORMATION: REFLECTION with axis=horizontal (GRID-LEVEL)**"
-            if np.array_equal(np.fliplr(in_data), out_data):
-                return "**DETECTED TRANSFORMATION: REFLECTION with axis=vertical (GRID-LEVEL)**"
-        
-        # Priority 5: Check for GRID-LEVEL ROTATION
-        for angle in [90, 180, 270]:
-            rotated = np.rot90(in_data, k=angle // 90)
-            if rotated.shape == out_data.shape and np.array_equal(rotated, out_data):
-                return f"**DETECTED TRANSFORMATION: ROTATION with angle={angle} (GRID-LEVEL)**"
-        
-        # Priority 6: Check for DRAW LINE (2 points become a connected line)
-        if in_data.shape == out_data.shape:
-            for color in range(1, 10):  # Check colors 1-9
-                in_positions = list(zip(*np.where(in_data == color)))
-                out_positions = set(zip(*np.where(out_data == color)))
-                
-                # We need exactly 2 input points and more output points (line drawn)
-                if len(in_positions) == 2 and len(out_positions) > 2:
-                    # Check if input points are in output
-                    if all((r, c) in out_positions for r, c in in_positions):
-                        p1, p2 = in_positions[0], in_positions[1]
-                        
-                        # Classify line type
-                        if p1[0] == p2[0]:
-                            line_type = "horizontal"
-                        elif p1[1] == p2[1]:
-                            line_type = "vertical"
-                        else:
-                            line_type = "diagonal"
-                        
-                        return f"**DETECTED TRANSFORMATION: DRAW LINE color={color} ({line_type})**"
-        
-        # Priority 7: Check for COLOR CHANGE (pixels stay in place, only color changes)
+        # Priority 4: Check for COLOR CHANGE (pixels stay in place, only color changes)
         if in_data.shape == out_data.shape:
             non_zero_in = set(zip(*np.where(in_data != 0)))
             non_zero_out = set(zip(*np.where(out_data != 0)))
@@ -555,11 +557,15 @@ Example 5 - DRAW LINE:
             dx, dy = match.groups()
             return f'{{"action": "translate", "params": {{"dx": {dx}, "dy": {dy}}}}}'
         
-        # Parse ROTATION
+        # Parse ROTATION - check if it's grid-level or object-level
         match = re.search(r'ROTATION.*?angle=(\d+)', transformation)
         if match:
             angle = match.group(1)
-            return f'{{"action": "rotate", "params": {{"angle": {angle}}}, "color_filter": {main_color}}}'
+            # Check if this is a grid-level rotation
+            if "GRID-LEVEL" in transformation:
+                return f'{{"action": "rotate", "params": {{"angle": {angle}, "grid_level": true}}}}'
+            else:
+                return f'{{"action": "rotate", "params": {{"angle": {angle}}}, "color_filter": {main_color}}}'
         
         # Parse REFLECTION - check if it's grid-level or object-level
         match = re.search(r'REFLECTION.*?axis=(\w+)', transformation)
@@ -579,13 +585,11 @@ Example 5 - DRAW LINE:
             from_c, to_c = match.groups()
             return f'{{"action": "color_change", "params": {{"from_color": {from_c}, "to_color": {to_c}}}}}'
         
-        # Parse DRAW LINE - multiple patterns to catch
-        match = re.search(r'DRAW LINE.*?color[= ]+(\d+)', transformation)
-        if not match:
-            match = re.search(r'DRAW LINE.*?(\d+)', transformation)
-        if match:
-            color = match.group(1)
-            return f'{{"action": "draw_line", "color_filter": {color}}}'
+        # Parse DRAW LINE - use TEST color (main_color), not training color
+        # The test input may have a different color than training examples
+        if 'DRAW LINE' in transformation:
+            # Use the color from test input, not from training examples
+            return f'{{"action": "draw_line", "color_filter": {main_color}}}'
         
         # Fallback
         return '{"action": "translate", "params": {"dx": 0, "dy": 0}}'
