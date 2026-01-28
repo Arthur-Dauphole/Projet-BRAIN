@@ -487,8 +487,9 @@ class ActionExecutor:
         Parameters:
             params.axis: str - "horizontal" (flip up-down), "vertical" (flip left-right),
                               "diagonal_main", "diagonal_anti"
+            params.grid_level: bool - If True, reflect entire grid (no color_filter auto-detection)
             color_filter: int (optional) - Only reflect pixels of this color
-                         If not provided, will auto-detect the non-background color
+                         If not provided and grid_level=False, will auto-detect
         
         Returns:
             ActionResult with reflected grid
@@ -496,9 +497,13 @@ class ActionExecutor:
         params = action_data.get("params", {})
         axis = params.get("axis", "horizontal")
         color_filter = action_data.get("color_filter")
+        grid_level = params.get("grid_level", False)
         
-        # Auto-detect color if not provided and there's only one non-background color
-        if color_filter is None:
+        # Auto-detect color ONLY if:
+        # - color_filter is not provided
+        # - grid_level is False (not a grid-level reflection)
+        # - there's only one non-background color
+        if color_filter is None and not grid_level:
             unique_colors = [c for c in grid.unique_colors if c != 0]
             if len(unique_colors) == 1:
                 color_filter = unique_colors[0]

@@ -26,60 +26,58 @@ class PromptMaker:
         - Create task-specific prompts
     """
     
-    # System prompt template - MUST output structured JSON
-    SYSTEM_PROMPT = """You are an ARC-AGI puzzle solver. Analyze input-output pairs and output a JSON action.
+    # System prompt template - SIMPLIFIED with few-shot examples
+    SYSTEM_PROMPT = """You are an ARC puzzle solver. Your ONLY job: output a JSON action.
 
-COORDINATE SYSTEM:
-- row = vertical position (0 = top, increases downward)
-- col = horizontal position (0 = left, increases rightward)
-- dx = column shift (dx > 0 means move RIGHT)
-- dy = row shift (dy > 0 means move DOWN)
+## FEW-SHOT EXAMPLES
 
-CRITICAL RULES:
-1. The "**DETECTED TRANSFORMATION**" line tells you EXACTLY which transformation to use.
-2. Apply the SAME transformation to the test input, regardless of its color.
-3. The transformation pattern is INDEPENDENT of object colors - different examples may use different colors.
-
-AVAILABLE ACTIONS:
-
-1. TRANSLATION (move objects by dx, dy):
+Example 1 - TRANSLATION:
+- Detected: "TRANSLATION dx=3, dy=2"
+- Output:
 ```json
-{"action": "translate", "params": {"dx": NUMBER, "dy": NUMBER}}
+{"action": "translate", "params": {"dx": 3, "dy": 2}}
 ```
-Use when DETECTED TRANSFORMATION shows "TRANSLATION".
 
-2. COLOR CHANGE (replace one color with another):
+Example 2 - COLOR CHANGE:
+- Detected: "COLOR CHANGE from_color=2, to_color=4"
+- Output:
 ```json
-{"action": "color_change", "params": {"from_color": OLD_COLOR, "to_color": NEW_COLOR}}
+{"action": "color_change", "params": {"from_color": 2, "to_color": 4}}
 ```
-Use when DETECTED TRANSFORMATION shows "COLOR CHANGE".
 
-3. ROTATION (rotate objects around their centroid):
+Example 3 - ROTATION:
+- Detected: "ROTATION angle=90"
+- Test input has color 3
+- Output:
 ```json
-{"action": "rotate", "params": {"angle": 90_OR_180_OR_270}, "color_filter": COLOR_OF_OBJECT}
+{"action": "rotate", "params": {"angle": 90}, "color_filter": 3}
 ```
-Use when DETECTED TRANSFORMATION shows "ROTATION".
-- color_filter = the color of the object to rotate (find it from the test input)
-- The object rotates around its center of mass (centroid)
 
-4. REFLECTION (mirror/flip an object):
+Example 4 - REFLECTION:
+- Detected: "REFLECTION axis=vertical"
+- Test input has color 1
+- Output:
 ```json
-{"action": "reflect", "params": {"axis": "horizontal_OR_vertical"}, "color_filter": COLOR_OF_OBJECT}
+{"action": "reflect", "params": {"axis": "vertical"}, "color_filter": 1}
 ```
-Use when DETECTED TRANSFORMATION shows "REFLECTION".
-- "horizontal" = flip up-down (mirror vertically)
-- "vertical" = flip left-right (mirror horizontally)
-- color_filter = the color of the object to reflect (find it from the test input)
 
-5. DRAW LINE (connect two points with a line):
+Example 5 - DRAW LINE:
+- Detected: "DRAW LINE color=2"
+- Output:
 ```json
-{"action": "draw_line", "color_filter": COLOR_OF_THE_TWO_POINTS}
+{"action": "draw_line", "color_filter": 2}
 ```
-Use when DETECTED TRANSFORMATION shows "DRAW LINE".
-The system will automatically find the 2 pixels of that color and draw a line between them.
 
-OUTPUT FORMAT (MANDATORY):
-End with exactly ONE JSON block matching the DETECTED TRANSFORMATION type."""
+## RULES
+
+1. Look at "DETECTED TRANSFORMATION" - it tells you EXACTLY what to output
+2. Copy the parameters from the detection (dx, dy, angle, from_color, to_color, axis)
+3. For ROTATION/REFLECTION: use "color_filter" with the color from TEST INPUT
+4. ALWAYS end with a ```json block
+
+## COORDINATE SYSTEM
+- dx > 0 = move RIGHT
+- dy > 0 = move DOWN"""
 
     def __init__(self, include_grid_ascii: bool = True, include_objects: bool = True):
         """
@@ -245,20 +243,21 @@ End with exactly ONE JSON block matching the DETECTED TRANSFORMATION type."""
                                 if rotation_angle:
                                     return f"**DETECTED TRANSFORMATION: ROTATION with angle={rotation_angle} (use color_filter with the color from TEST input)**"
         
-        # Priority 4: Check for GRID-LEVEL ROTATION
+        # Priority 4: Check for GRID-LEVEL REFLECTION (entire grid flipped)
+        # This should be checked BEFORE grid-level rotation to avoid confusion
+        if in_data.shape == out_data.shape:
+            if np.array_equal(np.flipud(in_data), out_data):
+                return "**DETECTED TRANSFORMATION: REFLECTION with axis=horizontal (GRID-LEVEL)**"
+            if np.array_equal(np.fliplr(in_data), out_data):
+                return "**DETECTED TRANSFORMATION: REFLECTION with axis=vertical (GRID-LEVEL)**"
+        
+        # Priority 5: Check for GRID-LEVEL ROTATION
         for angle in [90, 180, 270]:
             rotated = np.rot90(in_data, k=angle // 90)
             if rotated.shape == out_data.shape and np.array_equal(rotated, out_data):
-                return f"**DETECTED TRANSFORMATION: ROTATION with angle={angle}**"
+                return f"**DETECTED TRANSFORMATION: ROTATION with angle={angle} (GRID-LEVEL)**"
         
-        # Priority 5: Check for REFLECTION (grid level)
-        if in_data.shape == out_data.shape:
-            if np.array_equal(np.flipud(in_data), out_data):
-                return "**DETECTED TRANSFORMATION: REFLECTION with axis=horizontal**"
-            if np.array_equal(np.fliplr(in_data), out_data):
-                return "**DETECTED TRANSFORMATION: REFLECTION with axis=vertical**"
-        
-        # Priority 5: Check for DRAW LINE (2 points become a connected line)
+        # Priority 6: Check for DRAW LINE (2 points become a connected line)
         if in_data.shape == out_data.shape:
             for color in range(1, 10):  # Check colors 1-9
                 in_positions = list(zip(*np.where(in_data == color)))
@@ -278,9 +277,9 @@ End with exactly ONE JSON block matching the DETECTED TRANSFORMATION type."""
                         else:
                             line_type = "diagonal"
                         
-                        return f"**DETECTED TRANSFORMATION: DRAW LINE between two points of color {color} ({line_type} line)**"
+                        return f"**DETECTED TRANSFORMATION: DRAW LINE color={color} ({line_type})**"
         
-        # Priority 6: Check for COLOR CHANGE (pixels stay in place, only color changes)
+        # Priority 7: Check for COLOR CHANGE (pixels stay in place, only color changes)
         if in_data.shape == out_data.shape:
             non_zero_in = set(zip(*np.where(in_data != 0)))
             non_zero_out = set(zip(*np.where(out_data != 0)))
@@ -484,60 +483,112 @@ End with exactly ONE JSON block matching the DETECTED TRANSFORMATION type."""
             task: The ARCTask to reason about
             
         Returns:
-            Chain-of-thought prompt string
+            Chain-of-thought prompt string with direct JSON instruction
         """
-        base_prompt = self.create_task_prompt(task)
+        prompt_parts = []
         
-        # Extract the detected transformations to give a clear hint
-        transformations_summary = []
+        # Header
+        prompt_parts.append(f"# ARC Task: {task.task_id}\n\n")
+        
+        # Training examples (simplified)
+        prompt_parts.append("## Training Examples\n\n")
+        for i, pair in enumerate(task.train_pairs, 1):
+            prompt_parts.append(f"### Example {i}\n")
+            prompt_parts.append(self._format_grid(pair.input_grid, "Input"))
+            prompt_parts.append(self._format_grid(pair.output_grid, "Output"))
+            prompt_parts.append("\n")
+        
+        # CRITICAL: Detect transformation and give EXPLICIT instruction
+        transformations = []
         for i, pair in enumerate(task.train_pairs, 1):
             analysis = self._analyze_transformation(pair.input_grid, pair.output_grid)
             if "DETECTED TRANSFORMATION:" in analysis:
-                transformations_summary.append(f"Example {i}: {analysis}")
+                transformations.append(analysis)
         
-        cot_instruction = """
-## TRANSFORMATION SUMMARY
-
-"""
-        cot_instruction += "\n".join(transformations_summary) if transformations_summary else "No clear pattern detected."
+        # Get test input info
+        test_colors = []
+        if task.test_pairs:
+            test_input = task.test_pairs[0].input_grid
+            test_colors = [c for c in test_input.unique_colors if c != 0]
+            prompt_parts.append("## Test Input\n")
+            prompt_parts.append(self._format_grid(test_input, "Input"))
+            prompt_parts.append(f"\n**Colors in test:** {test_colors}\n")
         
-        cot_instruction += """
-
-## YOUR TASK
-
-Based on the DETECTED TRANSFORMATION above, output the corresponding JSON action.
-
-RULES:
-1. Use the EXACT transformation type shown (TRANSLATION, ROTATION, COLOR CHANGE, REFLECTION)
-2. Use the EXACT parameters shown (dx, dy, angle, from_color, to_color, axis)
-3. The transformation applies to ALL objects regardless of their specific color in the test input
-
-## OUTPUT (MANDATORY)
-
-Match the JSON format to the detected transformation type:
-
-For TRANSLATION with dx=X, dy=Y:
-```json
-{"action": "translate", "params": {"dx": X, "dy": Y}}
-```
-
-For ROTATION with angle=A:
-```json
-{"action": "rotate", "params": {"angle": A}}
-```
-
-For COLOR CHANGE from_color=F, to_color=T:
-```json
-{"action": "color_change", "params": {"from_color": F, "to_color": T}}
-```
-
-For REFLECTION with axis=A:
-```json
-{"action": "reflect", "params": {"axis": "A"}}
-```
-"""
+        # Build the EXPLICIT instruction
+        prompt_parts.append("\n## DETECTED TRANSFORMATION\n\n")
         
-        return base_prompt + cot_instruction
+        if transformations:
+            # Use the first consistent transformation
+            main_transform = transformations[0]
+            prompt_parts.append(f"{main_transform}\n\n")
+            
+            # Generate the EXACT JSON to output
+            json_instruction = self._generate_json_instruction(main_transform, test_colors)
+            prompt_parts.append("## YOUR OUTPUT\n\n")
+            prompt_parts.append("Copy this JSON (fill in the values from above):\n\n")
+            prompt_parts.append(f"```json\n{json_instruction}\n```\n")
+        else:
+            prompt_parts.append("**DETECTED TRANSFORMATION: UNKNOWN**\n\n")
+            prompt_parts.append("Analyze the examples and output a JSON action.\n")
+        
+        return "".join(prompt_parts)
+    
+    def _generate_json_instruction(self, transformation: str, test_colors: List[int]) -> str:
+        """
+        Generate the exact JSON instruction based on detected transformation.
+        
+        Args:
+            transformation: The detected transformation string
+            test_colors: Colors present in test input
+            
+        Returns:
+            JSON string template
+        """
+        import re
+        
+        # Get the main color from test (first non-zero color)
+        main_color = test_colors[0] if test_colors else 1
+        
+        # Parse TRANSLATION
+        match = re.search(r'TRANSLATION.*?dx=(-?\d+).*?dy=(-?\d+)', transformation)
+        if match:
+            dx, dy = match.groups()
+            return f'{{"action": "translate", "params": {{"dx": {dx}, "dy": {dy}}}}}'
+        
+        # Parse ROTATION
+        match = re.search(r'ROTATION.*?angle=(\d+)', transformation)
+        if match:
+            angle = match.group(1)
+            return f'{{"action": "rotate", "params": {{"angle": {angle}}}, "color_filter": {main_color}}}'
+        
+        # Parse REFLECTION - check if it's grid-level or object-level
+        match = re.search(r'REFLECTION.*?axis=(\w+)', transformation)
+        if match:
+            axis = match.group(1)
+            # Check if this is a grid-level reflection
+            if "GRID-LEVEL" in transformation or "color_filter" not in transformation.lower():
+                # Grid-level reflection - use grid_level flag to prevent auto-detection
+                return f'{{"action": "reflect", "params": {{"axis": "{axis}", "grid_level": true}}}}'
+            else:
+                # Object-level reflection
+                return f'{{"action": "reflect", "params": {{"axis": "{axis}"}}, "color_filter": {main_color}}}'
+        
+        # Parse COLOR CHANGE
+        match = re.search(r'COLOR CHANGE.*?from_color=(\d+).*?to_color=(\d+)', transformation)
+        if match:
+            from_c, to_c = match.groups()
+            return f'{{"action": "color_change", "params": {{"from_color": {from_c}, "to_color": {to_c}}}}}'
+        
+        # Parse DRAW LINE - multiple patterns to catch
+        match = re.search(r'DRAW LINE.*?color[= ]+(\d+)', transformation)
+        if not match:
+            match = re.search(r'DRAW LINE.*?(\d+)', transformation)
+        if match:
+            color = match.group(1)
+            return f'{{"action": "draw_line", "color_filter": {color}}}'
+        
+        # Fallback
+        return '{"action": "translate", "params": {"dx": 0, "dy": 0}}'
     
     # ==================== MULTI-TRANSFORM SUPPORT ====================
     

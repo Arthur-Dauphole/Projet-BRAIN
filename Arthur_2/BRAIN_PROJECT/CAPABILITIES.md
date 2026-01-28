@@ -1,7 +1,7 @@
 # BRAIN Project - Capacités du Système
 
 > **Dernière mise à jour :** Janvier 2026  
-> **Version :** 1.5.0
+> **Version :** 1.6.0
 
 ---
 
@@ -211,6 +211,16 @@ ou
 ---
 
 ## 📝 Historique des versions
+
+### v1.6.0 (Janvier 2026) - Improved Prompting & Fallback
+- ✅ **Prompt amélioré** - Few-shot examples concrets dans le system prompt
+- ✅ **Instructions plus directes** - Le prompt génère le JSON exact à copier
+- ✅ **Fallback automatique** - Si le LLM échoue, utilise les transformations détectées
+- ✅ **Meilleure extraction des paramètres** - Parsing regex des transformations détectées
+- ✅ **Auto-détection multi-transform** - Bascule automatique si différentes couleurs ont des transformations différentes
+- ✅ **Réflexions grid-level vs object-level** - Distinction correcte entre les deux types
+- ✅ **Draw line amélioré** - Meilleure détection et parsing du color
+- ✅ Amélioration de la fiabilité globale du pipeline
 
 ### v1.5.0 (Janvier 2026) - Batch Evaluation Mode
 - ✅ **NOUVEAU: Mode Batch** (`--batch DIR`) pour évaluer plusieurs tâches automatiquement

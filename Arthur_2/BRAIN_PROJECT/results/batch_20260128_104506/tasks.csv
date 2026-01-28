@@ -1,0 +1,13 @@
+task_id,success,is_correct,accuracy,execution_time,transformations,action_used,grid_size,train_examples,test_examples,error
+task_blob_color_change,True,True,1.0000,9.89,color_change|color_change,color_change,8x8,2,1,
+task_blob_reflection,True,True,1.0000,4.85,reflection|reflection,reflect,8x8,2,1,
+task_blob_rotation,True,True,1.0000,4.83,rotation|rotation,rotate,8x8,2,1,
+task_blob_translation,True,True,1.0000,6.31,translation|translation,translate,10x10,2,1,
+task_challenge_multi_transform,True,False,0.8833,8.24,rotation|rotation,translate,10x12,2,1,
+task_color_change,True,True,1.0000,4.91,color_change|rotation|color_change|rotation,color_change,8x8,2,1,
+task_draw_line,True,False,0.0000,8.96,draw_line|draw_line|rotation|draw_line,draw_line,10x10,3,1,
+task_l_shape,True,True,1.0000,6.30,translation|translation,translate,10x10,2,1,
+task_multi_objects,True,False,0.8750,5.23,rotation|translation|rotation|translation,translate,8x8,2,1,
+task_multi_objects_same_transform,True,True,1.0000,6.85,translation|rotation|translation|rotation,translate,10x10,2,1,
+task_reflection,True,False,0.9167,3.65,translation|reflection|translation|reflection,translate,6x6,2,1,
+task_rotation_90,True,False,0.7959,4.21,reflection|rotation,rotate,7x7,2,1,

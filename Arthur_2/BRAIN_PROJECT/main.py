@@ -180,6 +180,40 @@ class BRAINOrchestrator:
         
         results["detected_transformations"] = detected_transformations
         
+        # === AUTO-DETECT MULTI-TRANSFORM ===
+        # Check if this task has multiple colors with potentially different transformations
+        if task.train_pairs:
+            first_pair = task.train_pairs[0]
+            input_colors = [c for c in first_pair.input_grid.unique_colors if c != 0]
+            
+            # If there are multiple colors, check for per-color transformations
+            if len(input_colors) > 1:
+                per_color = self.transformation_detector.detect_per_color_transformations(
+                    first_pair.input_grid, first_pair.output_grid
+                )
+                
+                # Check if different colors have different transformations OR different parameters
+                if per_color and len(per_color) > 1:
+                    transforms_signatures = set()
+                    for color, t in per_color.items():
+                        if hasattr(t, 'transformation_type'):
+                            t_type = t.transformation_type
+                            params = dict(t.parameters) if t.parameters else {}
+                        elif isinstance(t, dict):
+                            t_type = t.get('transformation_type', '')
+                            params = dict(t.get('parameters', {}))
+                        else:
+                            continue
+                        
+                        # Create signature including type AND params
+                        sig = f"{t_type}:{sorted(params.items())}"
+                        transforms_signatures.add(sig)
+                    
+                    # If we have different signatures, use multi-transform mode
+                    if len(transforms_signatures) > 1:
+                        self._log("\n  🔄 AUTO-SWITCH: Multiple different transformations detected, using multi-transform mode")
+                        return self.solve_task_multi_transform(task)
+        
         # === STEP 2: PROMPTING ===
         self._log("\n" + "=" * 50)
         self._log("STEP 2: PROMPTING (Prompt Creation)")
@@ -211,9 +245,14 @@ class BRAINOrchestrator:
             self._log(f"  ✓ Action JSON extracted: {response.action_data}")
             results["action_data"] = response.action_data
         else:
-            self._log("  ⚠ No action JSON found in response")
-            if response.predicted_grid:
-                self._log(f"  Fallback: Grid extracted directly ({len(response.predicted_grid)}x{len(response.predicted_grid[0])})")
+            self._log("  ⚠ No action JSON found in LLM response")
+            # FALLBACK: Build action from detected transformations
+            if detected_transformations:
+                self._log("  🔧 FALLBACK: Using detected transformations directly")
+                fallback_action = self._build_fallback_action(detected_transformations, task)
+                if fallback_action:
+                    results["action_data"] = fallback_action
+                    self._log(f"  ✓ Fallback action: {fallback_action}")
         
         results["predictions"].append(response)
         
@@ -226,10 +265,13 @@ class BRAINOrchestrator:
             test_input = test_pair.input_grid
             predicted_grid = None
             
-            if response.action_data:
+            # Try LLM action first
+            action_to_use = response.action_data or results.get("action_data")
+            
+            if action_to_use:
                 # Execute the action on the test input
                 self._log(f"  Executing action on test input {i+1}...")
-                action_result = self.executor.execute(test_input, response.action_data)
+                action_result = self.executor.execute(test_input, action_to_use)
                 
                 if action_result.success:
                     predicted_grid = action_result.output_grid
@@ -457,6 +499,108 @@ class BRAINOrchestrator:
             self._log(f"  Results: {correct}/{total} correct")
         
         return results
+    
+    def _build_fallback_action(
+        self,
+        detected_transformations: List[List[Any]],
+        task: ARCTask
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Build an action dictionary from detected transformations (fallback when LLM fails).
+        
+        Args:
+            detected_transformations: List of transformation lists from each training example
+            task: The ARCTask (to get test input colors)
+            
+        Returns:
+            Action dictionary or None if unable to build
+        """
+        if not detected_transformations:
+            return None
+        
+        # Get the first valid transformation
+        for trans_list in detected_transformations:
+            if trans_list:
+                for t in trans_list:
+                    t_type = None
+                    params = {}
+                    
+                    if hasattr(t, 'transformation_type'):
+                        t_type = t.transformation_type
+                        params = dict(t.parameters)
+                    elif isinstance(t, dict):
+                        t_type = t.get('transformation_type')
+                        params = dict(t.get('parameters', {}))
+                    
+                    if t_type:
+                        # Get main color from test input
+                        color_filter = None
+                        if task.test_pairs:
+                            test_colors = [c for c in task.test_pairs[0].input_grid.unique_colors if c != 0]
+                            if test_colors:
+                                color_filter = test_colors[0]
+                        
+                        # Build action based on transformation type
+                        if t_type == "translation":
+                            return {
+                                "action": "translate",
+                                "params": {
+                                    "dx": params.get("dx", 0),
+                                    "dy": params.get("dy", 0)
+                                }
+                            }
+                        elif t_type == "rotation":
+                            action = {
+                                "action": "rotate",
+                                "params": {"angle": params.get("angle", 90)}
+                            }
+                            if color_filter:
+                                action["color_filter"] = color_filter
+                            return action
+                        elif t_type == "reflection":
+                            axis = params.get("axis", "horizontal")
+                            # Check if this is grid-level or object-level reflection
+                            is_grid_level = params.get("grid_level", False)
+                            
+                            if is_grid_level or color_filter is None:
+                                # Grid-level reflection
+                                return {
+                                    "action": "reflect",
+                                    "params": {"axis": axis, "grid_level": True}
+                                }
+                            else:
+                                # Object-level reflection
+                                return {
+                                    "action": "reflect",
+                                    "params": {"axis": axis},
+                                    "color_filter": color_filter
+                                }
+                        elif t_type == "color_change":
+                            return {
+                                "action": "color_change",
+                                "params": {
+                                    "from_color": params.get("from_color", 1),
+                                    "to_color": params.get("to_color", 2)
+                                }
+                            }
+                        elif t_type == "draw_line":
+                            # draw_line needs color_filter to find the 2 points
+                            draw_color = params.get("color") or color_filter
+                            if draw_color is None:
+                                # Try to get from test input - find color with exactly 2 pixels
+                                if task.test_pairs:
+                                    import numpy as np
+                                    test_data = task.test_pairs[0].input_grid.data
+                                    for c in range(1, 10):
+                                        if np.sum(test_data == c) == 2:
+                                            draw_color = c
+                                            break
+                            return {
+                                "action": "draw_line",
+                                "color_filter": draw_color or 1
+                            }
+        
+        return None
     
     def _build_actions_from_transforms(
         self, 
