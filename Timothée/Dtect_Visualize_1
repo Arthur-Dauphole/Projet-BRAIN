@@ -1,588 +1,368 @@
 """
-SYSTÈME COMPLET DE RÉSOLUTION DE GRID ARC
-Intègre: 
-1. Structures géométriques (Points, BoundingBox, Formes)
-2. Détecteurs de formes (Rectangles, Lignes, Symétries)
-3. Extraction et application de règles
-4. Visualisation
+SYSTÈME AMÉLIORÉ AVEC CONSOLIDATION INTER-EXEMPLES
+- Extrait les règles de chaque exemple
+- Intercompare pour trouver des règles globales
+- Génère les outputs pour les tests
 """
 
 import json
 import matplotlib.pyplot as plt
 import numpy as np
-from collections import defaultdict
-from typing import List, Dict, Tuple, Set, Optional
+from collections import defaultdict, Counter
+from typing import List, Dict, Tuple, Set, Optional, Any
 import copy
 from dataclasses import dataclass, field
-from enum import Enum
+import statistics
 
 # ============================================
-# PARTIE 1: STRUCTURES GÉOMÉTRIQUES (Code 1)
+# PARTIE 1: STRUCTURES DE DONNÉES POUR RÈGLES
 # ============================================
-
-class Direction(Enum):
-    """Directions cardinales et intercardinales."""
-    NORTH = (0, -1)
-    SOUTH = (0, 1)
-    EAST = (1, 0)
-    WEST = (-1, 0)
-    NORTHEAST = (1, -1)
-    NORTHWEST = (-1, -1)
-    SOUTHEAST = (1, 1)
-    SOUTHWEST = (-1, 1)
-
-    @classmethod
-    def cardinal(cls) -> list["Direction"]:
-        return [cls.NORTH, cls.SOUTH, cls.EAST, cls.WEST]
-
-    @classmethod
-    def all_directions(cls) -> list["Direction"]:
-        return list(cls)
-
-
-@dataclass(frozen=True)
-class Point:
-    """Point 2D en coordonnées de grille."""
-    x: int
-    y: int
-
-    def __add__(self, other: "Point") -> "Point":
-        return Point(self.x + other.x, self.y + other.y)
-
-    def __hash__(self) -> int:
-        return hash((self.x, self.y))
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, Point):
-            return False
-        return self.x == other.x and self.y == other.y
-
-    def to_tuple(self) -> tuple[int, int]:
-        return self.x, self.y
-
-    def manhattan_distance(self, other: "Point") -> int:
-        return abs(self.x - other.x) + abs(self.y - other.y)
-
-    def euclidean_distance(self, other: "Point") -> float:
-        return float(np.sqrt((self.x - other.x) ** 2 + (self.y - other.y) ** 2))
-
 
 @dataclass
-class BoundingBox:
-    """Boîte englobante axis-alignée."""
-    min_x: int
-    min_y: int
-    max_x: int
-    max_y: int
-
-    @property
-    def width(self) -> int:
-        return self.max_x - self.min_x + 1
-
-    @property
-    def height(self) -> int:
-        return self.max_y - self.min_y + 1
-
-    @property
-    def area(self) -> int:
-        return self.width * self.height
-
-    @property
-    def center(self) -> Point:
-        return Point((self.min_x + self.max_x) // 2, (self.min_y + self.max_y) // 2)
-
-    def contains(self, point: Point) -> bool:
-        return self.min_x <= point.x <= self.max_x and self.min_y <= point.y <= self.max_y
-
-    def corners(self) -> list[Point]:
-        return [
-            Point(self.min_x, self.min_y),
-            Point(self.max_x, self.min_y),
-            Point(self.max_x, self.max_y),
-            Point(self.min_x, self.max_y),
-        ]
-
+class Rule:
+    """Représente une règle de transformation."""
+    rule_type: str  # 'color_change', 'translation', 'connection'
+    params: Dict[str, Any]
+    examples: List[int] = field(default_factory=list)  # Indices des exemples où cette règle apparaît
+    confidence: float = 1.0  # Confiance statistique (0-1)
+    
+    def __hash__(self):
+        return hash((self.rule_type, tuple(sorted(self.params.items()))))
+    
+    def __eq__(self, other):
+        if not isinstance(other, Rule):
+            return False
+        return (self.rule_type == other.rule_type and 
+                self.params == other.params)
 
 @dataclass
-class GeometricShape:
-    """Forme géométrique détectée et ses propriétés."""
-    shape_type: str  # 'rectangle', 'line', 'blob', etc.
-    pixels: Set[Point]
-    color: int
-    bounding_box: BoundingBox
-    properties: Dict = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        if "area" not in self.properties:
-            self.properties["area"] = len(self.pixels)
-        if "density" not in self.properties:
-            self.properties["density"] = len(self.pixels) / self.bounding_box.area
-
-    def is_filled(self, threshold: float = 0.9) -> bool:
-        return self.properties.get("density", 0.0) >= threshold
-
-    def is_hollow(self, threshold: float = 0.5) -> bool:
-        return self.properties.get("density", 1.0) <= threshold
-
-
-# ============================================
-# PARTIE 2: UTILITAIRES DE GRILLE
-# ============================================
-
-class GridUtils:
-    """Utilitaires pour manipuler les grilles."""
+class ConsolidatedRules:
+    """Règles consolidées de tous les exemples."""
+    color_changes: Dict[int, int]  # Règles spécifiques par couleur
+    general_color_changes: List[Rule]  # Règles générales de changement couleur
+    translations: Dict[int, Tuple[int, int]]  # Règles spécifiques par couleur
+    general_translations: List[Rule]  # Règles générales de translation
+    connections: Dict[int, str]  # Règles spécifiques par couleur
+    general_connections: List[Rule]  # Règles générales de connexion
     
-    @staticmethod
-    def list_to_numpy(grid: List[List[int]]) -> np.ndarray:
-        """Convertit une liste de listes en numpy array."""
-        return np.array(grid, dtype=int)
-    
-    @staticmethod
-    def numpy_to_list(grid: np.ndarray) -> List[List[int]]:
-        """Convertit un numpy array en liste de listes."""
-        return grid.tolist()
-    
-    @staticmethod
-    def extract_connected_components(grid: np.ndarray, background_color: int = 0) -> List[Set[Point]]:
-        """Extrait les composantes connexes de la grille."""
-        h, w = grid.shape
-        visited = np.zeros((h, w), dtype=bool)
-        components = []
-        
-        def bfs(start_x: int, start_y: int, color: int) -> Set[Point]:
-            """BFS pour une composante connexe."""
-            component = set()
-            queue = [(start_x, start_y)]
-            visited[start_y, start_x] = True
-            
-            while queue:
-                x, y = queue.pop(0)
-                component.add(Point(x, y))
-                
-                # Voisins (4-connexité)
-                for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
-                    nx, ny = x + dx, y + dy
-                    if (0 <= nx < w and 0 <= ny < h and 
-                        not visited[ny, nx] and 
-                        grid[ny, nx] == color):
-                        visited[ny, nx] = True
-                        queue.append((nx, ny))
-            
-            return component
-        
-        for y in range(h):
-            for x in range(w):
-                if not visited[y, x] and grid[y, x] != background_color:
-                    component = bfs(x, y, grid[y, x])
-                    if component:
-                        components.append(component)
-        
-        return components
-    
-    @staticmethod
-    def compute_bounding_box(points: Set[Point]) -> BoundingBox:
-        """Calcule la bounding box d'un ensemble de points."""
-        if not points:
-            return BoundingBox(0, 0, 0, 0)
-        
-        xs = [p.x for p in points]
-        ys = [p.y for p in points]
-        
-        return BoundingBox(
-            min_x=min(xs),
-            min_y=min(ys),
-            max_x=max(xs),
-            max_y=max(ys)
-        )
-    
-    @staticmethod
-    def get_border_pixels(pixels: Set[Point], grid_shape: Tuple[int, int]) -> Set[Point]:
-        """Extrait les pixels de bordure d'une composante."""
-        border = set()
-        h, w = grid_shape
-        
-        for pixel in pixels:
-            # Vérifier si le pixel a un voisin manquant (donc est sur le bord)
-            neighbors = [
-                Point(pixel.x + 1, pixel.y),
-                Point(pixel.x - 1, pixel.y),
-                Point(pixel.x, pixel.y + 1),
-                Point(pixel.x, pixel.y - 1)
-            ]
-            
-            # Si le pixel est sur le bord de la grille OU n'a pas tous ses voisins dans pixels
-            if (pixel.x == 0 or pixel.x == w - 1 or 
-                pixel.y == 0 or pixel.y == h - 1 or
-                any(neighbor not in pixels for neighbor in neighbors)):
-                border.add(pixel)
-        
-        return border
-
-
-# ============================================
-# PARTIE 3: DÉTECTEURS DE FORMES (Code 2)
-# ============================================
-
-class RectangleDetector:
-    """Détecteur de rectangles."""
-    
-    @staticmethod
-    def is_rectangle(pixels: Set[Point], bbox: BoundingBox, tolerance: float = 0.05) -> bool:
-        expected_area = bbox.area
-        actual_area = len(pixels)
-
-        if expected_area == 0:
-            return False
-
-        if abs(actual_area - expected_area) / expected_area <= tolerance:
-            return True
-
-        border_area = 2 * (bbox.width + bbox.height) - 4
-        if border_area > 0 and abs(actual_area - border_area) / border_area <= tolerance:
-            return True
-
-        return False
-
-    @staticmethod
-    def detect_rectangles(grid: List[List[int]], background_color: int = 0) -> List[GeometricShape]:
-        np_grid = GridUtils.list_to_numpy(grid)
-        components = GridUtils.extract_connected_components(np_grid, background_color)
-        rectangles = []
-
-        for component in components:
-            if len(component) < 4:
-                continue
-
-            bbox = GridUtils.compute_bounding_box(component)
-
-            if RectangleDetector.is_rectangle(component, bbox):
-                sample_point = next(iter(component))
-                color = np_grid[sample_point.y, sample_point.x]
-
-                properties = {
-                    "width": bbox.width,
-                    "height": bbox.height,
-                    "aspect_ratio": bbox.width / bbox.height if bbox.height else 0,
-                    "is_square": abs(bbox.width - bbox.height) <= 1,
-                    "perimeter": 2 * (bbox.width + bbox.height),
-                }
-
-                border = GridUtils.get_border_pixels(component, np_grid.shape)
-                properties["is_filled"] = len(component) > len(border)
-                properties["border_pixels"] = border
-                properties["interior_pixels"] = component - border
-
-                rectangles.append(
-                    GeometricShape(
-                        shape_type="rectangle",
-                        pixels=component,
-                        color=color,
-                        bounding_box=bbox,
-                        properties=properties,
-                    )
-                )
-
-        return rectangles
-
-
-class LineDetector:
-    """Détecteur de lignes."""
-    
-    @staticmethod
-    def is_line(pixels: Set[Point], tolerance: float = 0.1) -> Tuple[bool, Optional[str]]:
-        if len(pixels) < 2:
-            return False, None
-
-        points_list = list(pixels)
-        xs = {p.x for p in points_list}
-        ys = {p.y for p in points_list}
-
-        if len(ys) == 1:
-            return True, "horizontal"
-
-        if len(xs) == 1:
-            return True, "vertical"
-
-        if len(xs) == len(pixels) and len(ys) == len(pixels):
-            x_range = max(xs) - min(xs)
-            y_range = max(ys) - min(ys)
-            if x_range == y_range:
-                return True, "diagonal"
-
-        return False, None
-
-    @staticmethod
-    def detect_lines(grid: List[List[int]], background_color: int = 0, min_length: int = 2) -> List[GeometricShape]:
-        np_grid = GridUtils.list_to_numpy(grid)
-        components = GridUtils.extract_connected_components(np_grid, background_color)
-        lines = []
-
-        for component in components:
-            if len(component) < min_length:
-                continue
-
-            is_line, direction = LineDetector.is_line(component)
-
-            if is_line and direction:
-                sample_point = next(iter(component))
-                color = np_grid[sample_point.y, sample_point.x]
-                bbox = GridUtils.compute_bounding_box(component)
-
-                points_list = list(component)
-                if direction == "horizontal":
-                    endpoints = [
-                        min(points_list, key=lambda p: p.x),
-                        max(points_list, key=lambda p: p.x),
-                    ]
-                elif direction == "vertical":
-                    endpoints = [
-                        min(points_list, key=lambda p: p.y),
-                        max(points_list, key=lambda p: p.y),
-                    ]
-                else:  # diagonal
-                    endpoints = [
-                        min(points_list, key=lambda p: (p.x + p.y)),
-                        max(points_list, key=lambda p: (p.x + p.y)),
-                    ]
-
-                properties = {
-                    "direction": direction,
-                    "length": len(component),
-                    "endpoints": endpoints,
-                    "thickness": 1,
-                }
-
-                lines.append(
-                    GeometricShape(
-                        shape_type="line",
-                        pixels=component,
-                        color=color,
-                        bounding_box=bbox,
-                        properties=properties,
-                    )
-                )
-
-        return lines
-
-
-class SymmetryDetector:
-    """Détecteur de symétries."""
-    
-    @staticmethod
-    def has_vertical_symmetry(pixels: Set[Point], tolerance: int = 0) -> bool:
-        if not pixels:
-            return False
-
-        bbox = GridUtils.compute_bounding_box(pixels)
-        center_x = (bbox.min_x + bbox.max_x) / 2
-
-        for pixel in pixels:
-            mirror_x = int(2 * center_x - pixel.x)
-            mirror = Point(mirror_x, pixel.y)
-
-            if mirror not in pixels:
-                found_close = any(Point(mirror_x + dx, pixel.y) in pixels 
-                               for dx in range(-tolerance, tolerance + 1))
-                if not found_close:
-                    return False
-
-        return True
-
-    @staticmethod
-    def has_horizontal_symmetry(pixels: Set[Point], tolerance: int = 0) -> bool:
-        if not pixels:
-            return False
-
-        bbox = GridUtils.compute_bounding_box(pixels)
-        center_y = (bbox.min_y + bbox.max_y) / 2
-
-        for pixel in pixels:
-            mirror_y = int(2 * center_y - pixel.y)
-            mirror = Point(pixel.x, mirror_y)
-
-            if mirror not in pixels:
-                found_close = any(Point(pixel.x, mirror_y + dy) in pixels 
-                               for dy in range(-tolerance, tolerance + 1))
-                if not found_close:
-                    return False
-
-        return True
-
-    @staticmethod
-    def detect_symmetries(shape: GeometricShape) -> Dict[str, bool]:
+    def get_all_rules(self) -> Dict:
+        """Retourne toutes les règles dans un format simple."""
         return {
-            "vertical_symmetry": SymmetryDetector.has_vertical_symmetry(shape.pixels),
-            "horizontal_symmetry": SymmetryDetector.has_horizontal_symmetry(shape.pixels),
+            "color_changes": self.color_changes,
+            "translations": self.translations,
+            "connections": self.connections,
+            "general_color_changes": [r.params for r in self.general_color_changes],
+            "general_translations": [r.params for r in self.general_translations],
+            "general_connections": [r.params for r in self.general_connections]
         }
 
-
 # ============================================
-# PARTIE 4: GESTION DES COULEURS ET VISUALISATION
+# PARTIE 2: CONSOLIDATEUR DE RÈGLES
 # ============================================
 
-class ColorMapper:
-    """Mappe les codes de couleur vers des couleurs hexadécimales."""
-    COLOR_MAP = {
-        0: "#000000",  # Noir
-        1: "#0074D9",  # Bleu
-        2: "#FF4136",  # Rouge
-        3: "#2ECC40",  # Vert
-        4: "#FFDC00",  # Jaune
-        5: "#AAAAAA",  # Gris
-        6: "#F012BE",  # Magenta
-        7: "#FF851B",  # Orange
-        8: "#7FDBFF",  # Cyan
-        9: "#870C25",  # Marron
-    }
+class RuleConsolidator:
+    """Consolide les règles de différents exemples pour trouver des règles globales."""
     
-    @staticmethod
-    def hex(color_code: int) -> str:
-        return ColorMapper.COLOR_MAP.get(color_code, "#FFFFFF")
-    
-    @staticmethod
-    def name(color_code: int) -> str:
-        names = {
-            0: "Noir", 1: "Bleu", 2: "Rouge", 3: "Vert", 4: "Jaune",
-            5: "Gris", 6: "Magenta", 7: "Orange", 8: "Cyan", 9: "Marron"
-        }
-        return names.get(color_code, f"Couleur {color_code}")
-
-
-def grid_to_rgb(grid: List[List[int]]) -> np.ndarray:
-    """Convertit une grille en tableau RGB."""
-    h, w = len(grid), len(grid[0])
-    rgb_array = np.zeros((h, w, 3))
-    
-    for y in range(h):
-        for x in range(w):
-            hex_color = ColorMapper.hex(grid[y][x])
-            hex_color = hex_color.lstrip('#')
-            rgb = tuple(int(hex_color[i:i+2], 16) / 255.0 
-                       for i in (0, 2, 4))
-            rgb_array[y, x] = rgb
-    
-    return rgb_array
-
-
-def visualize_shapes(grid: List[List[int]], shapes: List[GeometricShape], title: str = "Détection de formes"):
-    """Visualise une grille avec les formes détectées."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-    
-    # Grille originale
-    ax1.imshow(grid_to_rgb(grid))
-    ax1.set_title("Grille originale", fontsize=12, fontweight='bold')
-    
-    # Grille avec formes annotées
-    rgb_grid = grid_to_rgb(grid)
-    ax2.imshow(rgb_grid)
-    ax2.set_title("Formes détectées", fontsize=12, fontweight='bold')
-    
-    # Annoter les formes
-    for idx, shape in enumerate(shapes):
-        bbox = shape.bounding_box
-        rect = plt.Rectangle(
-            (bbox.min_x - 0.5, bbox.min_y - 0.5),
-            bbox.width,
-            bbox.height,
-            linewidth=2,
-            edgecolor='white',
-            facecolor='none'
-        )
-        ax2.add_patch(rect)
+    def __init__(self, min_confidence: float = 0.6):
+        """
+        Args:
+            min_confidence: Seuil minimum de confiance pour une règle générale
+                           (proportion d'exemples où elle apparaît)
+        """
+        self.min_confidence = min_confidence
         
-        # Afficher le type de forme
-        ax2.text(
-            bbox.min_x, 
-            bbox.min_y - 2,
-            f"{shape.shape_type} ({shape.color})",
-            color='white',
-            fontsize=8,
-            fontweight='bold',
-            bbox=dict(boxstyle='round', facecolor='red', alpha=0.5)
+        # Stockage des règles par type
+        self.all_color_changes = defaultdict(list)  # old_color -> [(new_color, example_idx)]
+        self.all_translations = defaultdict(list)   # color -> [(dx, dy, example_idx)]
+        self.all_connections = defaultdict(list)    # color -> [(conn_type, example_idx)]
+        
+        # Pour la généralisation par forme
+        self.shape_data = []  # Stocke les données de forme pour chaque exemple
+    
+    def add_example_rules(self, example_idx: int, 
+                         color_changes: Dict[int, int],
+                         translations: Dict[int, Tuple[int, int]],
+                         connections: Dict[int, str]):
+        """Ajoute les règles d'un exemple au consolidateur."""
+        
+        # Enregistrer les changements de couleur
+        for old_color, new_color in color_changes.items():
+            self.all_color_changes[old_color].append((new_color, example_idx))
+        
+        # Enregistrer les translations
+        for color, (dx, dy) in translations.items():
+            self.all_translations[color].append(((dx, dy), example_idx))
+        
+        # Enregistrer les connexions
+        for color, conn_type in connections.items():
+            self.all_connections[color].append((conn_type, example_idx))
+    
+    def add_shape_data(self, example_idx: int, input_grid: List[List[int]], 
+                      output_grid: List[List[int]]):
+        """Analyse les formes pour détecter des motifs communs."""
+        # Ici on pourrait ajouter une analyse de forme
+        # Pour l'instant, on se concentre sur les règles pixel/vecteur
+        pass
+    
+    def consolidate(self) -> ConsolidatedRules:
+        """Consolide toutes les règles et retourne les règles finales."""
+        
+        # 1. Consolider les changements de couleur
+        color_changes = self._consolidate_color_changes()
+        general_color_rules = self._extract_general_color_rules()
+        
+        # 2. Consolider les translations
+        translations = self._consolidate_translations()
+        general_translation_rules = self._extract_general_translation_rules()
+        
+        # 3. Consolider les connexions
+        connections = self._consolidate_connections()
+        general_connection_rules = self._extract_general_connection_rules()
+        
+        return ConsolidatedRules(
+            color_changes=color_changes,
+            general_color_changes=general_color_rules,
+            translations=translations,
+            general_translations=general_translation_rules,
+            connections=connections,
+            general_connections=general_connection_rules
         )
     
-    for ax in [ax1, ax2]:
-        h, w = len(grid), len(grid[0])
-        ax.set_xticks(np.arange(-0.5, w, 1), minor=True)
-        ax.set_yticks(np.arange(-0.5, h, 1), minor=True)
-        ax.grid(which='minor', color='white', linewidth=0.5, alpha=0.3)
-        ax.tick_params(which='both', bottom=False, left=False, labelbottom=False, labelleft=False)
-    
-    plt.suptitle(title, fontsize=14, fontweight='bold')
-    plt.tight_layout()
-    plt.show()
-
-
-def visualize_grids(input_grid: List[List[int]], 
-                   output_grid: List[List[int]], 
-                   title_left: str = "INPUT",
-                   title_right: str = "OUTPUT",
-                   rules_text: str = ""):
-    """Visualise deux grilles côte à côte avec des règles."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 7))
-    
-    ax1.imshow(grid_to_rgb(input_grid))
-    ax1.set_title(title_left, fontsize=14, fontweight='bold', pad=20)
-    
-    ax2.imshow(grid_to_rgb(output_grid))
-    ax2.set_title(title_right, fontsize=14, fontweight='bold', pad=20)
-    
-    if rules_text:
-        fig.text(0.5, 0.02, rules_text, 
-                ha='center', va='bottom',
-                fontsize=11, 
-                bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
-        plt.subplots_adjust(bottom=0.25)
-    
-    for ax in [ax1, ax2]:
-        h, w = len(input_grid), len(input_grid[0])
-        ax.set_xticks(np.arange(-0.5, w, 1), minor=True)
-        ax.set_yticks(np.arange(-0.5, h, 1), minor=True)
-        ax.grid(which='minor', color='white', linewidth=1)
-        ax.tick_params(which='both', bottom=False, left=False, labelbottom=False, labelleft=False)
-    
-    legend_elements = []
-    colors_in_grid = set()
-    
-    for row in input_grid + output_grid:
-        colors_in_grid.update(set(row))
-    
-    colors_in_grid = sorted(list(colors_in_grid))
-    for color in colors_in_grid:
-        if color != 0:
-            legend_elements.append(
-                plt.Rectangle((0, 0), 1, 1, 
-                            facecolor=ColorMapper.hex(color),
-                            label=f"{color}: {ColorMapper.name(color)}")
-            )
-    
-    if legend_elements:
-        fig.legend(handles=legend_elements, 
-                  loc='upper center', 
-                  ncol=min(5, len(legend_elements)),
-                  bbox_to_anchor=(0.5, 0.95))
-    
-    plt.suptitle("Analyse des Grilles - Système de Règles", 
-                fontsize=16, fontweight='bold', y=0.98)
-    plt.tight_layout(rect=[0, 0.05 if rules_text else 0, 1, 0.95])
-    plt.show()
-
-
-# ============================================
-# PARTIE 5: EXTRACTION ET APPLICATION DE RÈGLES
-# ============================================
-
-class GridRuleExtractor:
-    """Extrait les règles de transformation."""
-    
-    def __init__(self):
-        self.color_changes = {}
-        self.connections = {}
-        self.translations = {}
-        self.shape_rules = []
+    def _consolidate_color_changes(self) -> Dict[int, int]:
+        """Consolide les changements de couleur par couleur."""
+        consolidated = {}
         
-    def extract_from_examples(self, train_examples: List[Dict]) -> None:
-        print("=== Extraction des règles depuis les exemples ===")
+        for old_color, changes in self.all_color_changes.items():
+            # Compter les changements les plus fréquents
+            change_counter = Counter()
+            for new_color, _ in changes:
+                change_counter[new_color] += 1
+            
+            if change_counter:
+                # Prendre le changement le plus fréquent
+                most_common = change_counter.most_common(1)[0]
+                new_color, count = most_common
+                
+                # Vérifier la confiance (au moins 60% des occurrences)
+                confidence = count / len(changes)
+                if confidence >= self.min_confidence:
+                    consolidated[old_color] = new_color
+                    print(f"  Changement couleur consolidé: {old_color} -> {new_color} (confiance: {confidence:.2f})")
+        
+        return consolidated
+    
+    def _extract_general_color_rules(self) -> List[Rule]:
+        """Extrait des règles générales de changement de couleur."""
+        general_rules = []
+        
+        # Regrouper par type de changement (ex: "augmentation de 1")
+        change_patterns = defaultdict(list)
+        
+        for old_color, changes in self.all_color_changes.items():
+            for new_color, example_idx in changes:
+                # Calculer la différence
+                diff = new_color - old_color
+                pattern = f"diff_{diff}"
+                change_patterns[pattern].append((old_color, new_color, example_idx))
+        
+        # Chercher des motifs récurrents
+        for pattern, occurrences in change_patterns.items():
+            if len(occurrences) >= 2:
+                # Vérifier si c'est cohérent
+                examples_with_pattern = set(idx for _, _, idx in occurrences)
+                confidence = len(examples_with_pattern) / len(self.all_color_changes)
+                
+                if confidence >= self.min_confidence:
+                    # Extraire la différence
+                    diff = int(pattern.split('_')[1])
+                    rule = Rule(
+                        rule_type="general_color_change",
+                        params={"type": "add_constant", "value": diff},
+                        examples=list(examples_with_pattern),
+                        confidence=confidence
+                    )
+                    general_rules.append(rule)
+                    print(f"  Règle générale couleur: ajouter {diff} (confiance: {confidence:.2f})")
+        
+        return general_rules
+    
+    def _consolidate_translations(self) -> Dict[int, Tuple[int, int]]:
+        """Consolide les translations par couleur."""
+        consolidated = {}
+        
+        for color, translations in self.all_translations.items():
+            # Compter les translations les plus fréquentes
+            translation_counter = Counter()
+            for (dx, dy), _ in translations:
+                translation_counter[(dx, dy)] += 1
+            
+            if translation_counter:
+                # Prendre la translation la plus fréquente
+                most_common = translation_counter.most_common(1)[0]
+                (dx, dy), count = most_common
+                
+                # Vérifier la confiance
+                confidence = count / len(translations)
+                if confidence >= self.min_confidence:
+                    consolidated[color] = (dx, dy)
+                    print(f"  Translation consolidée: couleur {color} -> ({dx}, {dy}) (confiance: {confidence:.2f})")
+        
+        return consolidated
+    
+    def _extract_general_translation_rules(self) -> List[Rule]:
+        """Extrait des règles générales de translation."""
+        general_rules = []
+        
+        # Étape 1: Regrouper toutes les translations par vecteur
+        vector_to_colors = defaultdict(set)
+        vector_to_examples = defaultdict(set)
+        
+        for color, translations in self.all_translations.items():
+            for (dx, dy), example_idx in translations:
+                vector = (dx, dy)
+                vector_to_colors[vector].add(color)
+                vector_to_examples[vector].add(example_idx)
+        
+        # Étape 2: Chercher des vecteurs qui apparaissent pour plusieurs couleurs
+        for vector, colors in vector_to_colors.items():
+            if len(colors) >= 2:  # Au moins 2 couleurs différentes
+                dx, dy = vector
+                examples = vector_to_examples[vector]
+                confidence = len(examples) / len(set().union(*[set(idx for (_, idx) in self.all_translations[c]) for c in colors]))
+                
+                if confidence >= self.min_confidence:
+                    # Règle générale: ce vecteur s'applique indépendamment de la couleur
+                    rule = Rule(
+                        rule_type="general_translation",
+                        params={"dx": dx, "dy": dy, "applies_to": "all_colors"},
+                        examples=list(examples),
+                        confidence=confidence
+                    )
+                    general_rules.append(rule)
+                    print(f"  Règle générale translation: ({dx}, {dy}) pour {len(colors)} couleurs (confiance: {confidence:.2f})")
+        
+        # Étape 3: Chercher des motifs directionnels (ex: toujours vers la droite)
+        directions = defaultdict(list)
+        for color, translations in self.all_translations.items():
+            for (dx, dy), example_idx in translations:
+                if dx > 0 and dy == 0:
+                    directions["right"].append((color, example_idx))
+                elif dx < 0 and dy == 0:
+                    directions["left"].append((color, example_idx))
+                elif dx == 0 and dy > 0:
+                    directions["down"].append((color, example_idx))
+                elif dx == 0 and dy < 0:
+                    directions["up"].append((color, example_idx))
+        
+        for direction, occurrences in directions.items():
+            if len(occurrences) >= 2:
+                colors = set(color for color, _ in occurrences)
+                examples = set(idx for _, idx in occurrences)
+                confidence = len(examples) / len(self.all_translations)
+                
+                if confidence >= self.min_confidence and len(colors) >= 2:
+                    rule = Rule(
+                        rule_type="general_translation",
+                        params={"direction": direction, "applies_to": "all_colors"},
+                        examples=list(examples),
+                        confidence=confidence
+                    )
+                    general_rules.append(rule)
+                    print(f"  Règle générale direction: {direction} (confiance: {confidence:.2f})")
+        
+        return general_rules
+    
+    def _consolidate_connections(self) -> Dict[int, str]:
+        """Consolide les connexions par couleur."""
+        consolidated = {}
+        
+        for color, connections in self.all_connections.items():
+            # Compter les types de connexion les plus fréquents
+            connection_counter = Counter()
+            for conn_type, _ in connections:
+                connection_counter[conn_type] += 1
+            
+            if connection_counter:
+                # Prendre le type le plus fréquent
+                most_common = connection_counter.most_common(1)[0]
+                conn_type, count = most_common
+                
+                # Vérifier la confiance
+                confidence = count / len(connections)
+                if confidence >= self.min_confidence:
+                    consolidated[color] = conn_type
+                    print(f"  Connexion consolidée: couleur {color} -> {conn_type} (confiance: {confidence:.2f})")
+        
+        return consolidated
+    
+    def _extract_general_connection_rules(self) -> List[Rule]:
+        """Extrait des règles générales de connexion."""
+        general_rules = []
+        
+        # Regrouper par type de connexion
+        connection_types = defaultdict(set)
+        connection_examples = defaultdict(set)
+        
+        for color, connections in self.all_connections.items():
+            for conn_type, example_idx in connections:
+                connection_types[conn_type].add(color)
+                connection_examples[conn_type].add(example_idx)
+        
+        # Chercher des types qui apparaissent pour plusieurs couleurs
+        for conn_type, colors in connection_types.items():
+            if len(colors) >= 2:
+                examples = connection_examples[conn_type]
+                confidence = len(examples) / len(self.all_connections)
+                
+                if confidence >= self.min_confidence:
+                    rule = Rule(
+                        rule_type="general_connection",
+                        params={"connection_type": conn_type, "applies_to": "all_colors"},
+                        examples=list(examples),
+                        confidence=confidence
+                    )
+                    general_rules.append(rule)
+                    print(f"  Règle générale connexion: {conn_type} pour {len(colors)} couleurs (confiance: {confidence:.2f})")
+        
+        return general_rules
+    
+    def print_statistics(self):
+        """Affiche les statistiques de consolidation."""
+        print("\n" + "="*60)
+        print("STATISTIQUES DE CONSOLIDATION")
+        print("="*60)
+        
+        print(f"\nChangements de couleur analysés: {len(self.all_color_changes)} couleurs")
+        for color, changes in self.all_color_changes.items():
+            print(f"  Couleur {color}: {len(changes)} occurrences")
+        
+        print(f"\nTranslations analysées: {len(self.all_translations)} couleurs")
+        for color, translations in self.all_translations.items():
+            print(f"  Couleur {color}: {len(translations)} translations")
+            vectors = Counter((dx, dy) for (dx, dy), _ in translations)
+            for (dx, dy), count in vectors.most_common(3):
+                print(f"    → ({dx}, {dy}): {count} fois")
+        
+        print(f"\nConnexions analysées: {len(self.all_connections)} couleurs")
+        for color, connections in self.all_connections.items():
+            print(f"  Couleur {color}: {len(connections)} connexions")
+
+# ============================================
+# PARTIE 3: EXTRACTION DE RÈGLES AVEC CONSOLIDATION
+# ============================================
+
+class AdvancedGridRuleExtractor:
+    """Extrait et consolide les règles de tous les exemples."""
+    
+    def __init__(self, min_confidence: float = 0.6):
+        self.consolidator = RuleConsolidator(min_confidence)
+        self.example_rules = []  # Stocke les règles de chaque exemple
+        
+    def extract_and_consolidate(self, train_examples: List[Dict]) -> ConsolidatedRules:
+        """Extrait les règles de chaque exemple et les consolide."""
+        print("="*60)
+        print("EXTRACTION ET CONSOLIDATION DES RÈGLES")
+        print("="*60)
         
         for idx, example in enumerate(train_examples):
             print(f"\n--- Analyse de l'exemple {idx+1} ---")
@@ -590,70 +370,76 @@ class GridRuleExtractor:
             input_grid = example["input"]
             output_grid = example["output"]
             
-            # Extraire les formes dans input et output
-            input_rectangles = RectangleDetector.detect_rectangles(input_grid)
-            output_rectangles = RectangleDetector.detect_rectangles(output_grid)
+            # Extraire les règles de cet exemple
+            color_changes, translations, connections = self._extract_single_example(input_grid, output_grid)
             
-            input_lines = LineDetector.detect_lines(input_grid)
-            output_lines = LineDetector.detect_lines(output_grid)
+            # Stocker pour référence
+            self.example_rules.append({
+                "color_changes": color_changes,
+                "translations": translations,
+                "connections": connections
+            })
             
-            print(f"  Rectangles détectés: {len(input_rectangles)} -> {len(output_rectangles)}")
-            print(f"  Lignes détectées: {len(input_lines)} -> {len(output_lines)}")
+            # Ajouter au consolidateur
+            self.consolidator.add_example_rules(
+                idx, color_changes, translations, connections
+            )
             
-            # Détecter les changements de couleur
-            self._extract_color_changes(input_grid, output_grid)
-            
-            # Analyser les transformations
-            self._analyze_transformations(input_grid, output_grid)
-            
-            # Analyser les transformations de formes
-            self._analyze_shape_transformations(input_rectangles, output_rectangles, "rectangle")
-            self._analyze_shape_transformations(input_lines, output_lines, "line")
+            # Ajouter les données de forme (pour analyses futures)
+            self.consolidator.add_shape_data(idx, input_grid, output_grid)
+        
+        # Afficher les statistiques
+        self.consolidator.print_statistics()
+        
+        # Consolider toutes les règles
+        print("\n" + "="*60)
+        print("CONSOLIDATION FINALE")
+        print("="*60)
+        consolidated_rules = self.consolidator.consolidate()
+        
+        return consolidated_rules
     
-    def _extract_color_changes(self, input_grid: List[List[int]], 
-                               output_grid: List[List[int]]) -> None:
+    def _extract_single_example(self, input_grid: List[List[int]], 
+                               output_grid: List[List[int]]) -> Tuple[Dict, Dict, Dict]:
+        """Extrait les règles d'un seul exemple."""
+        color_changes = {}
+        translations = {}
+        connections = {}
+        
         h = len(input_grid)
         w = len(input_grid[0])
         
+        # Points par couleur
+        input_points_by_color = defaultdict(set)
+        output_points_by_color = defaultdict(set)
+        
+        # 1. Détecter les changements de couleur
         for i in range(h):
             for j in range(w):
                 old_color = input_grid[i][j]
                 new_color = output_grid[i][j]
                 
                 if old_color != 0 and old_color != new_color:
-                    if old_color in self.color_changes:
-                        if self.color_changes[old_color] != new_color:
-                            print(f"  Attention: conflit pour {old_color} -> {self.color_changes[old_color]} ou {new_color}")
-                    self.color_changes[old_color] = new_color
-                    print(f"  Changement couleur: {old_color} -> {new_color}")
-    
-    def _analyze_transformations(self, input_grid: List[List[int]], 
-                                output_grid: List[List[int]]) -> None:
-        h = len(input_grid)
-        w = len(input_grid[0])
+                    color_changes[old_color] = new_color
+                
+                if old_color != 0:
+                    input_points_by_color[old_color].add((i, j))
+                if new_color != 0:
+                    output_points_by_color[new_color].add((i, j))
         
-        input_points_by_color = defaultdict(set)
-        output_points_by_color = defaultdict(set)
-        
-        for i in range(h):
-            for j in range(w):
-                c_in = input_grid[i][j]
-                c_out = output_grid[i][j]
-                if c_in != 0:
-                    input_points_by_color[c_in].add((i, j))
-                if c_out != 0:
-                    output_points_by_color[c_out].add((i, j))
-        
+        # 2. Pour chaque couleur en sortie, analyser les transformations
         for color_out in output_points_by_color.keys():
+            # Trouver la couleur d'entrée correspondante
             possible_input_colors = []
             
-            for old_color, new_color in self.color_changes.items():
+            for old_color, new_color in color_changes.items():
                 if new_color == color_out:
                     possible_input_colors.append(old_color)
             
-            if color_out not in self.color_changes.values():
+            if color_out not in color_changes.values():
                 possible_input_colors.append(color_out)
             
+            # Points d'entrée correspondants
             input_points_for_color = set()
             for c_in in possible_input_colors:
                 if c_in in input_points_by_color:
@@ -664,45 +450,29 @@ class GridRuleExtractor:
             if not input_points_for_color:
                 continue
             
-            if not self._try_detect_translation(input_points_for_color, 
-                                              output_points, color_out):
-                self._try_detect_connection(input_points_for_color,
-                                          output_points, color_out)
-    
-    def _analyze_shape_transformations(self, input_shapes: List[GeometricShape],
-                                     output_shapes: List[GeometricShape],
-                                     shape_type: str) -> None:
-        """Analyse les transformations entre formes."""
-        if not input_shapes or not output_shapes:
-            return
+            # Essayer de détecter une translation
+            translation_found = self._try_detect_translation(
+                input_points_for_color, output_points, color_out
+            )
+            if translation_found:
+                dx, dy = translation_found
+                translations[color_out] = (dx, dy)
+            else:
+                # Sinon, essayer de détecter une connexion
+                conn_type = self._try_detect_connection(
+                    input_points_for_color, output_points, color_out
+                )
+                if conn_type:
+                    connections[color_out] = conn_type
         
-        for in_shape in input_shapes:
-            for out_shape in output_shapes:
-                if in_shape.color == out_shape.color:
-                    # Vérifier la translation
-                    in_center = in_shape.bounding_box.center
-                    out_center = out_shape.bounding_box.center
-                    dx = out_center.x - in_center.x
-                    dy = out_center.y - in_center.y
-                    
-                    if dx != 0 or dy != 0:
-                        rule = {
-                            "type": "shape_translation",
-                            "shape_type": shape_type,
-                            "color": in_shape.color,
-                            "dx": dx,
-                            "dy": dy,
-                            "from_size": (in_shape.bounding_box.width, in_shape.bounding_box.height),
-                            "to_size": (out_shape.bounding_box.width, out_shape.bounding_box.height)
-                        }
-                        self.shape_rules.append(rule)
-                        print(f"  Translation de {shape_type}: ({dx}, {dy})")
+        return color_changes, translations, connections
     
     def _try_detect_translation(self, input_points: Set[Tuple[int, int]],
                                output_points: Set[Tuple[int, int]], 
-                               color: int) -> bool:
+                               color: int) -> Optional[Tuple[int, int]]:
+        """Détecte une translation."""
         if len(input_points) != len(output_points) or not input_points:
-            return False
+            return None
         
         ref_in = next(iter(input_points))
         possible_displacements = set()
@@ -728,20 +498,19 @@ class GridRuleExtractor:
                         break
             
             if match_all:
-                self.translations[color] = (dx, dy)
-                print(f"  Translation pour {color}: ({dx}, {dy})")
-                return True
+                return (dx, dy)
         
-        return False
+        return None
     
     def _try_detect_connection(self, input_points: Set[Tuple[int, int]],
                               output_points: Set[Tuple[int, int]],
-                              color: int) -> None:
+                              color: int) -> Optional[str]:
+        """Détecte une connexion."""
         base_points = input_points.intersection(output_points)
         added_points = output_points - input_points
         
         if not added_points or len(base_points) < 2:
-            return
+            return None
         
         base_list = list(base_points)
         for i in range(len(base_list)):
@@ -755,9 +524,7 @@ class GridRuleExtractor:
                     line_points = {(p1[0], y) for y in range(min_y, max_y+1)}
                     
                     if line_points.issubset(output_points):
-                        self.connections[color] = 'H'
-                        print(f"  Connexion horizontale pour {color}")
-                        return
+                        return 'H'
                 
                 elif p1[1] == p2[1]:  # Vertical
                     min_x = min(p1[0], p2[0])
@@ -765,9 +532,7 @@ class GridRuleExtractor:
                     line_points = {(x, p1[1]) for x in range(min_x, max_x+1)}
                     
                     if line_points.issubset(output_points):
-                        self.connections[color] = 'V'
-                        print(f"  Connexion verticale pour {color}")
-                        return
+                        return 'V'
                 
                 elif abs(p1[0] - p2[0]) == abs(p1[1] - p2[1]):  # Diagonale
                     dx = 1 if p2[0] > p1[0] else -1
@@ -777,73 +542,83 @@ class GridRuleExtractor:
                                    for k in range(steps+1)}
                     
                     if line_points.issubset(output_points):
-                        self.connections[color] = 'D'
-                        print(f"  Connexion diagonale pour {color}")
-                        return
-    
-    def get_rules(self) -> Dict:
-        return {
-            "color_changes": self.color_changes,
-            "connections": self.connections,
-            "translations": self.translations,
-            "shape_rules": self.shape_rules
-        }
+                        return 'D'
+        
+        return None
 
+# ============================================
+# PARTIE 4: APPLICATION AVEC RÈGLES GÉNÉRALES
+# ============================================
 
-class GridTransformer:
-    """Applique les règles de transformation."""
+class AdvancedGridTransformer:
+    """Applique les règles consolidées (spécifiques + générales)."""
     
-    def __init__(self, rules: Dict):
-        self.color_changes = rules.get("color_changes", {})
-        self.connections = rules.get("connections", {})
-        self.translations = rules.get("translations", {})
-        self.shape_rules = rules.get("shape_rules", [])
-    
+    def __init__(self, consolidated_rules: ConsolidatedRules):
+        self.rules = consolidated_rules
+        
     def apply_rules(self, input_grid: List[List[int]]) -> List[List[int]]:
+        """
+        Applique les règles dans l'ordre:
+        1. Changements de couleur (spécifiques → généraux)
+        2. Connexions (spécifiques → généraux)
+        3. Translations (spécifiques → généraux)
+        """
         grid = copy.deepcopy(input_grid)
         h = len(grid)
         w = len(grid[0])
         
-        # Détecter les formes pour appliquer les règles de formes
-        rectangles = RectangleDetector.detect_rectangles(grid)
-        lines = LineDetector.detect_lines(grid)
-        
-        # Étape 1: Changements de couleur
+        # 1. Changements de couleur
         grid = self._apply_color_changes(grid)
         
-        # Étape 2: Connexions
+        # 2. Connexions
         grid = self._apply_connections(grid)
         
-        # Étape 3: Translations
+        # 3. Translations
         grid = self._apply_translations(grid)
-        
-        # Étape 4: Règles de formes (si applicable)
-        grid = self._apply_shape_rules(grid, rectangles, lines)
         
         return grid
     
     def _apply_color_changes(self, grid: List[List[int]]) -> List[List[int]]:
+        """Applique les changements de couleur (spécifiques et généraux)."""
         h = len(grid)
         w = len(grid[0])
         
+        # D'abord les règles spécifiques
         for i in range(h):
             for j in range(w):
-                if grid[i][j] in self.color_changes:
-                    grid[i][j] = self.color_changes[grid[i][j]]
+                color = grid[i][j]
+                if color in self.rules.color_changes:
+                    grid[i][j] = self.rules.color_changes[color]
+        
+        # Ensuite les règles générales (si applicables)
+        for rule in self.rules.general_color_changes:
+            if rule.params.get("type") == "add_constant":
+                value = rule.params["value"]
+                for i in range(h):
+                    for j in range(w):
+                        old_color = grid[i][j]
+                        if old_color != 0:
+                            new_color = old_color + value
+                            if 0 <= new_color <= 9:
+                                grid[i][j] = new_color
         
         return grid
     
     def _apply_connections(self, grid: List[List[int]]) -> List[List[int]]:
+        """Applique les connexions (spécifiques et générales)."""
         h = len(grid)
         w = len(grid[0])
         
-        for color, conn_type in self.connections.items():
+        # Fonction pour appliquer une connexion d'un type donné à une couleur
+        def apply_connection_type(conn_type: str, color: int):
+            # Trouver tous les points de cette couleur
             points = [(i, j) for i in range(h) for j in range(w) 
                      if grid[i][j] == color]
             
             if len(points) < 2:
-                continue
+                return
             
+            # Pour chaque paire de points
             for k in range(len(points)):
                 for l in range(k+1, len(points)):
                     p1 = points[k]
@@ -851,15 +626,32 @@ class GridTransformer:
                     
                     if conn_type == 'H' and p1[0] == p2[0]:
                         self._draw_horizontal_line(grid, p1, p2, color)
-                    
                     elif conn_type == 'V' and p1[1] == p2[1]:
                         self._draw_vertical_line(grid, p1, p2, color)
-                    
                     elif conn_type == 'D':
                         dx = p2[0] - p1[0]
                         dy = p2[1] - p1[1]
                         if abs(dx) == abs(dy):
                             self._draw_diagonal_line(grid, p1, p2, color)
+        
+        # Appliquer d'abord les règles spécifiques
+        for color, conn_type in self.rules.connections.items():
+            apply_connection_type(conn_type, color)
+        
+        # Ensuite les règles générales
+        for rule in self.rules.general_connections:
+            conn_type = rule.params["connection_type"]
+            # Appliquer à toutes les couleurs présentes
+            colors_in_grid = set()
+            for i in range(h):
+                for j in range(w):
+                    if grid[i][j] != 0:
+                        colors_in_grid.add(grid[i][j])
+            
+            for color in colors_in_grid:
+                # Ne pas réappliquer si déjà fait par une règle spécifique
+                if color not in self.rules.connections:
+                    apply_connection_type(conn_type, color)
         
         return grid
     
@@ -899,226 +691,269 @@ class GridTransformer:
                 grid[row][col] = color
     
     def _apply_translations(self, grid: List[List[int]]) -> List[List[int]]:
+        """Applique les translations (spécifiques et générales)."""
         h = len(grid)
         w = len(grid[0])
         
-        for color, (dx, dy) in self.translations.items():
-            new_grid = copy.deepcopy(grid)
-            
+        # Créer une nouvelle grille
+        new_grid = [[0 for _ in range(w)] for _ in range(h)]
+        
+        # 1. Copier tout ce qui ne sera pas translaté
+        for i in range(h):
+            for j in range(w):
+                color = grid[i][j]
+                if color != 0:
+                    # Vérifier si cette couleur a une règle spécifique
+                    if color in self.rules.translations:
+                        # Cette couleur sera traitée plus tard
+                        continue
+                    
+                    # Vérifier si une règle générale s'applique
+                    general_applies = False
+                    for rule in self.rules.general_translations:
+                        if rule.params.get("applies_to") == "all_colors":
+                            general_applies = True
+                            break
+                    
+                    if not general_applies:
+                        # Garder à la même position
+                        new_grid[i][j] = color
+        
+        # 2. Appliquer les translations spécifiques
+        for color, (dx, dy) in self.rules.translations.items():
             for i in range(h):
                 for j in range(w):
                     if grid[i][j] == color:
-                        new_i = i + dx
-                        new_j = j + dy
-                        
-                        new_grid[i][j] = 0
+                        new_i = i + dy
+                        new_j = j + dx
                         
                         if 0 <= new_i < h and 0 <= new_j < w:
                             new_grid[new_i][new_j] = color
-            
-            grid = new_grid
         
-        return grid
-    
-    def _apply_shape_rules(self, grid: List[List[int]], 
-                         rectangles: List[GeometricShape],
-                         lines: List[GeometricShape]) -> List[List[int]]:
-        """Applique les règles basées sur les formes détectées."""
-        # Pour l'instant, on applique les translations de formes
-        for rule in self.shape_rules:
-            if rule["type"] == "shape_translation":
-                # Cette partie est plus complexe et nécessite de manipuler
-                # les formes complètes. À implémenter selon les besoins.
-                pass
+        # 3. Appliquer les translations générales
+        for rule in self.rules.general_translations:
+            if rule.params.get("applies_to") == "all_colors":
+                dx = rule.params.get("dx", 0)
+                dy = rule.params.get("dy", 0)
+                
+                # Appliquer à toutes les couleurs qui n'ont pas de règle spécifique
+                for i in range(h):
+                    for j in range(w):
+                        color = grid[i][j]
+                        if color != 0 and color not in self.rules.translations:
+                            new_i = i + dy
+                            new_j = j + dx
+                            
+                            if 0 <= new_i < h and 0 <= new_j < w:
+                                new_grid[new_i][new_j] = color
         
-        return grid
-
+        return new_grid
 
 # ============================================
-# PARTIE 6: FONCTIONS PRINCIPALES
+# PARTIE 5: FONCTIONS PRINCIPALES AVEC VISUALISATION AMÉLIORÉE
 # ============================================
 
-def load_data_from_json(filepath: str) -> Dict:
-    with open(filepath, 'r', encoding='utf-8') as f:
-        return json.load(f)
+def grid_to_rgb_with_grid(grid: List[List[int]], grid_color='white', grid_alpha=0.3, line_width=1):
+    """Convertit une grille en image RGB avec des lignes de grille."""
+    h, w = len(grid), len(grid[0])
+    
+    # Carte de couleurs améliorée
+    color_map = {
+        0: [0, 0, 0],        # Noir
+        1: [1, 0, 0],        # Rouge
+        2: [0, 0, 1],        # Bleu
+        3: [0, 1, 0],        # Vert
+        4: [1, 1, 0],        # Jaune
+        5: [0.5, 0.5, 0.5],  # Gris
+        6: [1, 0, 1],        # Magenta
+        7: [1, 0.5, 0],      # Orange
+        8: [0, 1, 1],        # Cyan
+        9: [0.5, 0, 0]       # Marron
+    }
+    
+    # Créer l'image RGB
+    rgb = np.zeros((h, w, 3))
+    for i in range(h):
+        for j in range(w):
+            rgb[i, j] = color_map.get(grid[i][j], [1, 1, 1])
+    
+    return rgb
 
-def save_results_to_json(results: Dict, filepath: str) -> None:
-    with open(filepath, 'w', encoding='utf-8') as f:
-        json.dump(results, f, indent=2)
-
-def analyze_and_detect_shapes(grid: List[List[int]]):
-    """Analyse une grille et détecte les formes."""
-    print("\n=== DÉTECTION DE FORMES ===")
+def visualize_with_grid(grid: List[List[int]], ax, title: str = ""):
+    """Visualise une grille avec des lignes de grille claires."""
+    h, w = len(grid), len(grid[0])
     
-    rectangles = RectangleDetector.detect_rectangles(grid)
-    lines = LineDetector.detect_lines(grid)
+    # Créer l'image RGB
+    rgb = grid_to_rgb_with_grid(grid)
     
-    print(f"Rectangles détectés: {len(rectangles)}")
-    for rect in rectangles:
-        print(f"  - Rectangle {rect.color}: {rect.bounding_box.width}x{rect.bounding_box.height}")
+    # Afficher l'image
+    ax.imshow(rgb)
+    ax.set_title(title, fontsize=12, fontweight='bold', pad=10)
     
-    print(f"Lignes détectées: {len(lines)}")
-    for line in lines:
-        print(f"  - Ligne {line.color}: {line.properties['direction']} ({line.properties['length']} pixels)")
+    # Ajouter des lignes de grille
+    ax.set_xticks(np.arange(-0.5, w, 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, h, 1), minor=True)
+    ax.grid(which='minor', color='white', linewidth=1, alpha=0.7)
     
-    if rectangles or lines:
-        visualize_shapes(grid, rectangles + lines, "Détection de formes")
+    # Cacher les ticks
+    ax.set_xticks([])
+    ax.set_yticks([])
     
-    return rectangles, lines
+    # Ajouter un quadrillage pour mieux voir les pixels
+    for x in range(w):
+        for y in range(h):
+            # Rectangle autour de chaque pixel
+            rect = plt.Rectangle((x-0.5, y-0.5), 1, 1,
+                               linewidth=0.5, 
+                               edgecolor=(1, 1, 1, 0.5),
+                               facecolor='none')
+            ax.add_patch(rect)
 
 def main(visualize: bool = True, json_file: str = "grid_data.json"):
-    """Fonction principale."""
+    """Fonction principale avec consolidation inter-exemples."""
+    
+    # Charger les données
     print("Chargement des données...")
     try:
-        data = load_data_from_json(json_file)
+        with open(json_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
     except FileNotFoundError:
         print(f"Erreur: Fichier '{json_file}' non trouvé.")
         return
     
-    # Analyser les exemples d'entraînement
-    if visualize and "train" in data:
-        for idx, example in enumerate(data["train"]):
-            print(f"\n=== ANALYSE DE L'EXEMPLE {idx+1} ===")
-            analyze_and_detect_shapes(example["input"])
+    # Extraire et consolider les règles
+    print("\nExtraction et consolidation des règles...")
+    extractor = AdvancedGridRuleExtractor(min_confidence=0.5)
+    consolidated_rules = extractor.extract_and_consolidate(data["train"])
     
-    # Extraire les règles
-    print("\n=== EXTRACTION DES RÈGLES ===")
-    extractor = GridRuleExtractor()
-    extractor.extract_from_examples(data["train"])
-    rules = extractor.get_rules()
+    # Afficher les règles finales
+    print("\n" + "="*60)
+    print("RÈGLES FINALES (CONSOLIDÉES)")
+    print("="*60)
     
-    print(f"\n=== RÈGLES EXTRACTES ===")
-    print(f"Changements de couleur: {rules['color_changes']}")
-    print(f"Connexions: {rules['connections']}")
-    print(f"Translations: {rules['translations']}")
-    print(f"Règles de formes: {len(rules['shape_rules'])}")
-    
-    # Visualisation des règles
-    if visualize:
-        visualize_rules_summary(rules)
-    
-    # Visualisation des exemples
-    if visualize and "train" in data:
-        print("\n=== VISUALISATION DES EXEMPLES ===")
-        for idx, example in enumerate(data["train"]):
-            visualize_grids(
-                input_grid=example["input"],
-                output_grid=example["output"],
-                title_left=f"EXEMPLE {idx+1} - INPUT",
-                title_right=f"EXEMPLE {idx+1} - OUTPUT",
-                rules_text=f"Règles appliquées à l'exemple {idx+1}"
-            )
+    all_rules = consolidated_rules.get_all_rules()
+    print(f"\nChangements de couleur spécifiques: {all_rules['color_changes']}")
+    print(f"Changements de couleur généraux: {all_rules['general_color_changes']}")
+    print(f"\nTranslations spécifiques: {all_rules['translations']}")
+    print(f"Translations généraux: {all_rules['general_translations']}")
+    print(f"\nConnexions spécifiques: {all_rules['connections']}")
+    print(f"Connexions généraux: {all_rules['general_connections']}")
     
     # Appliquer aux tests
-    print(f"\n=== APPLICATION AUX TESTS ===")
-    transformer = GridTransformer(rules)
+    print(f"\n" + "="*60)
+    print("APPLICATION AUX TESTS")
+    print("="*60)
+    
+    transformer = AdvancedGridTransformer(consolidated_rules)
     results = []
     
+    # Chercher les tests
     test_key = "Test" if "Test" in data else "test"
     
     if test_key in data:
         for test_idx, test_case in enumerate(data[test_key]):
-            print(f"\nTest {test_idx + 1}:")
+            print(f"\n=== TEST {test_idx + 1} ===")
             
             input_grid = test_case["input"]
+            print(f"Input (taille: {len(input_grid)}x{len(input_grid[0])}):")
+            if len(input_grid) <= 8:
+                for row in input_grid[:min(8, len(input_grid))]:
+                    print("  " + str(row))
+            else:
+                for row in input_grid[:4]:
+                    print("  " + str(row))
+                print("  ...")
+                for row in input_grid[-4:]:
+                    print("  " + str(row))
             
-            # Analyser les formes du test
-            if visualize:
-                analyze_and_detect_shapes(input_grid)
-            
+            # Générer l'output
             output_grid = transformer.apply_rules(input_grid)
+            
+            print(f"\nOutput prédit (taille: {len(output_grid)}x{len(output_grid[0])}):")
+            if len(output_grid) <= 8:
+                for row in output_grid[:min(8, len(output_grid))]:
+                    print("  " + str(row))
+            else:
+                for row in output_grid[:4]:
+                    print("  " + str(row))
+                print("  ...")
+                for row in output_grid[-4:]:
+                    print("  " + str(row))
             
             results.append({
                 "input": input_grid,
                 "output": output_grid
             })
             
+            # Visualisation améliorée avec grilles
             if visualize:
-                visualize_grids(
-                    input_grid=input_grid,
-                    output_grid=output_grid,
-                    title_left=f"TEST {test_idx+1} - INPUT",
-                    title_right=f"TEST {test_idx+1} - OUTPUT PRÉDIT",
-                    rules_text="Règles appliquées automatiquement"
-                )
+                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+                
+                # Input avec grille
+                visualize_with_grid(input_grid, ax1, f"TEST {test_idx+1} - INPUT")
+                
+                # Output avec grille
+                visualize_with_grid(output_grid, ax2, f"TEST {test_idx+1} - OUTPUT PRÉDIT")
+                
+                # Ajouter une légende des couleurs
+                colors_present = set()
+                for row in input_grid + output_grid:
+                    colors_present.update(set(row))
+                colors_present.discard(0)
+                
+                if colors_present:
+                    legend_text = "Couleurs:\n"
+                    color_names = {
+                        1: "Rouge", 2: "Bleu", 3: "Vert", 4: "Jaune",
+                        5: "Gris", 6: "Magenta", 7: "Orange", 
+                        8: "Cyan", 9: "Marron"
+                    }
+                    for color in sorted(colors_present):
+                        if color in color_names:
+                            legend_text += f"{color}: {color_names[color]}\n"
+                    
+                    # Positionner la légende
+                    plt.figtext(0.02, 0.98, legend_text, 
+                               fontsize=9, verticalalignment='top',
+                               bbox=dict(boxstyle='round', facecolor='lightgray', alpha=0.8))
+                
+                plt.suptitle(f"Visualisation du Test {test_idx+1}", fontsize=14, fontweight='bold')
+                plt.tight_layout()
+                plt.show()
     
     # Sauvegarder les résultats
-    save_results_to_json({"test_results": results}, "grid_results.json")
-    print(f"\nRésultats sauvegardés dans 'grid_results.json'")
-
-def visualize_rules_summary(rules: Dict):
-    """Visualise un résumé des règles."""
-    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+    with open("grid_results_consolidated.json", 'w', encoding='utf-8') as f:
+        json.dump({"test_results": results}, f, indent=2)
     
-    rules_text = "=== RÈGLES EXTRACTES ===\n\n"
+    print(f"\n✓ Terminé! {len(results)} test(s) traités.")
+    print(f"✓ Résultats sauvegardés dans 'grid_results_consolidated.json'")
     
-    rules_text += "CHANGEMENTS DE COULEUR:\n"
-    if rules.get('color_changes'):
-        for old_color, new_color in rules['color_changes'].items():
-            rules_text += f"  {old_color} → {new_color}\n"
-    else:
-        rules_text += "  Aucun\n"
-    
-    rules_text += "\nCONNEXIONS:\n"
-    if rules.get('connections'):
-        for color, conn_type in rules['connections'].items():
-            type_name = {'H': 'Horizontale', 'V': 'Verticale', 'D': 'Diagonale'}.get(conn_type, conn_type)
-            rules_text += f"  Couleur {color}: {type_name}\n"
-    else:
-        rules_text += "  Aucune\n"
-    
-    rules_text += "\nTRANSLATIONS:\n"
-    if rules.get('translations'):
-        for color, (dx, dy) in rules['translations'].items():
-            rules_text += f"  Couleur {color}: ({dx}, {dy})\n"
-    else:
-        rules_text += "  Aucune\n"
-    
-    rules_text += "\nRÈGLES DE FORMES:\n"
-    if rules.get('shape_rules'):
-        for rule in rules['shape_rules']:
-            if rule["type"] == "shape_translation":
-                rules_text += f"  {rule['shape_type']} {rule['color']}: ({rule['dx']}, {rule['dy']})\n"
-    else:
-        rules_text += "  Aucune\n"
-    
-    ax.text(0.1, 0.5, rules_text, 
-            fontsize=12, 
-            verticalalignment='center',
-            bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.8))
-    
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.axis('off')
-    ax.set_title("Règles Extraites des Exemples", fontsize=14, fontweight='bold')
-    
-    plt.tight_layout()
-    plt.show()
-
+    return results
 
 # ============================================
-# POINT D'ENTRÉE PRINCIPAL
+# EXÉCUTION
 # ============================================
 
 if __name__ == "__main__":
     import sys
     
-    print("SYSTÈME COMPLET DE RÉSOLUTION DE GRID ARC")
-    print("=" * 50)
+    print("="*70)
+    print("SYSTÈME AVEC CONSOLIDATION INTER-EXEMPLES")
+    print("="*70)
     
-    visualize_input = input("Voulez-vous afficher les visualisations? (oui/non): ").strip().lower()
-    visualize = visualize_input in ["oui", "o", "yes", "y"]
-    
+    # Demander le fichier
     json_file = input("Nom du fichier JSON (défaut: grid_data.json): ").strip()
     if not json_file:
         json_file = "grid_data.json"
     
+    # Mode visualisation
+    visualize_input = input("Visualisation? (oui/non): ").strip().lower()
+    visualize = visualize_input in ["oui", "o", "yes", "y"]
+    
     try:
         main(visualize=visualize, json_file=json_file)
     except Exception as e:
-        print(f"Erreur lors de l'exécution: {e}")
+        print(f"Erreur: {e}")
         import traceback
         traceback.print_exc()
-        print("\nAssurez-vous que les dépendances sont installées:")
-        print("pip install matplotlib numpy")
         sys.exit(1)
