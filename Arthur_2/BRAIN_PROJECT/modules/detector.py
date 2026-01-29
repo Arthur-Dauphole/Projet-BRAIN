@@ -884,3 +884,287 @@ class SymbolDetector:
                 return (candidate, comparison)
         
         return None
+    
+    # ==================== PATTERN DETECTION ====================
+    
+    def detect_repeating_pattern(self, grid: Grid) -> Optional[dict]:
+        """
+        Detect if the grid contains a repeating pattern (tile/motif).
+        
+        This finds the smallest rectangular pattern that, when tiled,
+        recreates the grid (or a significant portion of it).
+        
+        Args:
+            grid: The grid to analyze
+            
+        Returns:
+            Dictionary with pattern info or None if no pattern found:
+            {
+                "pattern": 2D array of the repeating unit,
+                "tile_height": height of the pattern,
+                "tile_width": width of the pattern,
+                "repetitions_h": number of horizontal repetitions,
+                "repetitions_v": number of vertical repetitions,
+                "coverage": percentage of grid covered by the pattern
+            }
+        """
+        data = grid.data
+        h, w = data.shape
+        
+        # Try different tile sizes (from small to large)
+        # Maximum tile size is half the grid dimension
+        best_pattern = None
+        best_score = 0
+        
+        for tile_h in range(1, h // 2 + 1):
+            for tile_w in range(1, w // 2 + 1):
+                # Skip if tile doesn't divide grid evenly (less likely to be a pattern)
+                if h % tile_h != 0 or w % tile_w != 0:
+                    continue
+                
+                # Extract the candidate tile from top-left
+                tile = data[0:tile_h, 0:tile_w]
+                
+                # Skip if tile is all background
+                if np.all(tile == 0):
+                    continue
+                
+                # Check if this tile repeats across the grid
+                match_count = 0
+                total_tiles = (h // tile_h) * (w // tile_w)
+                
+                for row_idx in range(h // tile_h):
+                    for col_idx in range(w // tile_w):
+                        row_start = row_idx * tile_h
+                        col_start = col_idx * tile_w
+                        
+                        region = data[row_start:row_start + tile_h, 
+                                     col_start:col_start + tile_w]
+                        
+                        if np.array_equal(region, tile):
+                            match_count += 1
+                
+                # Calculate coverage score
+                coverage = match_count / total_tiles
+                
+                # We want high coverage with the smallest possible tile
+                # Score favors smaller tiles and higher coverage
+                score = coverage * (1.0 / (tile_h * tile_w))
+                
+                if coverage >= 0.9 and score > best_score:  # At least 90% coverage
+                    best_score = score
+                    best_pattern = {
+                        "pattern": tile.copy(),
+                        "tile_height": tile_h,
+                        "tile_width": tile_w,
+                        "repetitions_h": w // tile_w,
+                        "repetitions_v": h // tile_h,
+                        "coverage": coverage
+                    }
+        
+        return best_pattern
+    
+    def detect_subgrids(self, grid: Grid) -> List[dict]:
+        """
+        Detect rectangular subgrids within the main grid.
+        
+        Subgrids are identified by:
+        - Regular rectangular regions
+        - Separated by grid lines or borders
+        - Consistent dimensions
+        
+        Args:
+            grid: The grid to analyze
+            
+        Returns:
+            List of subgrid info dictionaries:
+            {
+                "row": starting row,
+                "col": starting column,
+                "height": subgrid height,
+                "width": subgrid width,
+                "data": 2D array of subgrid content
+            }
+        """
+        data = grid.data
+        h, w = data.shape
+        subgrids = []
+        
+        # Method 1: Find subgrids separated by a specific color (grid lines)
+        # Look for horizontal and vertical separating lines
+        
+        # Find potential horizontal separators (rows with single color)
+        h_separators = []
+        for row in range(h):
+            unique_in_row = np.unique(data[row, :])
+            if len(unique_in_row) == 1 and unique_in_row[0] != 0:
+                h_separators.append((row, unique_in_row[0]))
+        
+        # Find potential vertical separators (columns with single color)
+        v_separators = []
+        for col in range(w):
+            unique_in_col = np.unique(data[:, col])
+            if len(unique_in_col) == 1 and unique_in_col[0] != 0:
+                v_separators.append((col, unique_in_col[0]))
+        
+        # If we have separators, extract subgrids
+        if h_separators and v_separators:
+            # Get the separator color (should be consistent)
+            sep_color = h_separators[0][1]
+            
+            # Build list of row and column boundaries
+            row_bounds = [0] + [s[0] for s in h_separators] + [h]
+            col_bounds = [0] + [s[0] for s in v_separators] + [w]
+            
+            # Extract each subgrid
+            for i in range(len(row_bounds) - 1):
+                for j in range(len(col_bounds) - 1):
+                    r1, r2 = row_bounds[i], row_bounds[i + 1]
+                    c1, c2 = col_bounds[j], col_bounds[j + 1]
+                    
+                    # Skip separator rows/columns themselves
+                    if r2 - r1 <= 1 or c2 - c1 <= 1:
+                        continue
+                    
+                    # Adjust to exclude separator lines
+                    if r1 > 0:
+                        r1 += 1
+                    if c1 > 0:
+                        c1 += 1
+                    
+                    if r2 - r1 > 0 and c2 - c1 > 0:
+                        subgrid_data = data[r1:r2, c1:c2]
+                        subgrids.append({
+                            "row": r1,
+                            "col": c1,
+                            "height": r2 - r1,
+                            "width": c2 - c1,
+                            "data": subgrid_data.copy()
+                        })
+        
+        # Method 2: Look for regular partitioning without explicit separators
+        if not subgrids:
+            # Try common partition sizes
+            for num_rows in [2, 3, 4]:
+                for num_cols in [2, 3, 4]:
+                    if h % num_rows == 0 and w % num_cols == 0:
+                        sub_h = h // num_rows
+                        sub_w = w // num_cols
+                        
+                        temp_subgrids = []
+                        for i in range(num_rows):
+                            for j in range(num_cols):
+                                r1, c1 = i * sub_h, j * sub_w
+                                subgrid_data = data[r1:r1 + sub_h, c1:c1 + sub_w]
+                                temp_subgrids.append({
+                                    "row": r1,
+                                    "col": c1,
+                                    "height": sub_h,
+                                    "width": sub_w,
+                                    "data": subgrid_data.copy()
+                                })
+                        
+                        # Verify these are meaningful subgrids (not all same content)
+                        unique_contents = set()
+                        for sg in temp_subgrids:
+                            unique_contents.add(tuple(sg["data"].flatten()))
+                        
+                        # If we have some variation, these are valid subgrids
+                        if len(unique_contents) > 1:
+                            subgrids = temp_subgrids
+                            break
+                if subgrids:
+                    break
+        
+        return subgrids
+    
+    def detect_bordered_objects(self, grid: Grid) -> List[dict]:
+        """
+        Detect objects that have a border/contour of a different color.
+        
+        These are shapes where:
+        - An inner region has one color
+        - The outer border/contour has a different color
+        
+        Args:
+            grid: The grid to analyze
+            
+        Returns:
+            List of bordered object info:
+            {
+                "inner_color": color of the interior,
+                "border_color": color of the border,
+                "inner_pixels": set of (row, col) for interior,
+                "border_pixels": set of (row, col) for border,
+                "bounding_box": (min_row, min_col, max_row, max_col)
+            }
+        """
+        data = grid.data
+        h, w = data.shape
+        bordered_objects = []
+        
+        # For each non-background color, check if it forms a filled interior
+        non_bg_colors = [c for c in np.unique(data) if c != 0]
+        
+        for inner_color in non_bg_colors:
+            # Get all pixels of this color
+            inner_positions = set(zip(*np.where(data == inner_color)))
+            
+            if not inner_positions:
+                continue
+            
+            # Find the bounding box
+            rows, cols = zip(*inner_positions)
+            min_r, max_r = min(rows), max(rows)
+            min_c, max_c = min(cols), max(cols)
+            
+            # Get pixels adjacent to this region (potential border)
+            adjacent_positions = set()
+            for r, c in inner_positions:
+                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < h and 0 <= nc < w:
+                        if (nr, nc) not in inner_positions and data[nr, nc] != 0:
+                            adjacent_positions.add((nr, nc))
+            
+            if not adjacent_positions:
+                continue
+            
+            # Check if adjacent pixels form a consistent border (single color)
+            adjacent_colors = set(data[r, c] for r, c in adjacent_positions)
+            
+            if len(adjacent_colors) == 1:
+                border_color = adjacent_colors.pop()
+                
+                # Verify this is a "surrounding" border
+                # The border should be on multiple sides of the inner region
+                border_on_top = any(r < min_r for r, c in adjacent_positions)
+                border_on_bottom = any(r > max_r for r, c in adjacent_positions)
+                border_on_left = any(c < min_c for r, c in adjacent_positions)
+                border_on_right = any(c > max_c for r, c in adjacent_positions)
+                
+                sides_with_border = sum([border_on_top, border_on_bottom, 
+                                        border_on_left, border_on_right])
+                
+                # At least 2 sides should have border to be considered bordered
+                if sides_with_border >= 2:
+                    # Find all border pixels (not just adjacent)
+                    border_pixels = set(zip(*np.where(data == border_color)))
+                    
+                    # Filter to only border pixels near this object
+                    expanded_box = (min_r - 2, min_c - 2, max_r + 2, max_c + 2)
+                    border_pixels = {
+                        (r, c) for r, c in border_pixels
+                        if expanded_box[0] <= r <= expanded_box[2] and 
+                           expanded_box[1] <= c <= expanded_box[3]
+                    }
+                    
+                    bordered_objects.append({
+                        "inner_color": int(inner_color),
+                        "border_color": int(border_color),
+                        "inner_pixels": inner_positions,
+                        "border_pixels": border_pixels,
+                        "bounding_box": (min_r, min_c, max_r, max_c)
+                    })
+        
+        return bordered_objects

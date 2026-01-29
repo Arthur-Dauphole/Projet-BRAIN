@@ -60,7 +60,9 @@ class ActionExecutor:
         "rotate",
         "reflect",
         "scale",
-        "draw_line"
+        "draw_line",
+        "tile",
+        "composite"  # For combined transformations (e.g., translate + rotate)
     ]
     
     def __init__(self, verbose: bool = False):
@@ -838,6 +840,310 @@ class ActionExecutor:
             if self.verbose:
                 print(f"  Action failed: {result.message}")
             return grid
+    
+    def _action_tile(self, grid: Grid, action_data: dict) -> ActionResult:
+        """
+        Tile (repeat) the input pattern to create a larger output.
+        
+        Parameters:
+            params.repetitions_horizontal: int - Number of horizontal repetitions
+            params.repetitions_vertical: int - Number of vertical repetitions
+        
+        Returns:
+            ActionResult with tiled grid
+        """
+        params = action_data.get("params", {})
+        reps_h = int(params.get("repetitions_horizontal", 2))
+        reps_v = int(params.get("repetitions_vertical", 2))
+        
+        if reps_h < 1 or reps_v < 1:
+            return ActionResult(
+                success=False,
+                message=f"Invalid repetitions: h={reps_h}, v={reps_v}"
+            )
+        
+        if self.verbose:
+            print(f"  Executing TILE: {reps_h}x horizontal, {reps_v}x vertical")
+        
+        in_h, in_w = grid.data.shape
+        out_h = in_h * reps_v
+        out_w = in_w * reps_h
+        
+        # Create output grid by tiling
+        result = np.tile(grid.data, (reps_v, reps_h))
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result),
+            message=f"Tiled pattern {reps_h}x{reps_v} to create {out_w}x{out_h} grid"
+        )
+    
+    def _action_composite(self, grid: Grid, action_data: dict) -> ActionResult:
+        """
+        Execute a composite (combined) transformation.
+        
+        For rotate+translate combinations, we use an object-centric approach:
+        1. Extract the object pixels
+        2. Normalize (center at origin)
+        3. Apply rotation to normalized shape
+        4. Place at final position (original + translation offset)
+        
+        Parameters:
+            params.transformations: List of transformation dictionaries
+            color_filter: Color of the object to transform
+        """
+        params = action_data.get("params", {})
+        transformations = params.get("transformations", [])
+        color_filter = action_data.get("color_filter")
+        
+        if not transformations:
+            return ActionResult(
+                success=False,
+                message="No transformations specified in composite action"
+            )
+        
+        if self.verbose:
+            trans_desc = " + ".join([t.get("action", "?") for t in transformations])
+            print(f"  Executing COMPOSITE: {trans_desc} (color_filter={color_filter})")
+        
+        # Check if this is a rotate+translate combination (most common)
+        action_types = [t.get("action") for t in transformations]
+        
+        if "rotate" in action_types and "translate" in action_types:
+            # Use object-centric approach for rotate+translate
+            return self._composite_rotate_translate(grid, transformations, color_filter)
+        
+        if "reflect" in action_types and "translate" in action_types:
+            # Use object-centric approach for reflect+translate
+            return self._composite_reflect_translate(grid, transformations, color_filter)
+        
+        # Fallback: sequential execution for other combinations
+        current_grid = grid
+        executed = []
+        
+        for i, transform in enumerate(transformations):
+            sub_action = {
+                "action": transform.get("action"),
+                "params": transform.get("params", {}),
+                "color_filter": color_filter
+            }
+            
+            result = self.execute(current_grid, sub_action)
+            
+            if not result.success:
+                return ActionResult(
+                    success=False,
+                    message=f"Composite failed at step {i+1} ({sub_action['action']}): {result.message}"
+                )
+            
+            current_grid = result.output_grid
+            executed.append(sub_action['action'])
+        
+        return ActionResult(
+            success=True,
+            output_grid=current_grid,
+            message=f"Composite transformation: {' → '.join(executed)}"
+        )
+    
+    def _composite_rotate_translate(
+        self, 
+        grid: Grid, 
+        transformations: list, 
+        color_filter: int
+    ) -> ActionResult:
+        """
+        Handle rotate+translate as a single atomic operation.
+        
+        Instead of rotating then translating (which can cause precision issues),
+        we:
+        1. Extract object pixels
+        2. Normalize to origin (0,0)
+        3. Apply rotation to normalized shape
+        4. Calculate final position and place there
+        """
+        # Find rotation and translation parameters
+        angle = 0
+        dx, dy = 0, 0
+        
+        for t in transformations:
+            if t.get("action") == "rotate":
+                angle = int(t.get("params", {}).get("angle", 0))
+            elif t.get("action") == "translate":
+                dx = int(t.get("params", {}).get("dx", 0))
+                dy = int(t.get("params", {}).get("dy", 0))
+        
+        if self.verbose:
+            print(f"  Rotate {angle}° then translate dx={dx}, dy={dy}")
+        
+        # Get object pixels
+        if color_filter is None:
+            return ActionResult(success=False, message="color_filter required for composite")
+        
+        pixels = []
+        for r in range(grid.height):
+            for c in range(grid.width):
+                if int(grid.data[r, c]) == color_filter:
+                    pixels.append((r, c))
+        
+        if not pixels:
+            return ActionResult(success=False, message=f"No pixels of color {color_filter}")
+        
+        # Get bounding box
+        rows, cols = zip(*pixels)
+        min_r, max_r = min(rows), max(rows)
+        min_c, max_c = min(cols), max(cols)
+        
+        # Normalize pixels to origin
+        normalized = [(r - min_r, c - min_c) for r, c in pixels]
+        
+        # Create shape array for rotation
+        h = max_r - min_r + 1
+        w = max_c - min_c + 1
+        shape = np.zeros((h, w), dtype=np.int8)
+        for r, c in normalized:
+            shape[r, c] = 1
+        
+        # Apply rotation
+        if angle == 90:
+            rotated = np.rot90(shape, k=3)  # 90° clockwise
+        elif angle == 180:
+            rotated = np.rot90(shape, k=2)
+        elif angle == 270:
+            rotated = np.rot90(shape, k=1)  # 270° clockwise = 90° counter
+        else:
+            rotated = shape
+        
+        # Get rotated pixels
+        rotated_pixels = []
+        for r in range(rotated.shape[0]):
+            for c in range(rotated.shape[1]):
+                if rotated[r, c] == 1:
+                    rotated_pixels.append((r, c))
+        
+        # Calculate final position
+        # Final top-left = original top-left + translation
+        final_min_r = min_r + dy
+        final_min_c = min_c + dx
+        
+        # Create output grid
+        result = grid.data.copy()
+        
+        # Clear original pixels
+        for r, c in pixels:
+            result[r, c] = 0
+        
+        # Place rotated shape at final position
+        placed = 0
+        for r, c in rotated_pixels:
+            new_r = final_min_r + r
+            new_c = final_min_c + c
+            if 0 <= new_r < grid.height and 0 <= new_c < grid.width:
+                result[new_r, new_c] = color_filter
+                placed += 1
+        
+        if self.verbose:
+            print(f"  Placed {placed}/{len(rotated_pixels)} pixels at ({final_min_r}, {final_min_c})")
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result),
+            message=f"Composite: rotate {angle}° + translate ({dx}, {dy})"
+        )
+    
+    def _composite_reflect_translate(
+        self, 
+        grid: Grid, 
+        transformations: list, 
+        color_filter: int
+    ) -> ActionResult:
+        """Handle reflect+translate as a single atomic operation."""
+        # Find reflection and translation parameters
+        axis = "horizontal"
+        dx, dy = 0, 0
+        
+        for t in transformations:
+            if t.get("action") == "reflect":
+                axis = t.get("params", {}).get("axis", "horizontal")
+            elif t.get("action") == "translate":
+                dx = int(t.get("params", {}).get("dx", 0))
+                dy = int(t.get("params", {}).get("dy", 0))
+        
+        if self.verbose:
+            print(f"  Reflect {axis} then translate dx={dx}, dy={dy}")
+        
+        # Get object pixels
+        if color_filter is None:
+            return ActionResult(success=False, message="color_filter required for composite")
+        
+        pixels = []
+        for r in range(grid.height):
+            for c in range(grid.width):
+                if int(grid.data[r, c]) == color_filter:
+                    pixels.append((r, c))
+        
+        if not pixels:
+            return ActionResult(success=False, message=f"No pixels of color {color_filter}")
+        
+        # Get bounding box
+        rows, cols = zip(*pixels)
+        min_r, max_r = min(rows), max(rows)
+        min_c, max_c = min(cols), max(cols)
+        
+        # Normalize pixels to origin
+        normalized = [(r - min_r, c - min_c) for r, c in pixels]
+        
+        # Create shape array
+        h = max_r - min_r + 1
+        w = max_c - min_c + 1
+        shape = np.zeros((h, w), dtype=np.int8)
+        for r, c in normalized:
+            shape[r, c] = 1
+        
+        # Apply reflection
+        if axis == "horizontal":
+            reflected = np.flipud(shape)
+        elif axis == "vertical":
+            reflected = np.fliplr(shape)
+        elif axis == "diagonal_main":
+            reflected = shape.T
+        else:
+            reflected = shape
+        
+        # Get reflected pixels
+        reflected_pixels = []
+        for r in range(reflected.shape[0]):
+            for c in range(reflected.shape[1]):
+                if reflected[r, c] == 1:
+                    reflected_pixels.append((r, c))
+        
+        # Calculate final position
+        final_min_r = min_r + dy
+        final_min_c = min_c + dx
+        
+        # Create output grid
+        result = grid.data.copy()
+        
+        # Clear original pixels
+        for r, c in pixels:
+            result[r, c] = 0
+        
+        # Place reflected shape at final position
+        placed = 0
+        for r, c in reflected_pixels:
+            new_r = final_min_r + r
+            new_c = final_min_c + c
+            if 0 <= new_r < grid.height and 0 <= new_c < grid.width:
+                result[new_r, new_c] = color_filter
+                placed += 1
+        
+        if self.verbose:
+            print(f"  Placed {placed}/{len(reflected_pixels)} pixels at ({final_min_r}, {final_min_c})")
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result),
+            message=f"Composite: reflect {axis} + translate ({dx}, {dy})"
+        )
     
     # ==================== MULTI-TRANSFORM SUPPORT ====================
     

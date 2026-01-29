@@ -1,7 +1,7 @@
 # BRAIN Project - Capacités du Système
 
 > **Dernière mise à jour :** Janvier 2026  
-> **Version :** 1.6.0
+> **Version :** 1.9.0
 
 ---
 
@@ -73,6 +73,43 @@ Input Grid → Perception → Prompting → LLM Reasoning → Execution → Anal
 | Symétrie diagonale | Grille symétrique selon diagonale | ✅ |
 | Couleur de fond | Couleur la plus fréquente | ✅ |
 
+### Détection avancée de patterns (v1.7.0)
+
+| Fonctionnalité | Description | Status |
+|----------------|-------------|--------|
+| **Patterns répétitifs** | Détecte si une grille est composée d'un motif qui se répète (tuile/pavage) | ✅ |
+| **Sous-grilles** | Détecte les subdivisions rectangulaires régulières dans une grille | ✅ |
+| **Objets avec contour** | Détecte les formes avec un intérieur d'une couleur et une bordure d'une autre | ✅ |
+
+#### Exemple : Détection de pattern répétitif
+```python
+detector = SymbolDetector()
+pattern_info = detector.detect_repeating_pattern(grid)
+# Retourne: {
+#   "pattern": [[1,2],[2,1]],  # Le motif de base
+#   "tile_height": 2, "tile_width": 2,
+#   "repetitions_h": 4, "repetitions_v": 3,
+#   "coverage": 1.0  # 100% de la grille est couverte
+# }
+```
+
+#### Exemple : Détection de sous-grilles
+```python
+subgrids = detector.detect_subgrids(grid)
+# Retourne une liste de sous-grilles avec leur position et contenu
+```
+
+#### Exemple : Détection d'objets bordés
+```python
+bordered = detector.detect_bordered_objects(grid)
+# Retourne: [{
+#   "inner_color": 1,
+#   "border_color": 2,
+#   "inner_pixels": {...},
+#   "border_pixels": {...}
+# }]
+```
+
 ---
 
 ## 🔄 Module TRANSFORMATION DETECTOR
@@ -87,6 +124,8 @@ Input Grid → Perception → Prompting → LLM Reasoning → Execution → Anal
 | `color_change` | Changement de couleur | ✅ |
 | `scaling` | Agrandissement/réduction | ✅ |
 | `draw_line` | Tracer une ligne entre 2 points | ✅ |
+| `tiling` | Répétition d'un motif pour remplir une grille plus grande | ✅ |
+| `composite` | Combinaison de transformations (rotate+translate, etc.) | ✅ **NEW** |
 | `blob_transformation` | Transformation de formes irrégulières | ✅ |
 | `translation_and_color` | Translation + changement de couleur combinés | ✅ |
 
@@ -116,6 +155,8 @@ Le système peut détecter des transformations appliquées à des formes irrégu
 | `reflect` | `axis`, `color_filter` | Réflexion (miroir) | ✅ |
 | `scale` | `factor`, `color_filter` | Agrandir/réduire | ✅ |
 | `draw_line` | `color_filter` ou `point1`, `point2` | Tracer une ligne entre 2 points | ✅ |
+| `tile` | `repetitions_horizontal`, `repetitions_vertical` | Répéter un motif pour créer une grille plus grande | ✅ |
+| `composite` | `transformations` (liste d'actions) | Combiner plusieurs transformations (rotate + translate, etc.) | ✅ **NEW** |
 
 ### Détails des axes de réflexion
 
@@ -125,6 +166,77 @@ Le système peut détecter des transformations appliquées à des formes irrégu
 | `vertical` | Miroir gauche-droite (fliplr) |
 | `diagonal_main` | Miroir diagonale principale |
 | `diagonal_anti` | Miroir anti-diagonale |
+
+### Détails de l'action composite (v1.9.0)
+
+L'action `composite` permet de combiner plusieurs transformations en séquence sur un même objet.
+
+**Combinaisons supportées :**
+- Rotation + Translation
+- Réflexion + Translation
+- Rotation + Changement de couleur
+- Translation + Rotation + Changement de couleur
+- etc.
+
+**Exemple JSON :**
+```json
+{
+  "action": "composite",
+  "color_filter": 2,
+  "params": {
+    "transformations": [
+      {"action": "rotate", "params": {"angle": 90}},
+      {"action": "translate", "params": {"dx": 3, "dy": 1}}
+    ]
+  }
+}
+```
+
+**Exemple avec changement de couleur :**
+```json
+{
+  "action": "composite",
+  "color_filter": 2,
+  "params": {
+    "transformations": [
+      {"action": "reflect", "params": {"axis": "vertical"}},
+      {"action": "translate", "params": {"dx": 2, "dy": -1}},
+      {"action": "color_change", "params": {"from_color": 2, "to_color": 5}}
+    ]
+  }
+}
+```
+
+**Ordre d'exécution :** Les transformations sont appliquées dans l'ordre de la liste. Le résultat de chaque transformation est utilisé comme entrée pour la suivante.
+
+### Détails de l'action tile (v1.8.0)
+
+L'action `tile` répète le pattern d'entrée pour créer une grille plus grande. Cette action est automatiquement détectée quand la grille de sortie est un multiple de la grille d'entrée.
+
+**Détection automatique :**
+- Le système détecte les changements de taille de grille **en priorité**
+- Si `output_size = input_size × N`, vérifie si c'est un tiling parfait
+- Calcule automatiquement `repetitions_horizontal` et `repetitions_vertical`
+
+**Exemple JSON :**
+```json
+{
+  "action": "tile",
+  "params": {
+    "repetitions_horizontal": 2,
+    "repetitions_vertical": 2
+  }
+}
+```
+
+**Exemple : Input 2×2 → Output 4×4**
+```
+Input:        Output:
+[1, 2]        [1, 2, 1, 2]
+[2, 1]   →    [2, 1, 2, 1]
+              [1, 2, 1, 2]
+              [2, 1, 2, 1]
+```
 
 ### Détails de l'action draw_line
 
@@ -212,6 +324,26 @@ ou
 
 ## 📝 Historique des versions
 
+### v1.9.0 (Janvier 2026) - Composite Transformations
+- ✅ **NOUVEAU: Action `composite`** - Combiner plusieurs transformations en séquence
+- ✅ **Détection automatique** - Le système détecte rotation+translation, réflexion+translation, etc.
+- ✅ **Exécution séquentielle** - Les transformations sont appliquées dans l'ordre
+- ✅ **Support complet** - Rotation, réflexion, translation, changement de couleur
+- ✅ Fichier de test: `task_composite_rotate_translate.json`
+
+### v1.8.0 (Janvier 2026) - Grid Size Change Detection & Tiling
+- ✅ **NOUVEAU: Détection de changement de taille de grille** - Le système priorise les transformations de taille différente
+- ✅ **NOUVEAU: Action `tile`** - Répète un motif pour créer une grille plus grande
+- ✅ **Détection précoce** - Les changements de taille sont vérifiés AVANT les autres transformations
+- ✅ **Support de tiling** - Input 2×2 peut devenir Output 4×4 ou 6×6
+- ✅ **Fallback intelligent** - Le système utilise les répétitions détectées si le LLM échoue
+- ✅ Fichier de test: `task_pattern_tile.json`
+
+### v1.7.0 (Janvier 2026) - Advanced Pattern Detection
+- ✅ **Détection de patterns répétitifs** - `detect_repeating_pattern()` trouve le motif de base
+- ✅ **Détection de sous-grilles** - `detect_subgrids()` trouve les subdivisions régulières
+- ✅ **Détection d'objets bordés** - `detect_bordered_objects()` trouve les formes avec contour différent
+
 ### v1.6.0 (Janvier 2026) - Improved Prompting & Fallback
 - ✅ **Prompt amélioré** - Few-shot examples concrets dans le system prompt
 - ✅ **Instructions plus directes** - Le prompt génère le JSON exact à copier
@@ -276,13 +408,15 @@ ou
 
 ### Prochaines fonctionnalités
 
-- [ ] Détection de patterns répétitifs
-- [ ] Détection de sous-grilles
+- [x] ~~Détection de patterns répétitifs~~ ✅ v1.7.0 / v1.8.0
+- [x] ~~Détection de sous-grilles~~ ✅ v1.7.0
 - [x] ~~Mode batch pour évaluer plusieurs tâches~~ ✅ v1.5.0
 - [x] ~~Export des résultats en JSON~~ ✅ v1.5.0
-- [ ] Support de transformations composées (translation + rotation simultanées)
+- [x] ~~Taille de grille variable (tiling)~~ ✅ v1.8.0
+- [x] ~~Support de transformations composées (translation + rotation simultanées)~~ ✅ v1.9.0
 - [ ] Auto-détection du mode (single vs multi-transform)
 - [ ] Parallélisation des évaluations batch
+- [ ] Détection de structures hiérarchiques (grilles dans grilles)
 
 ---
 
@@ -292,7 +426,7 @@ ou
 |------------|-------------|
 | Couleurs différentes entre exemples | En mode standard, si chaque exemple a une couleur différente, utiliser `--multi` |
 | Transformations composées | Une seule transformation par couleur en mode multi |
-| Taille de grille variable | Non supporté actuellement |
+| ~~Taille de grille variable~~ | ✅ **Supporté depuis v1.8.0** (tiling) |
 | Dépendance LLM | Le mode multi nécessite que le LLM retourne le bon format JSON |
 
 ---

@@ -180,9 +180,24 @@ class BRAINOrchestrator:
         
         results["detected_transformations"] = detected_transformations
         
+        # === CHECK FOR SPECIAL TRANSFORMATIONS (tiling, scaling) ===
+        # These transformations are grid-level and should NOT trigger multi-transform mode
+        is_grid_level_transform = False
+        if detected_transformations:
+            for trans_list in detected_transformations:
+                for t in trans_list:
+                    t_type = t.transformation_type if hasattr(t, 'transformation_type') else ''
+                    if t_type in ('tiling', 'scaling') and t.confidence >= 0.95:
+                        is_grid_level_transform = True
+                        self._log(f"\n  ℹ️ Grid-level transformation detected ({t_type}), skipping per-color analysis")
+                        break
+                if is_grid_level_transform:
+                    break
+        
         # === AUTO-DETECT MULTI-TRANSFORM ===
         # Check if this task has multiple colors with potentially different transformations
-        if task.train_pairs:
+        # BUT skip this if we detected a grid-level transformation (tiling, scaling)
+        if task.train_pairs and not is_grid_level_transform:
             first_pair = task.train_pairs[0]
             input_colors = [c for c in first_pair.input_grid.unique_colors if c != 0]
             
@@ -213,6 +228,21 @@ class BRAINOrchestrator:
                     if len(transforms_signatures) > 1:
                         self._log("\n  🔄 AUTO-SWITCH: Multiple different transformations detected, using multi-transform mode")
                         return self.solve_task_multi_transform(task)
+        
+        # === CHECK FOR COMPOSITE TRANSFORMATION ===
+        # If composite detected with high confidence, use fallback directly (LLM struggles with composites)
+        use_composite_fallback = False
+        composite_action = None
+        if detected_transformations:
+            for trans_list in detected_transformations:
+                for t in trans_list:
+                    if t.transformation_type == "composite" and t.confidence >= 0.95:
+                        use_composite_fallback = True
+                        self._log(f"\n  ℹ️ Composite transformation detected, using direct execution")
+                        composite_action = self._build_fallback_action(detected_transformations, task)
+                        break
+                if use_composite_fallback:
+                    break
         
         # === STEP 2: PROMPTING ===
         self._log("\n" + "=" * 50)
@@ -265,8 +295,16 @@ class BRAINOrchestrator:
             test_input = test_pair.input_grid
             predicted_grid = None
             
-            # Try LLM action first
-            action_to_use = response.action_data or results.get("action_data")
+            # Use composite fallback if detected, otherwise try LLM action
+            if use_composite_fallback and composite_action:
+                action_to_use = dict(composite_action)  # Make a copy
+                # Fix color_filter to use test input color
+                test_colors = [c for c in test_input.unique_colors if c != 0]
+                if test_colors:
+                    action_to_use["color_filter"] = test_colors[0]
+                self._log(f"  Using composite fallback action: {action_to_use.get('action')} (color={action_to_use.get('color_filter')})")
+            else:
+                action_to_use = response.action_data or results.get("action_data")
             
             if action_to_use:
                 # CRITICAL FIX: For draw_line, always detect color from TEST input
@@ -630,6 +668,29 @@ class BRAINOrchestrator:
                             return {
                                 "action": "draw_line",
                                 "color_filter": draw_color
+                            }
+                        elif t_type == "tiling":
+                            reps_h = int(params.get("repetitions_horizontal", 2))
+                            reps_v = int(params.get("repetitions_vertical", 2))
+                            self._log(f"  Tiling fallback: {reps_h}x{reps_v} repetitions")
+                            return {
+                                "action": "tile",
+                                "params": {
+                                    "repetitions_horizontal": reps_h,
+                                    "repetitions_vertical": reps_v
+                                }
+                            }
+                        elif t_type == "composite":
+                            # Composite transformation: rotation + translation, etc.
+                            transformations = params.get("transformations", [])
+                            desc = params.get("description", "composite")
+                            self._log(f"  Composite fallback: {desc}")
+                            return {
+                                "action": "composite",
+                                "color_filter": color_filter,
+                                "params": {
+                                    "transformations": transformations
+                                }
                             }
         
         return None

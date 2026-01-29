@@ -68,6 +68,28 @@ Example 5 - DRAW LINE:
 {"action": "draw_line", "color_filter": 2}
 ```
 
+Example 6 - TILE (Pattern Repetition):
+- Detected: "TILE with repetitions_horizontal=3, repetitions_vertical=2"
+- Output:
+```json
+{"action": "tile", "params": {"repetitions_horizontal": 3, "repetitions_vertical": 2}}
+```
+
+Example 7 - COMPOSITE (Combined Transformations):
+- Detected: "COMPOSITE: rotate 90° + translate (2, 3)"
+- Test input has color 4
+- Output:
+```json
+{"action": "composite", "color_filter": 4, "params": {"transformations": [{"action": "rotate", "params": {"angle": 90}}, {"action": "translate", "params": {"dx": 2, "dy": 3}}]}}
+```
+
+Example 8 - COMPOSITE with color change:
+- Detected: "COMPOSITE: reflect vertical + translate (1, -2) + color 2→5"
+- Output:
+```json
+{"action": "composite", "color_filter": 2, "params": {"transformations": [{"action": "reflect", "params": {"axis": "vertical"}}, {"action": "translate", "params": {"dx": 1, "dy": -2}}, {"action": "color_change", "params": {"from_color": 2, "to_color": 5}}]}}
+```
+
 ## RULES
 
 1. Look at "DETECTED TRANSFORMATION" - it tells you EXACTLY what to output
@@ -188,6 +210,28 @@ Example 5 - DRAW LINE:
         
         in_data = input_grid.data
         out_data = output_grid.data
+        in_h, in_w = in_data.shape
+        out_h, out_w = out_data.shape
+        
+        # PRIORITY -1: Check for SIZE CHANGE first
+        # If grids have different sizes, only certain transformations are possible
+        if in_h != out_h or in_w != out_w:
+            # Check for TILING (input repeated to fill larger output)
+            if out_h >= in_h and out_w >= in_w and out_h % in_h == 0 and out_w % in_w == 0:
+                reps_v = out_h // in_h
+                reps_h = out_w // in_w
+                if reps_v > 1 or reps_h > 1:
+                    tiled = np.tile(in_data, (reps_v, reps_h))
+                    if np.array_equal(tiled, out_data):
+                        return f"**DETECTED TRANSFORMATION: TILE with repetitions_horizontal={reps_h}, repetitions_vertical={reps_v}**"
+            
+            # Check for SCALING (size change but same pattern)
+            # TODO: Add scaling detection for different-size grids
+            
+            # If no size-change transformation found
+            return "**DETECTED TRANSFORMATION: SIZE CHANGE (unknown pattern)**"
+        
+        # === SAME SIZE GRIDS ===
         
         # Priority 0: Check for DRAW LINE FIRST (very specific: 2 points → connected line)
         # This must be checked early because it's a unique pattern
@@ -306,6 +350,15 @@ Example 5 - DRAW LINE:
                     from_color = list(color_changes.keys())[0]
                     to_color = color_changes[from_color]
                     return f"**DETECTED TRANSFORMATION: COLOR CHANGE from_color={from_color}, to_color={to_color}**"
+        
+        # Priority 5: Check for COMPOSITE transformations (rotation + translation, etc.)
+        # Use the transformation detector to find composites
+        from modules.transformation_detector import TransformationDetector
+        detector = TransformationDetector()
+        composite = detector.detect_composite_transformation(input_grid, output_grid)
+        if composite and composite.confidence >= 0.95:
+            desc = composite.parameters.get("description", "")
+            return f"**DETECTED TRANSFORMATION: COMPOSITE: {desc}**"
         
         return "**DETECTED TRANSFORMATION: UNKNOWN**"
     
@@ -590,6 +643,45 @@ Example 5 - DRAW LINE:
         if 'DRAW LINE' in transformation:
             # Use the color from test input, not from training examples
             return f'{{"action": "draw_line", "color_filter": {main_color}}}'
+        
+        # Parse TILE (pattern repetition)
+        match = re.search(r'TILE.*?repetitions_horizontal=(\d+).*?repetitions_vertical=(\d+)', transformation)
+        if match:
+            reps_h, reps_v = match.groups()
+            return f'{{"action": "tile", "params": {{"repetitions_horizontal": {reps_h}, "repetitions_vertical": {reps_v}}}}}'
+        
+        # Parse COMPOSITE transformation
+        if 'COMPOSITE' in transformation:
+            # Extract the description to build transformations list
+            transformations = []
+            
+            # Check for rotation in composite
+            rot_match = re.search(r'rotate (\d+)°', transformation)
+            if rot_match:
+                angle = rot_match.group(1)
+                transformations.append(f'{{"action": "rotate", "params": {{"angle": {angle}}}}}')
+            
+            # Check for reflection in composite
+            ref_match = re.search(r'reflect (\w+)', transformation)
+            if ref_match:
+                axis = ref_match.group(1)
+                transformations.append(f'{{"action": "reflect", "params": {{"axis": "{axis}"}}}}')
+            
+            # Check for translation in composite
+            trans_match = re.search(r'translate \((-?\d+),\s*(-?\d+)\)', transformation)
+            if trans_match:
+                dx, dy = trans_match.groups()
+                transformations.append(f'{{"action": "translate", "params": {{"dx": {dx}, "dy": {dy}}}}}')
+            
+            # Check for color change in composite
+            color_match = re.search(r'color (\d+)→(\d+)', transformation)
+            if color_match:
+                from_c, to_c = color_match.groups()
+                transformations.append(f'{{"action": "color_change", "params": {{"from_color": {from_c}, "to_color": {to_c}}}}}')
+            
+            if transformations:
+                trans_str = ", ".join(transformations)
+                return f'{{"action": "composite", "color_filter": {main_color}, "params": {{"transformations": [{trans_str}]}}}}'
         
         # Fallback
         return '{"action": "translate", "params": {"dx": 0, "dy": 0}}'
