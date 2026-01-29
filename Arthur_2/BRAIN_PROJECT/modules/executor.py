@@ -51,7 +51,17 @@ class ActionExecutor:
     """
     
     # Registry of supported actions
-    SUPPORTED_ACTIONS = ["translate", "fill", "copy", "replace_color"]
+    SUPPORTED_ACTIONS = [
+        "translate", 
+        "fill", 
+        "copy", 
+        "replace_color",
+        "color_change",
+        "rotate",
+        "reflect",
+        "scale",
+        "draw_line"
+    ]
     
     def __init__(self, verbose: bool = False):
         """
@@ -112,61 +122,67 @@ class ActionExecutor:
     def _action_translate(self, grid: Grid, action_data: dict) -> ActionResult:
         """
         Translate (shift) pixels/objects by (dx, dy).
-        
-        Parameters:
-            params.dx: int - Horizontal shift (positive = right)
-            params.dy: int - Vertical shift (positive = down)
-            color_filter: int (optional) - Only translate pixels of this color
-        
-        Returns:
-            ActionResult with translated grid
         """
         params = action_data.get("params", {})
-        dx = params.get("dx", 0)  # Horizontal shift (columns)
-        dy = params.get("dy", 0)  # Vertical shift (rows)
-        color_filter = action_data.get("color_filter", None)
+        dx = int(params.get("dx", 0))
+        dy = int(params.get("dy", 0))
+        color_filter = action_data.get("color_filter")
+        if color_filter is not None:
+            color_filter = int(color_filter)
         
         if self.verbose:
             print(f"  Executing TRANSLATE: dx={dx}, dy={dy}, color_filter={color_filter}")
         
-        # Create output grid (start with background)
-        output_data = np.zeros_like(grid.data)
+        # Get dimensions
+        height, width = grid.data.shape
         
-        height, width = grid.shape
+        # Collect all pixel moves first, then apply them
+        moves = []  # List of (row, col, value) to set
+        keeps = []  # List of (row, col, value) to keep in place
         
-        # Process each pixel
-        for row in range(height):
-            for col in range(width):
-                pixel_value = grid.data[row, col]
+        for r in range(height):
+            for c in range(width):
+                val = int(grid.data[r, c])
                 
-                # Check if this pixel should be translated
                 if color_filter is not None:
-                    if pixel_value == color_filter:
-                        # Translate this pixel
-                        new_row = row + dy
-                        new_col = col + dx
-                        
-                        # Boundary check (clip - don't wrap)
-                        if 0 <= new_row < height and 0 <= new_col < width:
-                            output_data[new_row, new_col] = pixel_value
+                    if val == color_filter:
+                        nr, nc = r + dy, c + dx
+                        if 0 <= nr < height and 0 <= nc < width:
+                            moves.append((nr, nc, val))
                     else:
-                        # Keep non-filtered pixels in place
-                        output_data[row, col] = pixel_value
+                        keeps.append((r, c, val))
                 else:
-                    # No filter - translate all non-background pixels
-                    if pixel_value != 0:
-                        new_row = row + dy
-                        new_col = col + dx
-                        
-                        if 0 <= new_row < height and 0 <= new_col < width:
-                            output_data[new_row, new_col] = pixel_value
+                    if val != 0:
+                        nr, nc = r + dy, c + dx
+                        if 0 <= nr < height and 0 <= nc < width:
+                            moves.append((nr, nc, val))
         
-        output_grid = Grid(data=output_data)
+        if self.verbose:
+            print(f"  Moves to apply: {len(moves)}")
+            print(f"  Keeps to apply: {len(keeps)}")
+        
+        # Create result as Python list first, then convert to numpy
+        result_list = [[0 for _ in range(width)] for _ in range(height)]
+        
+        # Apply keeps
+        for r, c, v in keeps:
+            result_list[r][c] = v
+        
+        # Apply moves  
+        for r, c, v in moves:
+            result_list[r][c] = v
+        
+        # Convert to numpy array
+        result = np.array(result_list, dtype=np.int64)
+        
+        if self.verbose:
+            print(f"  Pixels moved: {len(moves)}")
+            print(f"  Result non-zero: {np.count_nonzero(result)}")
         
         return ActionResult(
             success=True,
-            output_grid=output_grid,
-            message=f"Translated by dx={dx}, dy={dy}",
+            output_grid=Grid(data=result),
+            message=f"Translated dx={dx}, dy={dy}, moved {len(moves)} pixels",
             details={"dx": dx, "dy": dy, "color_filter": color_filter}
         )
     
@@ -286,6 +302,523 @@ class ActionExecutor:
             details={"dx": dx, "dy": dy, "color_filter": color_filter}
         )
     
+    def _action_color_change(self, grid: Grid, action_data: dict) -> ActionResult:
+        """
+        Change colors according to a mapping.
+        
+        Parameters:
+            params.color_map: dict - Mapping of old_color -> new_color
+            OR
+            params.from_color: int - Single color to change from
+            params.to_color: int - Single color to change to
+        
+        Returns:
+            ActionResult with color-changed grid
+        """
+        params = action_data.get("params", {})
+        
+        # Support both color_map and from_color/to_color formats
+        color_map = params.get("color_map", {})
+        
+        if not color_map:
+            # Try single color change format
+            from_color = params.get("from_color")
+            to_color = params.get("to_color")
+            if from_color is not None and to_color is not None:
+                color_map = {int(from_color): int(to_color)}
+        
+        # Also check for "changes" key from TransformationDetector
+        if not color_map:
+            color_map = params.get("changes", {})
+        
+        if not color_map:
+            return ActionResult(
+                success=False,
+                message="No color mapping provided"
+            )
+        
+        if self.verbose:
+            print(f"  Executing COLOR_CHANGE: {color_map}")
+        
+        # Convert keys to int
+        color_map = {int(k): int(v) for k, v in color_map.items()}
+        
+        height, width = grid.data.shape
+        result_list = [[0 for _ in range(width)] for _ in range(height)]
+        
+        for r in range(height):
+            for c in range(width):
+                val = int(grid.data[r, c])
+                if val in color_map:
+                    result_list[r][c] = color_map[val]
+                else:
+                    result_list[r][c] = val
+        
+        result = np.array(result_list, dtype=np.int64)
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result),
+            message=f"Changed colors: {color_map}",
+            details={"color_map": color_map}
+        )
+    
+    def _action_rotate(self, grid: Grid, action_data: dict) -> ActionResult:
+        """
+        Rotate the grid or specific objects around their centroid.
+        
+        Parameters:
+            params.angle: int - Rotation angle (90, 180, 270)
+            params.grid_level: bool - If True, rotate entire grid (no color_filter auto-detection)
+            color_filter: int (optional) - Only rotate pixels of this color
+                         If not provided and grid_level=False, will auto-detect the non-background color
+        
+        Returns:
+            ActionResult with rotated grid
+        """
+        params = action_data.get("params", {})
+        angle = int(params.get("angle", 90))
+        color_filter = action_data.get("color_filter")
+        grid_level = params.get("grid_level", False)
+        
+        if angle not in [90, 180, 270]:
+            return ActionResult(
+                success=False,
+                message=f"Invalid rotation angle: {angle}. Must be 90, 180, or 270"
+            )
+        
+        # Auto-detect color ONLY if:
+        # - color_filter is not provided
+        # - grid_level is False (not a grid-level rotation)
+        # - there's only one non-background color
+        if color_filter is None and not grid_level:
+            unique_colors = [c for c in grid.unique_colors if c != 0]
+            if len(unique_colors) == 1:
+                color_filter = unique_colors[0]
+                if self.verbose:
+                    print(f"  Auto-detected color_filter: {color_filter}")
+        
+        if self.verbose:
+            print(f"  Executing ROTATE: angle={angle}, color_filter={color_filter}")
+        
+        k = angle // 90  # Number of 90-degree rotations
+        
+        if color_filter is None:
+            # Rotate entire grid
+            rotated = np.rot90(grid.data, k=k)
+            result = np.array(rotated, dtype=np.int64)
+        else:
+            # Rotate only specific color using centroid-based rotation
+            color_filter = int(color_filter)
+            height, width = grid.data.shape
+            
+            # Find pixels of this color
+            rows, cols = np.where(grid.data == color_filter)
+            if len(rows) == 0:
+                return ActionResult(
+                    success=False,
+                    message=f"No pixels found with color {color_filter}"
+                )
+            
+            # Calculate centroid (center of mass)
+            centroid_r = np.mean(rows)
+            centroid_c = np.mean(cols)
+            
+            # Get bounding box for reference
+            min_r, max_r = rows.min(), rows.max()
+            min_c, max_c = cols.min(), cols.max()
+            
+            if self.verbose:
+                print(f"    Centroid: ({centroid_r:.1f}, {centroid_c:.1f})")
+                print(f"    Bounding box: ({min_r}, {min_c}) to ({max_r}, {max_c})")
+            
+            # Create result grid
+            result = grid.data.copy()
+            result = np.array(result, dtype=np.int64)
+            
+            # Clear original position
+            result[grid.data == color_filter] = 0
+            
+            # Rotate each pixel around the centroid
+            rotated_pixels = []
+            for r, c in zip(rows, cols):
+                # Translate to centroid origin
+                rel_r = r - centroid_r
+                rel_c = c - centroid_c
+                
+                # Apply rotation
+                if angle == 90:
+                    # 90° clockwise: (r, c) -> (c, -r)
+                    new_rel_r = rel_c
+                    new_rel_c = -rel_r
+                elif angle == 180:
+                    # 180°: (r, c) -> (-r, -c)
+                    new_rel_r = -rel_r
+                    new_rel_c = -rel_c
+                elif angle == 270:
+                    # 270° clockwise (90° counter-clockwise): (r, c) -> (-c, r)
+                    new_rel_r = -rel_c
+                    new_rel_c = rel_r
+                else:
+                    new_rel_r, new_rel_c = rel_r, rel_c
+                
+                # Translate back from centroid
+                new_r = round(new_rel_r + centroid_r)
+                new_c = round(new_rel_c + centroid_c)
+                
+                rotated_pixels.append((new_r, new_c))
+            
+            # Place rotated pixels
+            pixels_placed = 0
+            for new_r, new_c in rotated_pixels:
+                if 0 <= new_r < height and 0 <= new_c < width:
+                    result[new_r, new_c] = color_filter
+                    pixels_placed += 1
+            
+            if self.verbose:
+                print(f"    Placed {pixels_placed}/{len(rotated_pixels)} rotated pixels")
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result),
+            message=f"Rotated by {angle}° around centroid",
+            details={"angle": angle, "color_filter": color_filter}
+        )
+    
+    def _action_reflect(self, grid: Grid, action_data: dict) -> ActionResult:
+        """
+        Reflect (mirror) the grid or specific objects.
+        
+        Parameters:
+            params.axis: str - "horizontal" (flip up-down), "vertical" (flip left-right),
+                              "diagonal_main", "diagonal_anti"
+            params.grid_level: bool - If True, reflect entire grid (no color_filter auto-detection)
+            color_filter: int (optional) - Only reflect pixels of this color
+                         If not provided and grid_level=False, will auto-detect
+        
+        Returns:
+            ActionResult with reflected grid
+        """
+        params = action_data.get("params", {})
+        axis = params.get("axis", "horizontal")
+        color_filter = action_data.get("color_filter")
+        grid_level = params.get("grid_level", False)
+        
+        # Auto-detect color ONLY if:
+        # - color_filter is not provided
+        # - grid_level is False (not a grid-level reflection)
+        # - there's only one non-background color
+        if color_filter is None and not grid_level:
+            unique_colors = [c for c in grid.unique_colors if c != 0]
+            if len(unique_colors) == 1:
+                color_filter = unique_colors[0]
+                if self.verbose:
+                    print(f"  Auto-detected color_filter: {color_filter}")
+        
+        if self.verbose:
+            print(f"  Executing REFLECT: axis={axis}, color_filter={color_filter}")
+        
+        if color_filter is None:
+            # Reflect entire grid
+            if axis == "horizontal":
+                reflected = np.flipud(grid.data)
+            elif axis == "vertical":
+                reflected = np.fliplr(grid.data)
+            elif axis == "diagonal_main":
+                reflected = grid.data.T
+            elif axis == "diagonal_anti":
+                reflected = np.flip(np.flip(grid.data, 0), 1).T
+            else:
+                return ActionResult(
+                    success=False,
+                    message=f"Invalid axis: {axis}"
+                )
+            result = np.array(reflected, dtype=np.int64)
+        else:
+            # Reflect only specific color
+            color_filter = int(color_filter)
+            height, width = grid.data.shape
+            
+            # Find bounding box of colored pixels
+            rows, cols = np.where(grid.data == color_filter)
+            if len(rows) == 0:
+                return ActionResult(
+                    success=False,
+                    message=f"No pixels found with color {color_filter}"
+                )
+            
+            min_r, max_r = rows.min(), rows.max()
+            min_c, max_c = cols.min(), cols.max()
+            
+            # Extract the object
+            obj_height = max_r - min_r + 1
+            obj_width = max_c - min_c + 1
+            obj_data = np.zeros((obj_height, obj_width), dtype=np.int64)
+            
+            for r, c in zip(rows, cols):
+                obj_data[r - min_r, c - min_c] = color_filter
+            
+            # Reflect the object
+            if axis == "horizontal":
+                reflected_obj = np.flipud(obj_data)
+            elif axis == "vertical":
+                reflected_obj = np.fliplr(obj_data)
+            elif axis == "diagonal_main":
+                reflected_obj = obj_data.T
+            elif axis == "diagonal_anti":
+                reflected_obj = np.flip(np.flip(obj_data, 0), 1).T
+            else:
+                return ActionResult(
+                    success=False,
+                    message=f"Invalid axis: {axis}"
+                )
+            
+            new_height, new_width = reflected_obj.shape
+            
+            # Create result grid
+            result = grid.data.copy()
+            result = np.array(result, dtype=np.int64)
+            
+            # Clear original position
+            result[grid.data == color_filter] = 0
+            
+            # Place reflected object at same top-left position
+            for r in range(new_height):
+                for c in range(new_width):
+                    if reflected_obj[r, c] != 0:
+                        nr, nc = min_r + r, min_c + c
+                        if 0 <= nr < height and 0 <= nc < width:
+                            result[nr, nc] = reflected_obj[r, c]
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result),
+            message=f"Reflected along {axis} axis",
+            details={"axis": axis, "color_filter": color_filter}
+        )
+    
+    def _action_scale(self, grid: Grid, action_data: dict) -> ActionResult:
+        """
+        Scale (resize) objects or the entire grid.
+        
+        Parameters:
+            params.factor: float - Scale factor (2 = double, 0.5 = half)
+            color_filter: int (optional) - Only scale pixels of this color
+        
+        Returns:
+            ActionResult with scaled grid
+        """
+        params = action_data.get("params", {})
+        factor = float(params.get("factor", 2))
+        color_filter = action_data.get("color_filter")
+        
+        if factor <= 0:
+            return ActionResult(
+                success=False,
+                message=f"Invalid scale factor: {factor}"
+            )
+        
+        if self.verbose:
+            print(f"  Executing SCALE: factor={factor}, color_filter={color_filter}")
+        
+        height, width = grid.data.shape
+        
+        if color_filter is None:
+            # Scale entire grid
+            new_height = int(height * factor)
+            new_width = int(width * factor)
+            
+            result = np.zeros((new_height, new_width), dtype=np.int64)
+            
+            for r in range(height):
+                for c in range(width):
+                    val = int(grid.data[r, c])
+                    # Fill the scaled region
+                    for dr in range(int(factor)):
+                        for dc in range(int(factor)):
+                            nr, nc = int(r * factor) + dr, int(c * factor) + dc
+                            if 0 <= nr < new_height and 0 <= nc < new_width:
+                                result[nr, nc] = val
+        else:
+            # Scale only specific color within same grid size
+            color_filter = int(color_filter)
+            
+            # Find bounding box
+            rows, cols = np.where(grid.data == color_filter)
+            if len(rows) == 0:
+                return ActionResult(
+                    success=False,
+                    message=f"No pixels found with color {color_filter}"
+                )
+            
+            min_r, max_r = rows.min(), rows.max()
+            min_c, max_c = cols.min(), cols.max()
+            
+            result = grid.data.copy()
+            result = np.array(result, dtype=np.int64)
+            
+            # Clear original
+            result[grid.data == color_filter] = 0
+            
+            # Draw scaled version
+            for r, c in zip(rows, cols):
+                rel_r, rel_c = r - min_r, c - min_c
+                for dr in range(int(factor)):
+                    for dc in range(int(factor)):
+                        nr = min_r + int(rel_r * factor) + dr
+                        nc = min_c + int(rel_c * factor) + dc
+                        if 0 <= nr < height and 0 <= nc < width:
+                            result[nr, nc] = color_filter
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result),
+            message=f"Scaled by factor {factor}",
+            details={"factor": factor, "color_filter": color_filter}
+        )
+    
+    def _action_draw_line(self, grid: Grid, action_data: dict) -> ActionResult:
+        """
+        Draw a line between two points of the same color.
+        
+        This action detects exactly 2 pixels of a specific color and draws
+        a line connecting them using Bresenham's line algorithm.
+        
+        Parameters:
+            color_filter: int - The color of the two points to connect
+            OR
+            params.point1: dict - {"row": int, "col": int} first point
+            params.point2: dict - {"row": int, "col": int} second point
+            params.color: int - Color to draw the line with
+        
+        Returns:
+            ActionResult with the grid containing the drawn line
+        """
+        params = action_data.get("params", {})
+        color_filter = action_data.get("color_filter")
+        
+        # Try to get explicit points from params
+        point1 = params.get("point1")
+        point2 = params.get("point2")
+        line_color = params.get("color")
+        
+        if self.verbose:
+            print(f"  Executing DRAW_LINE: color_filter={color_filter}, params={params}")
+        
+        height, width = grid.data.shape
+        result = grid.data.copy()
+        result = np.array(result, dtype=np.int64)
+        
+        # If explicit points are given, use them
+        if point1 and point2:
+            r1, c1 = point1.get("row", 0), point1.get("col", 0)
+            r2, c2 = point2.get("row", 0), point2.get("col", 0)
+            
+            if line_color is None:
+                # Try to infer color from the grid at those positions
+                line_color = int(grid.data[r1, c1]) if grid.data[r1, c1] != 0 else 1
+        else:
+            # Auto-detect: find exactly 2 pixels of the specified color
+            if color_filter is None:
+                # Find any color with exactly 2 pixels
+                for color in range(1, 10):  # Colors 1-9
+                    positions = list(zip(*np.where(grid.data == color)))
+                    if len(positions) == 2:
+                        color_filter = color
+                        break
+            
+            if color_filter is None:
+                return ActionResult(
+                    success=False,
+                    message="Could not find two points to connect. Specify color_filter or params.point1/point2."
+                )
+            
+            color_filter = int(color_filter)
+            positions = list(zip(*np.where(grid.data == color_filter)))
+            
+            if len(positions) != 2:
+                return ActionResult(
+                    success=False,
+                    message=f"Expected exactly 2 pixels of color {color_filter}, found {len(positions)}"
+                )
+            
+            r1, c1 = positions[0]
+            r2, c2 = positions[1]
+            line_color = color_filter
+        
+        if self.verbose:
+            print(f"    Drawing line from ({r1}, {c1}) to ({r2}, {c2}) with color {line_color}")
+        
+        # Draw the line using Bresenham's algorithm
+        line_pixels = self._bresenham_line(r1, c1, r2, c2)
+        
+        for r, c in line_pixels:
+            if 0 <= r < height and 0 <= c < width:
+                result[r, c] = line_color
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result),
+            message=f"Drew line from ({r1}, {c1}) to ({r2}, {c2}) with color {line_color}",
+            details={
+                "point1": {"row": int(r1), "col": int(c1)},
+                "point2": {"row": int(r2), "col": int(c2)},
+                "color": int(line_color),
+                "pixels_drawn": len(line_pixels)
+            }
+        )
+    
+    def _bresenham_line(self, r1: int, c1: int, r2: int, c2: int) -> List[tuple]:
+        """
+        Generate all pixel coordinates for a line between two points.
+        Uses Bresenham's line algorithm for clean integer-based line drawing.
+        
+        Args:
+            r1, c1: Starting point (row, col)
+            r2, c2: Ending point (row, col)
+            
+        Returns:
+            List of (row, col) tuples forming the line
+        """
+        pixels = []
+        
+        dr = abs(r2 - r1)
+        dc = abs(c2 - c1)
+        
+        sr = 1 if r1 < r2 else -1
+        sc = 1 if c1 < c2 else -1
+        
+        if dc > dr:
+            # Line is more horizontal
+            err = dc // 2
+            r = r1
+            c = c1
+            while True:
+                pixels.append((r, c))
+                if c == c2:
+                    break
+                err -= dr
+                if err < 0:
+                    r += sr
+                    err += dc
+                c += sc
+        else:
+            # Line is more vertical or diagonal
+            err = dr // 2
+            r = r1
+            c = c1
+            while True:
+                pixels.append((r, c))
+                if r == r2:
+                    break
+                err -= dc
+                if err < 0:
+                    c += sc
+                    err += dr
+                r += sr
+        
+        return pixels
+    
     def apply_action(self, grid: Grid, action_data: dict) -> Grid:
         """
         Convenience method that returns just the output grid.
@@ -305,3 +838,216 @@ class ActionExecutor:
             if self.verbose:
                 print(f"  Action failed: {result.message}")
             return grid
+    
+    # ==================== MULTI-TRANSFORM SUPPORT ====================
+    
+    def execute_multi_actions(
+        self, 
+        grid: Grid, 
+        multi_actions: List[Dict[str, Any]]
+    ) -> ActionResult:
+        """
+        Execute multiple actions, each targeting a specific color.
+        
+        This applies different transformations to different colored objects
+        in a single grid.
+        
+        Args:
+            grid: The input Grid to transform
+            multi_actions: List of action dictionaries, each with:
+                - "color": int - The color to apply the action to
+                - "action": str - The action type
+                - "params": dict - Action-specific parameters
+        
+        Returns:
+            ActionResult with the final transformed grid
+        """
+        if not multi_actions:
+            return ActionResult(
+                success=False,
+                message="No actions provided"
+            )
+        
+        if self.verbose:
+            print(f"  Executing {len(multi_actions)} multi-actions...")
+        
+        height, width = grid.data.shape
+        
+        # Start with a blank grid (we'll rebuild it with transformed objects)
+        result_data = np.zeros((height, width), dtype=np.int64)
+        
+        # Track which pixels have been processed
+        processed_colors = set()
+        action_messages = []
+        
+        for action_entry in multi_actions:
+            color = action_entry.get("color")
+            action_type = action_entry.get("action", "").lower()
+            params = action_entry.get("params", {})
+            
+            if color is None:
+                continue
+            
+            color = int(color)
+            processed_colors.add(color)
+            
+            if self.verbose:
+                print(f"    Processing color {color}: {action_type} with {params}")
+            
+            # Extract pixels of this color from original grid
+            color_mask = grid.data == color
+            if not np.any(color_mask):
+                if self.verbose:
+                    print(f"      No pixels found for color {color}")
+                continue
+            
+            # Apply the transformation based on action type
+            if action_type == "identity":
+                # No change - just copy to result
+                result_data[color_mask] = color
+                action_messages.append(f"Color {color}: identity (no change)")
+                
+            elif action_type == "translate":
+                dx = int(params.get("dx", 0))
+                dy = int(params.get("dy", 0))
+                
+                # Apply translation
+                for r in range(height):
+                    for c in range(width):
+                        if grid.data[r, c] == color:
+                            nr, nc = r + dy, c + dx
+                            if 0 <= nr < height and 0 <= nc < width:
+                                result_data[nr, nc] = color
+                
+                action_messages.append(f"Color {color}: translate dx={dx}, dy={dy}")
+                
+            elif action_type == "rotate":
+                angle = int(params.get("angle", 90))
+                
+                # Extract object pixels
+                rows, cols = np.where(grid.data == color)
+                if len(rows) == 0:
+                    continue
+                
+                min_r, max_r = rows.min(), rows.max()
+                min_c, max_c = cols.min(), cols.max()
+                
+                # Create local object
+                obj_h = max_r - min_r + 1
+                obj_w = max_c - min_c + 1
+                obj_data = np.zeros((obj_h, obj_w), dtype=np.int64)
+                
+                for r, c in zip(rows, cols):
+                    obj_data[r - min_r, c - min_c] = color
+                
+                # Rotate
+                k = angle // 90
+                rotated_obj = np.rot90(obj_data, k=k)
+                new_h, new_w = rotated_obj.shape
+                
+                # Calculate new position (center on original center)
+                center_r = (min_r + max_r) // 2
+                center_c = (min_c + max_c) // 2
+                new_min_r = center_r - new_h // 2
+                new_min_c = center_c - new_w // 2
+                
+                # Place rotated object
+                for r in range(new_h):
+                    for c in range(new_w):
+                        if rotated_obj[r, c] != 0:
+                            nr, nc = new_min_r + r, new_min_c + c
+                            if 0 <= nr < height and 0 <= nc < width:
+                                result_data[nr, nc] = rotated_obj[r, c]
+                
+                action_messages.append(f"Color {color}: rotate {angle}°")
+                
+            elif action_type == "color_change":
+                from_color = int(params.get("from_color", color))
+                to_color = int(params.get("to_color", color))
+                
+                # Copy pixels with new color
+                for r in range(height):
+                    for c in range(width):
+                        if grid.data[r, c] == from_color:
+                            result_data[r, c] = to_color
+                
+                action_messages.append(f"Color {color}: change to {to_color}")
+                
+            elif action_type == "reflect":
+                axis = params.get("axis", "horizontal")
+                
+                # Extract object pixels
+                rows, cols = np.where(grid.data == color)
+                if len(rows) == 0:
+                    continue
+                
+                min_r, max_r = rows.min(), rows.max()
+                min_c, max_c = cols.min(), cols.max()
+                
+                # Create local object
+                obj_h = max_r - min_r + 1
+                obj_w = max_c - min_c + 1
+                obj_data = np.zeros((obj_h, obj_w), dtype=np.int64)
+                
+                for r, c in zip(rows, cols):
+                    obj_data[r - min_r, c - min_c] = color
+                
+                # Reflect
+                if axis == "horizontal":
+                    reflected_obj = np.flipud(obj_data)
+                elif axis == "vertical":
+                    reflected_obj = np.fliplr(obj_data)
+                else:
+                    reflected_obj = obj_data
+                
+                # Place reflected object at same position
+                for r in range(obj_h):
+                    for c in range(obj_w):
+                        if reflected_obj[r, c] != 0:
+                            nr, nc = min_r + r, min_c + c
+                            if 0 <= nr < height and 0 <= nc < width:
+                                result_data[nr, nc] = reflected_obj[r, c]
+                
+                action_messages.append(f"Color {color}: reflect {axis}")
+            
+            elif action_type == "draw_line":
+                # Find the two points of this color and draw a line between them
+                rows, cols = np.where(grid.data == color)
+                positions = list(zip(rows, cols))
+                
+                if len(positions) == 2:
+                    r1, c1 = positions[0]
+                    r2, c2 = positions[1]
+                    
+                    # Draw line using Bresenham
+                    line_pixels = self._bresenham_line(r1, c1, r2, c2)
+                    
+                    for r, c in line_pixels:
+                        if 0 <= r < height and 0 <= c < width:
+                            result_data[r, c] = color
+                    
+                    action_messages.append(f"Color {color}: draw_line from ({r1},{c1}) to ({r2},{c2})")
+                else:
+                    # Just copy as-is if not exactly 2 points
+                    result_data[grid.data == color] = color
+                    action_messages.append(f"Color {color}: draw_line skipped (need exactly 2 points, found {len(positions)})")
+            
+            else:
+                # Unknown action - just copy original
+                result_data[color_mask] = color
+                action_messages.append(f"Color {color}: unknown action '{action_type}', copied as-is")
+        
+        # Copy any colors that weren't processed (keep them as-is)
+        for color in grid.unique_colors:
+            if color not in processed_colors:
+                color_mask = grid.data == color
+                result_data[color_mask] = color
+                if self.verbose:
+                    print(f"    Color {color}: not in actions, keeping as-is")
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result_data),
+            message=f"Executed {len(multi_actions)} actions: " + "; ".join(action_messages),
+            details={"actions_executed": len(multi_actions), "colors_processed": list(processed_colors)}
+        )

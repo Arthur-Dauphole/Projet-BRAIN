@@ -22,7 +22,8 @@ class LLMResponse:
         raw_text: The complete raw response from the LLM
         reasoning: Extracted reasoning/explanation
         predicted_grid: Extracted output grid (if parseable)
-        action_data: Extracted action JSON for the executor
+        action_data: Extracted action JSON for the executor (single action)
+        multi_actions: List of actions for multi-transform mode
         confidence: Self-reported confidence (if available)
         metadata: Additional response metadata
     """
@@ -30,6 +31,7 @@ class LLMResponse:
     reasoning: Optional[str] = None
     predicted_grid: Optional[List[List[int]]] = None
     action_data: Optional[Dict[str, Any]] = None
+    multi_actions: Optional[List[Dict[str, Any]]] = None
     confidence: Optional[float] = None
     metadata: Dict[str, Any] = None
     
@@ -147,13 +149,167 @@ class LLMClient:
         # Try to extract reasoning
         response.reasoning = self._extract_reasoning(raw_text)
         
-        # Try to extract action JSON (PRIORITY - for executor)
+        # Try to extract multi-actions (array of actions for multi-transform)
+        response.multi_actions = self._extract_multi_actions(raw_text)
+        
+        # Try to extract single action JSON (PRIORITY - for executor)
         response.action_data = self._extract_action_json(raw_text)
         
         # Try to extract grid (fallback if LLM provides one directly)
         response.predicted_grid = self._extract_grid(raw_text)
         
         return response
+    
+    def _extract_multi_actions(self, text: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        Extract an array of actions from the LLM response (for multi-transform mode).
+        
+        Looks for JSON arrays in the format:
+        ```json
+        [
+          {"color": 2, "action": "translate", "params": {"dx": 2, "dy": 0}},
+          {"color": 1, "action": "rotate", "params": {"angle": 90}}
+        ]
+        ```
+        
+        Args:
+            text: Raw response text
+            
+        Returns:
+            List of parsed action dictionaries or None
+        """
+        # Pattern 1: JSON array in code block
+        array_pattern = r"```json\s*(\[\s*\{[^`]+\}\s*\])\s*```"
+        matches = re.findall(array_pattern, text, re.DOTALL)
+        
+        if matches:
+            for json_str in reversed(matches):
+                try:
+                    actions = json.loads(json_str.strip())
+                    if isinstance(actions, list) and len(actions) > 0:
+                        # Validate and normalize each action
+                        valid_actions = []
+                        for action in actions:
+                            if self._validate_multi_action(action):
+                                valid_actions.append(self._normalize_multi_action(action))
+                        
+                        if valid_actions:
+                            return valid_actions
+                except json.JSONDecodeError:
+                    continue
+        
+        # Pattern 2: Generic code block with array
+        generic_pattern = r"```\s*(\[\s*\{[^`]+\}\s*\])\s*```"
+        matches = re.findall(generic_pattern, text, re.DOTALL)
+        
+        if matches:
+            for json_str in reversed(matches):
+                try:
+                    actions = json.loads(json_str.strip())
+                    if isinstance(actions, list) and len(actions) > 0:
+                        valid_actions = []
+                        for action in actions:
+                            if self._validate_multi_action(action):
+                                valid_actions.append(self._normalize_multi_action(action))
+                        
+                        if valid_actions:
+                            return valid_actions
+                except json.JSONDecodeError:
+                    continue
+        
+        # Pattern 3: Standalone JSON array
+        standalone_pattern = r'\[\s*(\{[^\]]+\})\s*\]'
+        matches = re.findall(standalone_pattern, text, re.DOTALL)
+        
+        if matches:
+            for match in reversed(matches):
+                try:
+                    # Reconstruct the array
+                    json_str = "[" + match + "]"
+                    actions = json.loads(json_str)
+                    if isinstance(actions, list) and len(actions) > 0:
+                        valid_actions = []
+                        for action in actions:
+                            if self._validate_multi_action(action):
+                                valid_actions.append(self._normalize_multi_action(action))
+                        
+                        if valid_actions:
+                            return valid_actions
+                except json.JSONDecodeError:
+                    continue
+        
+        return None
+    
+    def _validate_multi_action(self, data: dict) -> bool:
+        """
+        Validate that a multi-action entry has required fields.
+        
+        Args:
+            data: Parsed JSON data for one action
+            
+        Returns:
+            True if valid
+        """
+        if not isinstance(data, dict):
+            return False
+        
+        # Must have "color" and "action" fields
+        if "color" not in data:
+            return False
+        
+        if "action" not in data:
+            return False
+        
+        return True
+    
+    def _normalize_multi_action(self, data: dict) -> dict:
+        """
+        Normalize a multi-action entry.
+        
+        Args:
+            data: Parsed action data
+            
+        Returns:
+            Normalized action data
+        """
+        # Use the existing normalize function for the action part
+        result = dict(data)
+        
+        # Ensure color is int
+        if "color" in result:
+            try:
+                result["color"] = int(result["color"])
+            except (ValueError, TypeError):
+                pass
+        
+        # Normalize params
+        if "params" in result and isinstance(result["params"], dict):
+            params = dict(result["params"])
+            
+            # Color-related params
+            for key in ["from_color", "to_color", "color"]:
+                if key in params:
+                    try:
+                        params[key] = int(params[key])
+                    except (ValueError, TypeError):
+                        pass
+            
+            # Numeric params
+            for key in ["dx", "dy", "angle", "factor"]:
+                if key in params:
+                    val = params[key]
+                    if isinstance(val, str):
+                        try:
+                            if key == "factor":
+                                params[key] = float(val)
+                            else:
+                                params[key] = int(val)
+                        except ValueError:
+                            pass
+            
+            result["params"] = params
+        
+        return result
     
     def _extract_action_json(self, text: str) -> Optional[Dict[str, Any]]:
         """
@@ -180,7 +336,7 @@ class LLMClient:
                 try:
                     action_data = json.loads(json_str.strip())
                     if self._validate_action_data(action_data):
-                        return action_data
+                        return self._normalize_action_data(action_data)
                 except json.JSONDecodeError:
                     continue
         
@@ -193,7 +349,7 @@ class LLMClient:
                 try:
                     action_data = json.loads(json_str.strip())
                     if self._validate_action_data(action_data):
-                        return action_data
+                        return self._normalize_action_data(action_data)
                 except json.JSONDecodeError:
                     continue
         
@@ -207,7 +363,7 @@ class LLMClient:
                 try:
                     action_data = json.loads(json_str)
                     if self._validate_action_data(action_data):
-                        return action_data
+                        return self._normalize_action_data(action_data)
                 except json.JSONDecodeError:
                     continue
         
@@ -235,6 +391,76 @@ class LLMClient:
             return False
         
         return True
+    
+    def _normalize_action_data(self, data: dict) -> dict:
+        """
+        Normalize action data by converting color names to numbers.
+        
+        Args:
+            data: Parsed action data
+            
+        Returns:
+            Normalized action data with color names converted to integers
+        """
+        # Color name to number mapping
+        COLOR_MAP = {
+            "black": 0, "blue": 1, "red": 2, "green": 3, "yellow": 4,
+            "grey": 5, "gray": 5, "magenta": 6, "pink": 6, "orange": 7,
+            "cyan": 8, "teal": 8, "brown": 9, "maroon": 9,
+            # Also handle string numbers
+            "0": 0, "1": 1, "2": 2, "3": 3, "4": 4,
+            "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
+        }
+        
+        def convert_color(value):
+            """Convert a color value to integer."""
+            if value is None:
+                return None
+            if isinstance(value, int):
+                return value
+            if isinstance(value, str):
+                value_lower = value.lower().strip()
+                if value_lower in COLOR_MAP:
+                    return COLOR_MAP[value_lower]
+                # Try to parse as integer
+                try:
+                    return int(value)
+                except ValueError:
+                    return None
+            return None
+        
+        # Deep copy to avoid modifying original
+        result = dict(data)
+        
+        # Convert color_filter
+        if "color_filter" in result:
+            result["color_filter"] = convert_color(result["color_filter"])
+        
+        # Convert params
+        if "params" in result and isinstance(result["params"], dict):
+            params = dict(result["params"])
+            
+            # Color-related params
+            for key in ["from_color", "to_color", "color"]:
+                if key in params:
+                    params[key] = convert_color(params[key])
+            
+            # Numeric params
+            for key in ["dx", "dy", "angle", "factor"]:
+                if key in params:
+                    val = params[key]
+                    if isinstance(val, str):
+                        try:
+                            if key == "factor":
+                                params[key] = float(val)
+                            else:
+                                params[key] = int(val)
+                        except ValueError:
+                            pass
+            
+            result["params"] = params
+        
+        return result
     
     def _extract_reasoning(self, text: str) -> Optional[str]:
         """

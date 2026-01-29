@@ -344,3 +344,369 @@ class Visualizer:
         
         plt.tight_layout()
         plt.show()
+    
+    def create_batch_summary(
+        self,
+        task_visuals: List[Dict[str, Any]],
+        title: str = "Batch Evaluation Results",
+        save_path: Optional[str] = None,
+        show: bool = True,
+        max_cols: int = 4
+    ):
+        """
+        Create a summary visualization of all batch results.
+        
+        Each task is shown as a row with: Input | Predicted | Expected | Status
+        
+        Args:
+            task_visuals: List of dicts with keys:
+                - task_id: str
+                - input_grid: Grid or array
+                - predicted_grid: Grid or array (can be None)
+                - expected_grid: Grid or array (can be None)
+                - is_correct: bool
+                - accuracy: float
+            title: Overall title
+            save_path: Path to save the figure (optional)
+            show: Whether to display the figure
+            max_cols: Max tasks per row in grid layout
+            
+        Returns:
+            The matplotlib figure object
+        """
+        _ensure_matplotlib()
+        
+        n_tasks = len(task_visuals)
+        if n_tasks == 0:
+            return None
+        
+        # Calculate grid dimensions
+        # Each task needs 3 columns: Input, Predicted, Expected
+        cols_per_task = 3
+        
+        # Determine layout
+        if n_tasks <= 4:
+            # Single row for few tasks
+            n_rows = 1
+            n_cols = n_tasks * cols_per_task
+            fig_width = 3 * n_tasks
+            fig_height = 4
+        else:
+            # Grid layout for many tasks
+            tasks_per_row = min(max_cols, n_tasks)
+            n_rows = (n_tasks + tasks_per_row - 1) // tasks_per_row
+            n_cols = tasks_per_row * cols_per_task
+            fig_width = 3 * tasks_per_row
+            fig_height = 3.5 * n_rows
+        
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height))
+        
+        # Ensure axes is always 2D
+        if n_rows == 1 and n_cols == 1:
+            axes = np.array([[axes]])
+        elif n_rows == 1:
+            axes = axes.reshape(1, -1)
+        elif n_cols == 1:
+            axes = axes.reshape(-1, 1)
+        
+        # Hide all axes initially
+        for row in axes:
+            for ax in row:
+                ax.axis('off')
+        
+        # Plot each task
+        for i, task_data in enumerate(task_visuals):
+            if n_tasks <= 4:
+                row_idx = 0
+                col_offset = i * cols_per_task
+            else:
+                tasks_per_row = min(max_cols, n_tasks)
+                row_idx = i // tasks_per_row
+                col_offset = (i % tasks_per_row) * cols_per_task
+            
+            task_id = task_data.get('task_id', f'Task {i+1}')
+            is_correct = task_data.get('is_correct', False)
+            accuracy = task_data.get('accuracy', 0.0)
+            
+            # Status indicator
+            status = "✓" if is_correct else f"✗ {accuracy:.0%}"
+            status_color = "green" if is_correct else "red"
+            
+            # Input grid
+            ax_input = axes[row_idx, col_offset]
+            ax_input.axis('on')
+            if task_data.get('input_grid') is not None:
+                self.show_grid(task_data['input_grid'], "", ax=ax_input)
+            ax_input.set_title(f"{task_id}\nInput", fontsize=8)
+            
+            # Predicted grid
+            ax_pred = axes[row_idx, col_offset + 1]
+            ax_pred.axis('on')
+            if task_data.get('predicted_grid') is not None:
+                self.show_grid(task_data['predicted_grid'], "", ax=ax_pred)
+                ax_pred.set_title(f"Predicted\n{status}", fontsize=8, color=status_color)
+            else:
+                ax_pred.text(0.5, 0.5, "No\nPrediction", ha='center', va='center',
+                           fontsize=10, color='gray', transform=ax_pred.transAxes)
+                ax_pred.set_title("Predicted", fontsize=8)
+            
+            # Expected grid
+            ax_exp = axes[row_idx, col_offset + 2]
+            ax_exp.axis('on')
+            if task_data.get('expected_grid') is not None:
+                self.show_grid(task_data['expected_grid'], "", ax=ax_exp)
+            ax_exp.set_title("Expected", fontsize=8)
+        
+        # Add overall title with summary stats
+        n_correct = sum(1 for t in task_visuals if t.get('is_correct', False))
+        avg_acc = sum(t.get('accuracy', 0) for t in task_visuals) / max(1, n_tasks)
+        
+        fig.suptitle(
+            f"{title}\n{n_correct}/{n_tasks} correct ({n_correct/n_tasks:.0%}) | Avg accuracy: {avg_acc:.1%}",
+            fontsize=12,
+            fontweight='bold'
+        )
+        
+        plt.tight_layout()
+        
+        # Save if path provided
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight', facecolor='white')
+            print(f"📊 Batch summary saved to: {save_path}")
+        
+        # Show if requested
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+        
+        return fig
+    
+    def create_task_detail_image(
+        self,
+        task_id: str,
+        input_grid,
+        predicted_grid,
+        expected_grid,
+        is_correct: bool,
+        accuracy: float,
+        save_path: Optional[str] = None
+    ):
+        """
+        Create a detailed comparison image for a single task.
+        
+        Args:
+            task_id: Task identifier
+            input_grid: Input grid
+            predicted_grid: Predicted output (can be None)
+            expected_grid: Expected output
+            is_correct: Whether prediction was correct
+            accuracy: Accuracy percentage
+            save_path: Path to save the image
+            
+        Returns:
+            The matplotlib figure object
+        """
+        _ensure_matplotlib()
+        
+        fig, axes = plt.subplots(1, 4, figsize=(14, 4))
+        
+        # Input
+        self.show_grid(input_grid, "Input", ax=axes[0])
+        
+        # Predicted
+        if predicted_grid is not None:
+            self.show_grid(predicted_grid, "Predicted", ax=axes[1])
+        else:
+            axes[1].text(0.5, 0.5, "No Prediction", ha='center', va='center',
+                        fontsize=12, color='gray', transform=axes[1].transAxes)
+            axes[1].set_title("Predicted")
+            axes[1].axis('off')
+        
+        # Expected
+        self.show_grid(expected_grid, "Expected", ax=axes[2])
+        
+        # Difference
+        if predicted_grid is not None:
+            self._show_diff(predicted_grid, expected_grid, ax=axes[3])
+        else:
+            axes[3].axis('off')
+        
+        # Title with status
+        status = "✓ CORRECT" if is_correct else f"✗ INCORRECT ({accuracy:.1%})"
+        color = "green" if is_correct else "red"
+        fig.suptitle(f"{task_id}: {status}", fontsize=14, color=color, fontweight='bold')
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight', facecolor='white')
+        
+        plt.close(fig)
+        
+        return fig
+    
+    def create_interactive_browser(
+        self,
+        task_visuals: List[Dict[str, Any]],
+        title: str = "Batch Results Browser"
+    ):
+        """
+        Create an interactive browser to navigate through batch results.
+        
+        Uses matplotlib widgets for Previous/Next navigation.
+        
+        Args:
+            task_visuals: List of dicts with keys:
+                - task_id: str
+                - input_grid: Grid or array
+                - predicted_grid: Grid or array (can be None)
+                - expected_grid: Grid or array (can be None)
+                - is_correct: bool
+                - accuracy: float
+            title: Window title
+        """
+        _ensure_matplotlib()
+        from matplotlib.widgets import Button
+        
+        if not task_visuals:
+            print("No tasks to display")
+            return
+        
+        # State
+        current_idx = [0]  # Use list to allow modification in nested function
+        n_tasks = len(task_visuals)
+        
+        # Calculate stats
+        n_correct = sum(1 for t in task_visuals if t.get('is_correct', False))
+        avg_acc = sum(t.get('accuracy', 0) for t in task_visuals) / max(1, n_tasks)
+        
+        # Create figure with space for buttons
+        fig = plt.figure(figsize=(16, 6))
+        
+        # Create grid spec for layout
+        gs = fig.add_gridspec(2, 4, height_ratios=[10, 1], hspace=0.3)
+        
+        # Axes for grids
+        ax_input = fig.add_subplot(gs[0, 0])
+        ax_pred = fig.add_subplot(gs[0, 1])
+        ax_exp = fig.add_subplot(gs[0, 2])
+        ax_diff = fig.add_subplot(gs[0, 3])
+        
+        axes = [ax_input, ax_pred, ax_exp, ax_diff]
+        
+        # Button axes
+        ax_prev = fig.add_subplot(gs[1, 0])
+        ax_info = fig.add_subplot(gs[1, 1:3])
+        ax_next = fig.add_subplot(gs[1, 3])
+        
+        # Info text area
+        ax_info.axis('off')
+        info_text = ax_info.text(
+            0.5, 0.5, "", 
+            ha='center', va='center',
+            fontsize=12,
+            transform=ax_info.transAxes
+        )
+        
+        def update_display():
+            """Update the display with current task."""
+            idx = current_idx[0]
+            task = task_visuals[idx]
+            
+            # Clear all axes
+            for ax in axes:
+                ax.clear()
+            
+            # Get data
+            task_id = task.get('task_id', f'Task {idx+1}')
+            is_correct = task.get('is_correct', False)
+            accuracy = task.get('accuracy', 0.0)
+            
+            # Input grid
+            if task.get('input_grid') is not None:
+                self.show_grid(task['input_grid'], "Input", ax=ax_input)
+            else:
+                ax_input.text(0.5, 0.5, "No Data", ha='center', va='center',
+                            fontsize=12, transform=ax_input.transAxes)
+                ax_input.set_title("Input")
+            
+            # Predicted grid
+            if task.get('predicted_grid') is not None:
+                self.show_grid(task['predicted_grid'], "Predicted", ax=ax_pred)
+            else:
+                ax_pred.text(0.5, 0.5, "No\nPrediction", ha='center', va='center',
+                           fontsize=12, color='gray', transform=ax_pred.transAxes)
+                ax_pred.set_title("Predicted")
+                ax_pred.axis('off')
+            
+            # Expected grid
+            if task.get('expected_grid') is not None:
+                self.show_grid(task['expected_grid'], "Expected", ax=ax_exp)
+            else:
+                ax_exp.text(0.5, 0.5, "No Data", ha='center', va='center',
+                          fontsize=12, transform=ax_exp.transAxes)
+                ax_exp.set_title("Expected")
+            
+            # Difference
+            if task.get('predicted_grid') is not None and task.get('expected_grid') is not None:
+                self._show_diff(task['predicted_grid'], task['expected_grid'], ax=ax_diff)
+            else:
+                ax_diff.axis('off')
+                ax_diff.set_title("Difference")
+            
+            # Update title
+            status = "✓ CORRECT" if is_correct else f"✗ INCORRECT ({accuracy:.1%})"
+            status_color = "green" if is_correct else "red"
+            fig.suptitle(
+                f"{task_id}: {status}",
+                fontsize=14, 
+                color=status_color,
+                fontweight='bold'
+            )
+            
+            # Update info text
+            info_text.set_text(
+                f"Task {idx+1} / {n_tasks}  |  "
+                f"Overall: {n_correct}/{n_tasks} correct ({n_correct/n_tasks:.0%})  |  "
+                f"Avg accuracy: {avg_acc:.1%}"
+            )
+            
+            fig.canvas.draw_idle()
+        
+        def on_prev(event):
+            """Go to previous task."""
+            current_idx[0] = (current_idx[0] - 1) % n_tasks
+            update_display()
+        
+        def on_next(event):
+            """Go to next task."""
+            current_idx[0] = (current_idx[0] + 1) % n_tasks
+            update_display()
+        
+        # Create buttons
+        btn_prev = Button(ax_prev, '◀ Previous', color='lightgray', hovercolor='lightblue')
+        btn_prev.on_clicked(on_prev)
+        
+        btn_next = Button(ax_next, 'Next ▶', color='lightgray', hovercolor='lightblue')
+        btn_next.on_clicked(on_next)
+        
+        # Add keyboard navigation
+        def on_key(event):
+            if event.key == 'left':
+                on_prev(event)
+            elif event.key == 'right':
+                on_next(event)
+            elif event.key == 'escape' or event.key == 'q':
+                plt.close(fig)
+        
+        fig.canvas.mpl_connect('key_press_event', on_key)
+        
+        # Initial display
+        update_display()
+        
+        # Window title
+        fig.canvas.manager.set_window_title(title)
+        
+        plt.tight_layout()
+        plt.show()
