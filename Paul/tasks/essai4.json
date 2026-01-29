@@ -1,0 +1,7 @@
+[
+  {"name": "connect_two_points", "train": [{"input": [[1,0,0,0,1]], "output": [[1,1,1,1,1]]}]},
+  {"name": "complete_square", "train": [{"input": [[2,2],[2,0]], "output": [[2,2],[2,2]]}]},
+  {"name": "bridge_gap", "train": [{"input": [[3,0,3],[0,0,0],[3,0,3]], "output": [[3,3,3],[3,0,3],[3,3,3]]}]},
+  {"name": "extend_line", "train": [{"input": [[4,4,0,0,0]], "output": [[4,4,4,4,4]]}]},
+  {"name": "surround_point", "train": [{"input": [[0,0,0],[0,1,0],[0,0,0]], "output": [[2,2,2],[2,1,2],[2,2,2]]}]}
+]
