@@ -90,6 +90,13 @@ Example 8 - COMPOSITE with color change:
 {"action": "composite", "color_filter": 2, "params": {"transformations": [{"action": "reflect", "params": {"axis": "vertical"}}, {"action": "translate", "params": {"dx": 1, "dy": -2}}, {"action": "color_change", "params": {"from_color": 2, "to_color": 5}}]}}
 ```
 
+Example 9 - ADD BORDER (Color contour):
+- Detected: "ADD BORDER to color 2, border_color=1"
+- Output:
+```json
+{"action": "add_border", "color_filter": 2, "params": {"border_color": 1}}
+```
+
 ## RULES
 
 1. Look at "DETECTED TRANSFORMATION" - it tells you EXACTLY what to output
@@ -682,6 +689,12 @@ Example 8 - COMPOSITE with color change:
             if transformations:
                 trans_str = ", ".join(transformations)
                 return f'{{"action": "composite", "color_filter": {main_color}, "params": {{"transformations": [{trans_str}]}}}}'
+        
+        # Parse ADD BORDER
+        match = re.search(r'ADD BORDER.*?color.*?(\d+).*?border_color=(\d+)', transformation)
+        if match:
+            obj_color, border_color = match.groups()
+            return f'{{"action": "add_border", "color_filter": {obj_color}, "params": {{"border_color": {border_color}}}}}'
         
         # Fallback
         return '{"action": "translate", "params": {"dx": 0, "dy": 0}}'

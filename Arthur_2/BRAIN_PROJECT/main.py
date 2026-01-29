@@ -23,6 +23,7 @@ Usage:
 
 import json
 import argparse
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -143,7 +144,16 @@ class BRAINOrchestrator:
             "task_id": task.task_id,
             "predictions": [],
             "analyses": [],
-            "action_data": None
+            "action_data": None,
+            # === NEW: Metadata for analysis ===
+            "metadata": {
+                "was_fallback_used": False,
+                "llm_proposed_action": None,
+                "fallback_reason": None,
+                "llm_response_time": 0.0,
+                "detection_time": 0.0,
+                "execution_time": 0.0
+            }
         }
         
         # === STEP 1a: PERCEPTION (Shapes) ===
@@ -167,6 +177,7 @@ class BRAINOrchestrator:
         self._log("STEP 1b: TRANSFORMATION DETECTION")
         self._log("=" * 50)
         
+        detection_start = time.time()
         detected_transformations = []
         for i, pair in enumerate(task.train_pairs):
             transformations = self.transformation_detector.detect_all(
@@ -179,6 +190,7 @@ class BRAINOrchestrator:
                 self._log(f"  Example {i+1}: No clear transformation detected")
         
         results["detected_transformations"] = detected_transformations
+        results["metadata"]["detection_time"] = time.time() - detection_start
         
         # === CHECK FOR SPECIAL TRANSFORMATIONS (tiling, scaling) ===
         # These transformations are grid-level and should NOT trigger multi-transform mode
@@ -229,19 +241,24 @@ class BRAINOrchestrator:
                         self._log("\n  🔄 AUTO-SWITCH: Multiple different transformations detected, using multi-transform mode")
                         return self.solve_task_multi_transform(task)
         
-        # === CHECK FOR COMPOSITE TRANSFORMATION ===
-        # If composite detected with high confidence, use fallback directly (LLM struggles with composites)
-        use_composite_fallback = False
-        composite_action = None
+        # === CHECK FOR COMPOSITE OR ADD_BORDER TRANSFORMATION ===
+        # If composite/add_border detected with high confidence, use fallback directly (LLM struggles with these)
+        use_direct_fallback = False
+        direct_fallback_action = None
         if detected_transformations:
             for trans_list in detected_transformations:
                 for t in trans_list:
                     if t.transformation_type == "composite" and t.confidence >= 0.95:
-                        use_composite_fallback = True
+                        use_direct_fallback = True
                         self._log(f"\n  ℹ️ Composite transformation detected, using direct execution")
-                        composite_action = self._build_fallback_action(detected_transformations, task)
+                        direct_fallback_action = self._build_fallback_action(detected_transformations, task)
                         break
-                if use_composite_fallback:
+                    elif t.transformation_type == "add_border" and t.confidence >= 0.95:
+                        use_direct_fallback = True
+                        self._log(f"\n  ℹ️ Add border transformation detected, using direct execution")
+                        direct_fallback_action = self._build_fallback_action(detected_transformations, task)
+                        break
+                if use_direct_fallback:
                     break
         
         # === STEP 2: PROMPTING ===
@@ -264,7 +281,9 @@ class BRAINOrchestrator:
             self._log("  ⚠ Warning: LLM connection issue")
         
         self._log("  Querying LLM...")
+        llm_start = time.time()
         response = self.llm_client.query(prompt, system_prompt)
+        results["metadata"]["llm_response_time"] = time.time() - llm_start
         
         self._log(f"  Got response ({len(response.raw_text)} chars)")
         if response.reasoning:
@@ -274,6 +293,7 @@ class BRAINOrchestrator:
         if response.action_data:
             self._log(f"  ✓ Action JSON extracted: {response.action_data}")
             results["action_data"] = response.action_data
+            results["metadata"]["llm_proposed_action"] = response.action_data.get("action") if isinstance(response.action_data, dict) else None
         else:
             self._log("  ⚠ No action JSON found in LLM response")
             # FALLBACK: Build action from detected transformations
@@ -282,6 +302,8 @@ class BRAINOrchestrator:
                 fallback_action = self._build_fallback_action(detected_transformations, task)
                 if fallback_action:
                     results["action_data"] = fallback_action
+                    results["metadata"]["was_fallback_used"] = True
+                    results["metadata"]["fallback_reason"] = "no_llm_json"
                     self._log(f"  ✓ Fallback action: {fallback_action}")
         
         results["predictions"].append(response)
@@ -291,18 +313,23 @@ class BRAINOrchestrator:
         self._log("STEP 4: ACTION EXECUTION (The Hands)")
         self._log("=" * 50)
         
+        execution_start = time.time()
         for i, test_pair in enumerate(task.test_pairs):
             test_input = test_pair.input_grid
             predicted_grid = None
             
-            # Use composite fallback if detected, otherwise try LLM action
-            if use_composite_fallback and composite_action:
-                action_to_use = dict(composite_action)  # Make a copy
+            # Use direct fallback if detected (composite, add_border), otherwise try LLM action
+            if use_direct_fallback and direct_fallback_action:
+                action_to_use = dict(direct_fallback_action)  # Make a copy
                 # Fix color_filter to use test input color
                 test_colors = [c for c in test_input.unique_colors if c != 0]
                 if test_colors:
                     action_to_use["color_filter"] = test_colors[0]
-                self._log(f"  Using composite fallback action: {action_to_use.get('action')} (color={action_to_use.get('color_filter')})")
+                self._log(f"  Using direct fallback action: {action_to_use.get('action')} (color={action_to_use.get('color_filter')})")
+                # Track this as a fallback
+                results["metadata"]["was_fallback_used"] = True
+                results["metadata"]["fallback_reason"] = f"direct_{action_to_use.get('action')}"
+                results["metadata"]["llm_proposed_action"] = response.action_data.get("action") if response.action_data and isinstance(response.action_data, dict) else None
             else:
                 action_to_use = response.action_data or results.get("action_data")
             
@@ -330,6 +357,9 @@ class BRAINOrchestrator:
                     self._log(f"  ✓ Action executed: {action_result.message}")
                 else:
                     self._log(f"  ✗ Action failed: {action_result.message}")
+                
+                # Track execution time for the action
+                results["metadata"]["execution_time"] = time.time() - execution_start
             
             # Fallback to LLM's direct grid prediction if no action
             if predicted_grid is None and response.predicted_grid:
@@ -678,6 +708,18 @@ class BRAINOrchestrator:
                                 "params": {
                                     "repetitions_horizontal": reps_h,
                                     "repetitions_vertical": reps_v
+                                }
+                            }
+                        elif t_type == "add_border":
+                            # Add border to object
+                            border_color = params.get("border_color", 1)
+                            obj_color = params.get("color_filter", color_filter)
+                            self._log(f"  Add border fallback: object={obj_color}, border={border_color}")
+                            return {
+                                "action": "add_border",
+                                "color_filter": obj_color,
+                                "params": {
+                                    "border_color": int(border_color)
                                 }
                             }
                         elif t_type == "composite":

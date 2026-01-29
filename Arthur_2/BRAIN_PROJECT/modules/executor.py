@@ -62,7 +62,8 @@ class ActionExecutor:
         "scale",
         "draw_line",
         "tile",
-        "composite"  # For combined transformations (e.g., translate + rotate)
+        "composite",  # For combined transformations (e.g., translate + rotate)
+        "add_border"  # Color the border/contour of an object
     ]
     
     def __init__(self, verbose: bool = False):
@@ -876,6 +877,98 @@ class ActionExecutor:
             success=True,
             output_grid=Grid(data=result),
             message=f"Tiled pattern {reps_h}x{reps_v} to create {out_w}x{out_h} grid"
+        )
+    
+    def _action_add_border(self, grid: Grid, action_data: dict) -> ActionResult:
+        """
+        Add a colored border/contour to an object.
+        
+        This colors the outer pixels (perimeter) of an object with a different color,
+        keeping the interior pixels with the original color.
+        
+        Parameters:
+            color_filter: The color of the object to add border to
+            params.border_color: The color for the border
+        
+        Example:
+            Input: 3x3 red square (color 2)
+            Output: 3x3 square with red interior (2) and blue border (1)
+            
+            Before:     After:
+            2 2 2       1 1 1
+            2 2 2  -->  1 2 1
+            2 2 2       1 1 1
+        """
+        params = action_data.get("params", {})
+        color_filter = action_data.get("color_filter")
+        border_color = params.get("border_color")
+        
+        if color_filter is None:
+            return ActionResult(
+                success=False,
+                message="color_filter required for add_border action"
+            )
+        
+        if border_color is None:
+            return ActionResult(
+                success=False,
+                message="border_color parameter required for add_border action"
+            )
+        
+        color_filter = int(color_filter)
+        border_color = int(border_color)
+        
+        if self.verbose:
+            print(f"  Executing ADD_BORDER: object color={color_filter}, border color={border_color}")
+        
+        # Get object pixels
+        pixels = set()
+        for r in range(grid.height):
+            for c in range(grid.width):
+                if int(grid.data[r, c]) == color_filter:
+                    pixels.add((r, c))
+        
+        if not pixels:
+            return ActionResult(
+                success=False,
+                message=f"No pixels of color {color_filter} found"
+            )
+        
+        # Find border pixels (pixels with at least one neighbor not in the object)
+        border_pixels = set()
+        for r, c in pixels:
+            is_border = False
+            # Check 4-connectivity (up, down, left, right)
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = r + dr, c + dc
+                # If neighbor is outside grid or not part of object, this is a border pixel
+                if (nr, nc) not in pixels:
+                    is_border = True
+                    break
+            if is_border:
+                border_pixels.add((r, c))
+        
+        # Interior pixels = all pixels - border pixels
+        interior_pixels = pixels - border_pixels
+        
+        # Create output grid
+        result = grid.data.copy()
+        
+        # Color border pixels with border_color
+        for r, c in border_pixels:
+            result[r, c] = border_color
+        
+        # Keep interior pixels with original color (already there, but explicit)
+        for r, c in interior_pixels:
+            result[r, c] = color_filter
+        
+        if self.verbose:
+            print(f"  Border pixels: {len(border_pixels)}, Interior pixels: {len(interior_pixels)}")
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=result),
+            message=f"Added border (color {border_color}) to object (color {color_filter})"
         )
     
     def _action_composite(self, grid: Grid, action_data: dict) -> ActionResult:

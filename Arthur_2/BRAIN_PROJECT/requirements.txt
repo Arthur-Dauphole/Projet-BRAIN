@@ -1,6 +1,11 @@
 # BRAIN Project - Neuro-Symbolic ARC-AGI Solver
 # Dependencies
 
+# Core
 numpy>=1.24.0
 matplotlib>=3.7.0
 ollama>=0.1.0
+
+# Data Analysis (for analyze.py and data_analysis module)
+pandas>=2.0.0
+scipy>=1.10.0

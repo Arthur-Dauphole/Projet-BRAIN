@@ -133,6 +133,11 @@ class TransformationDetector:
         if color_change:
             results.append(color_change)
         
+        # PRIORITY 4.5: Add border (object gets a colored contour)
+        add_border = self.detect_add_border(input_grid, output_grid)
+        if add_border and add_border.confidence >= 0.95:
+            return [add_border]  # Return immediately - this is a clear add_border task
+        
         # PRIORITY 5: Scaling (for same-size grids where object scales)
         scaling = self.detect_scaling(input_grid, output_grid)
         if scaling:
@@ -1190,6 +1195,101 @@ class TransformationDetector:
         for obj in grid.objects:
             if obj.color == color:
                 return obj
+        return None
+    
+    def detect_add_border(
+        self, 
+        input_grid: Grid, 
+        output_grid: Grid
+    ) -> Optional[TransformationResult]:
+        """
+        Detect if a border/contour has been added to an object.
+        
+        This detects the transformation where:
+        - Input: solid object of color A
+        - Output: same shape but border is color B, interior is color A
+        
+        Example:
+            Input (all red):    Output:
+            2 2 2               1 1 1
+            2 2 2      -->      1 2 1
+            2 2 2               1 1 1
+        """
+        in_data = input_grid.data
+        out_data = output_grid.data
+        
+        # Must be same size
+        if in_data.shape != out_data.shape:
+            return None
+        
+        # Find colors in input (excluding background)
+        in_colors = set(np.unique(in_data)) - {0}
+        out_colors = set(np.unique(out_data)) - {0}
+        
+        # For add_border: input has 1 color, output has 2 colors
+        if len(in_colors) != 1 or len(out_colors) != 2:
+            return None
+        
+        original_color = list(in_colors)[0]
+        
+        # The output should contain the original color + a new border color
+        if original_color not in out_colors:
+            return None
+        
+        border_color = list(out_colors - {original_color})[0]
+        
+        # Get input pixels
+        input_pixels = set(zip(*np.where(in_data == original_color)))
+        
+        if not input_pixels:
+            return None
+        
+        # Calculate expected border pixels (pixels with at least one non-object neighbor)
+        expected_border = set()
+        expected_interior = set()
+        
+        for r, c in input_pixels:
+            is_border = False
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = r + dr, c + dc
+                if (nr, nc) not in input_pixels:
+                    is_border = True
+                    break
+            if is_border:
+                expected_border.add((r, c))
+            else:
+                expected_interior.add((r, c))
+        
+        # Check if output matches expected pattern
+        output_border_pixels = set(zip(*np.where(out_data == border_color)))
+        output_interior_pixels = set(zip(*np.where(out_data == original_color)))
+        
+        # Verify: border pixels should be colored with border_color
+        # Interior pixels should keep original_color
+        if output_border_pixels == expected_border and output_interior_pixels == expected_interior:
+            return TransformationResult(
+                transformation_type="add_border",
+                confidence=1.0,
+                parameters={
+                    "color_filter": int(original_color),
+                    "border_color": int(border_color)
+                }
+            )
+        
+        # Partial match - lower confidence
+        border_match = len(output_border_pixels & expected_border) / max(1, len(expected_border))
+        interior_match = len(output_interior_pixels & expected_interior) / max(1, len(expected_interior))
+        
+        if border_match > 0.8 and interior_match > 0.8:
+            return TransformationResult(
+                transformation_type="add_border",
+                confidence=(border_match + interior_match) / 2,
+                parameters={
+                    "color_filter": int(original_color),
+                    "border_color": int(border_color)
+                }
+            )
+        
         return None
     
     def describe_per_color_transformations(self, per_color: Dict[int, TransformationResult]) -> str:

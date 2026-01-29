@@ -1,7 +1,7 @@
 # BRAIN Project - Capacités du Système
 
 > **Dernière mise à jour :** Janvier 2026  
-> **Version :** 1.9.0
+> **Version :** 1.11.0
 
 ---
 
@@ -125,7 +125,8 @@ bordered = detector.detect_bordered_objects(grid)
 | `scaling` | Agrandissement/réduction | ✅ |
 | `draw_line` | Tracer une ligne entre 2 points | ✅ |
 | `tiling` | Répétition d'un motif pour remplir une grille plus grande | ✅ |
-| `composite` | Combinaison de transformations (rotate+translate, etc.) | ✅ **NEW** |
+| `composite` | Combinaison de transformations (rotate+translate, etc.) | ✅ |
+| `add_border` | Ajouter un contour coloré à un objet solide | ✅ **NEW** |
 | `blob_transformation` | Transformation de formes irrégulières | ✅ |
 | `translation_and_color` | Translation + changement de couleur combinés | ✅ |
 
@@ -156,7 +157,8 @@ Le système peut détecter des transformations appliquées à des formes irrégu
 | `scale` | `factor`, `color_filter` | Agrandir/réduire | ✅ |
 | `draw_line` | `color_filter` ou `point1`, `point2` | Tracer une ligne entre 2 points | ✅ |
 | `tile` | `repetitions_horizontal`, `repetitions_vertical` | Répéter un motif pour créer une grille plus grande | ✅ |
-| `composite` | `transformations` (liste d'actions) | Combiner plusieurs transformations (rotate + translate, etc.) | ✅ **NEW** |
+| `composite` | `transformations` (liste d'actions) | Combiner plusieurs transformations (rotate + translate, etc.) | ✅ |
+| `add_border` | `border_color`, `color_filter` | Ajouter un contour coloré à un objet | ✅ **NEW** |
 
 ### Détails des axes de réflexion
 
@@ -166,6 +168,38 @@ Le système peut détecter des transformations appliquées à des formes irrégu
 | `vertical` | Miroir gauche-droite (fliplr) |
 | `diagonal_main` | Miroir diagonale principale |
 | `diagonal_anti` | Miroir anti-diagonale |
+
+### Détails de l'action add_border (v1.10.0)
+
+L'action `add_border` ajoute un contour coloré à un objet solide, en gardant l'intérieur avec sa couleur originale.
+
+**Principe :**
+- Les pixels de bordure (ayant au moins un voisin hors de l'objet) reçoivent la couleur du contour
+- Les pixels intérieurs gardent la couleur originale
+
+**Exemple JSON :**
+```json
+{
+  "action": "add_border",
+  "color_filter": 2,
+  "params": {
+    "border_color": 1
+  }
+}
+```
+
+**Exemple visuel :**
+```
+Input (3x3 red):    Output:
+2 2 2               1 1 1
+2 2 2      -->      1 2 1
+2 2 2               1 1 1
+```
+
+**Cas supportés :**
+- Carrés de toutes tailles (3x3, 4x4, 5x5, etc.)
+- Rectangles
+- Formes quelconques (blobs)
 
 ### Détails de l'action composite (v1.9.0)
 
@@ -324,6 +358,21 @@ ou
 
 ## 📝 Historique des versions
 
+### v1.11.0 (Janvier 2026) - Data Analysis Module
+- ✅ **NOUVEAU: Module `data_analysis/`** - Analyse des résultats de batch
+- ✅ **DataLoader** - Charger et agréger les données de plusieurs batchs
+- ✅ **MetricsCalculator** - Calculs statistiques (accuracy par transformation, t-tests, etc.)
+- ✅ **AnalysisVisualizer** - Graphiques pour publications (barplots, boxplots, heatmaps)
+- ✅ **ReportGenerator** - Export LaTeX, CSV, Markdown, JSON
+- ✅ **Script `analyze.py`** - CLI pour analyse rapide
+- ✅ **Données enrichies** - Timing breakdown, LLM vs fallback tracking, complexité
+
+### v1.10.0 (Janvier 2026) - Add Border Action
+- ✅ **NOUVEAU: Action `add_border`** - Ajouter un contour coloré à un objet
+- ✅ **Détection automatique** - Le système détecte quand un objet reçoit un contour
+- ✅ **Support de toutes les formes** - Carrés, rectangles, blobs
+- ✅ Fichier de test: `task_add_border.json`
+
 ### v1.9.0 (Janvier 2026) - Composite Transformations
 - ✅ **NOUVEAU: Action `composite`** - Combiner plusieurs transformations en séquence
 - ✅ **Détection automatique** - Le système détecte rotation+translation, réflexion+translation, etc.
@@ -415,7 +464,6 @@ ou
 - [x] ~~Taille de grille variable (tiling)~~ ✅ v1.8.0
 - [x] ~~Support de transformations composées (translation + rotation simultanées)~~ ✅ v1.9.0
 - [ ] Auto-détection du mode (single vs multi-transform)
-- [ ] Parallélisation des évaluations batch
 - [ ] Détection de structures hiérarchiques (grilles dans grilles)
 
 ---
@@ -505,3 +553,97 @@ En mode batch, les visualisations sont **automatiquement désactivées pendant l
 - **Statistiques** affichées en bas (n correct, accuracy moyenne)
 
 Pour désactiver l'affichage final : `python main.py --batch data/ --no-viz`
+
+---
+
+## 📊 Module DATA_ANALYSIS (v1.11.0) **NEW**
+
+Module d'analyse de données pour exploiter les résultats des batchs et générer des visualisations pour articles scientifiques.
+
+### Structure
+
+```
+data_analysis/
+├── __init__.py
+├── data_loader.py      # Charger et agréger les résultats de batchs
+├── metrics.py          # Calcul de métriques statistiques
+├── visualizer.py       # Graphiques (matplotlib)
+└── report_generator.py # Export LaTeX/CSV/Markdown
+```
+
+### Utilisation rapide
+
+```bash
+# Analyser tous les batchs et générer des figures/rapports
+python analyze.py
+
+# Spécifier le répertoire et la sortie
+python analyze.py --dir results/ --output analysis/
+
+# Générer uniquement les tableaux LaTeX
+python analyze.py --format latex
+
+# Mode interactif (afficher les graphiques)
+python analyze.py --interactive
+```
+
+### Utilisation en Python
+
+```python
+from data_analysis import DataLoader, MetricsCalculator, AnalysisVisualizer, ReportGenerator
+
+# 1. Charger les données
+loader = DataLoader()
+df = loader.load_all_batches("results/")
+
+# 2. Calculer les métriques
+calc = MetricsCalculator(df)
+print(calc.accuracy_by_transformation())
+print(calc.llm_vs_fallback_comparison())
+
+# 3. Créer des visualisations
+viz = AnalysisVisualizer(df)
+viz.plot_accuracy_by_transformation(save_path="figures/acc_trans.png")
+viz.plot_model_comparison(save_path="figures/models.png")
+viz.plot_llm_vs_fallback()
+
+# 4. Générer des rapports
+gen = ReportGenerator(df, calc)
+gen.generate_latex_tables("latex/")
+gen.generate_markdown_report("report.md")
+gen.generate_csv_summary("summary.csv")
+```
+
+### Visualisations disponibles
+
+| Graphique | Description |
+|-----------|-------------|
+| `plot_accuracy_by_transformation()` | Barplot accuracy par type de transformation |
+| `plot_model_comparison()` | Comparaison des performances par modèle LLM |
+| `plot_accuracy_boxplot()` | Boxplot de la distribution des accuracies |
+| `plot_confusion_matrix()` | Matrice transformation détectée vs action utilisée |
+| `plot_timing_breakdown()` | Décomposition du temps (détection, LLM, exécution) |
+| `plot_llm_vs_fallback()` | Comparaison LLM seul vs avec fallback |
+
+### Exports disponibles
+
+| Format | Fichier | Usage |
+|--------|---------|-------|
+| LaTeX | `*.tex` | Tableaux pour articles scientifiques |
+| CSV | `summary.csv`, `full_data.csv` | Analyse Excel/Pandas |
+| Markdown | `report.md` | Documentation |
+| JSON | `summary.json` | API/Intégration |
+
+### Données collectées par tâche (enrichies v1.11.0)
+
+| Champ | Description |
+|-------|-------------|
+| `primary_transformation` | Type principal détecté |
+| `transformation_confidence` | Confiance (0-1) |
+| `was_fallback_used` | Si le fallback a été utilisé |
+| `llm_proposed_action` | Action proposée par le LLM |
+| `timing_detection` | Temps de détection (s) |
+| `timing_llm_response` | Temps de réponse LLM (s) |
+| `timing_action_execution` | Temps d'exécution (s) |
+| `complexity_num_colors` | Nombre de couleurs |
+| `complexity_num_objects` | Nombre d'objets |

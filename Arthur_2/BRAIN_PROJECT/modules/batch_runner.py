@@ -44,6 +44,27 @@ class TaskResult:
     num_test_examples: int = 0
     grid_size: Optional[str] = None  # e.g., "10x10"
     
+    # === NEW: Enhanced data for analysis ===
+    # Primary transformation info
+    primary_transformation: Optional[str] = None  # Main transformation type detected
+    transformation_confidence: float = 0.0  # Confidence level (0-1)
+    transformation_params: Dict[str, Any] = field(default_factory=dict)  # Parameters used
+    
+    # LLM vs Fallback tracking
+    was_fallback_used: bool = False  # True if fallback was used instead of LLM
+    llm_proposed_action: Optional[str] = None  # What the LLM originally proposed
+    fallback_reason: Optional[str] = None  # Why fallback was used
+    
+    # Timing breakdown
+    llm_response_time: float = 0.0  # Time spent waiting for LLM
+    detection_time: float = 0.0  # Time spent on transformation detection
+    execution_action_time: float = 0.0  # Time spent executing action
+    
+    # Mode and complexity
+    mode_used: str = "single"  # single, multi_transform
+    num_colors_in_input: int = 0  # Complexity metric
+    num_objects_in_input: int = 0  # Complexity metric
+    
     # Grid data for visualization (not serialized to JSON)
     input_grid: Any = field(default=None, repr=False)
     predicted_grid: Any = field(default=None, repr=False)
@@ -51,19 +72,55 @@ class TaskResult:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict, excluding grid data."""
+        
+        def convert_numpy(obj):
+            """Convert numpy types to Python native types for JSON serialization."""
+            import numpy as np
+            if isinstance(obj, dict):
+                return {k: convert_numpy(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy(v) for v in obj]
+            elif isinstance(obj, (np.integer, np.int64, np.int32)):
+                return int(obj)
+            elif isinstance(obj, (np.floating, np.float64, np.float32)):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, np.bool_):
+                return bool(obj)
+            return obj
+        
         return {
             'task_id': self.task_id,
             'task_file': self.task_file,
             'success': self.success,
             'is_correct': self.is_correct,
-            'accuracy': self.accuracy,
-            'execution_time': self.execution_time,
+            'accuracy': float(self.accuracy),
+            'execution_time': float(self.execution_time),
             'detected_transformations': self.detected_transformations,
             'action_used': self.action_used,
             'error_message': self.error_message,
-            'num_train_examples': self.num_train_examples,
-            'num_test_examples': self.num_test_examples,
+            'num_train_examples': int(self.num_train_examples),
+            'num_test_examples': int(self.num_test_examples),
             'grid_size': self.grid_size,
+            # Enhanced data - convert numpy types
+            'primary_transformation': self.primary_transformation,
+            'transformation_confidence': float(self.transformation_confidence),
+            'transformation_params': convert_numpy(self.transformation_params),
+            'was_fallback_used': bool(self.was_fallback_used),
+            'llm_proposed_action': self.llm_proposed_action,
+            'fallback_reason': self.fallback_reason,
+            'timing': {
+                'total': round(float(self.execution_time), 3),
+                'llm_response': round(float(self.llm_response_time), 3),
+                'detection': round(float(self.detection_time), 3),
+                'action_execution': round(float(self.execution_action_time), 3),
+            },
+            'complexity': {
+                'mode': self.mode_used,
+                'num_colors': int(self.num_colors_in_input),
+                'num_objects': int(self.num_objects_in_input),
+            }
         }
 
 
@@ -93,6 +150,22 @@ class BatchResult:
     pattern_used: str = ""
     directory: str = ""
     
+    # === NEW: Enhanced statistics for analysis ===
+    program_version: str = "1.10.0"  # Track version
+    
+    # Per-transformation accuracy breakdown
+    accuracy_by_transformation: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    # Format: {"rotation": {"accuracy": 0.85, "count": 10, "correct": 8}, ...}
+    
+    # LLM vs Fallback statistics
+    llm_success_rate: float = 0.0  # % of times LLM gave correct action
+    fallback_usage_rate: float = 0.0  # % of times fallback was used
+    
+    # Timing statistics
+    avg_llm_time: float = 0.0
+    avg_detection_time: float = 0.0
+    avg_execution_time: float = 0.0
+    
     def to_dict(self) -> Dict[str, Any]:
         result = {
             "summary": {
@@ -108,15 +181,24 @@ class BatchResult:
             "timing": {
                 "total_time_seconds": round(self.total_time, 2),
                 "avg_time_per_task_seconds": round(self.avg_time_per_task, 2),
+                "avg_llm_time_seconds": round(self.avg_llm_time, 3),
+                "avg_detection_time_seconds": round(self.avg_detection_time, 3),
+                "avg_action_execution_seconds": round(self.avg_execution_time, 3),
             },
             "transformation_stats": self.transformation_counts,
             "action_stats": self.action_counts,
+            "accuracy_by_transformation": self.accuracy_by_transformation,
+            "llm_vs_fallback": {
+                "llm_success_rate": f"{self.llm_success_rate:.1%}",
+                "fallback_usage_rate": f"{self.fallback_usage_rate:.1%}",
+            },
             "metadata": {
                 "run_timestamp": self.run_timestamp,
                 "run_folder": self.run_folder,
                 "model_used": self.model_used,
                 "pattern_used": self.pattern_used,
                 "directory": self.directory,
+                "program_version": self.program_version,
             },
             "task_results": [r.to_dict() for r in self.task_results]
         }
@@ -238,10 +320,14 @@ class BatchRunner:
                 grid = task.test_pairs[0].input_grid
                 result.grid_size = f"{grid.height}x{grid.width}"
                 result.input_grid = grid
+                # Complexity metrics
+                result.num_colors_in_input = len([c for c in grid.unique_colors if c != 0])
+                result.num_objects_in_input = len(grid.objects) if hasattr(grid, 'objects') and grid.objects else 0
                 if task.test_pairs[0].output_grid:
                     result.expected_grid = task.test_pairs[0].output_grid
             
             # Solve task
+            result.mode_used = "multi_transform" if self.multi_mode else "single"
             if self.multi_mode:
                 solve_result = orchestrator.solve_task_multi_transform(task)
             else:
@@ -250,21 +336,40 @@ class BatchRunner:
             # Extract results
             result.success = True
             
-            # Get detected transformations
+            # Get detected transformations (with enhanced details)
             if "detected_transformations" in solve_result:
                 for trans_list in solve_result["detected_transformations"]:
                     if trans_list:
                         for t in trans_list:
                             if hasattr(t, 'transformation_type'):
                                 result.detected_transformations.append(t.transformation_type)
+                                # Primary transformation is the first one with highest confidence
+                                if result.primary_transformation is None:
+                                    result.primary_transformation = t.transformation_type
+                                    result.transformation_confidence = getattr(t, 'confidence', 0.0)
+                                    result.transformation_params = dict(getattr(t, 'parameters', {}))
                             elif isinstance(t, dict) and 'transformation_type' in t:
                                 result.detected_transformations.append(t['transformation_type'])
+                                if result.primary_transformation is None:
+                                    result.primary_transformation = t['transformation_type']
+                                    result.transformation_confidence = t.get('confidence', 0.0)
+                                    result.transformation_params = dict(t.get('parameters', {}))
             
-            # Get action used
+            # Get action used and LLM vs fallback tracking
             if "action_data" in solve_result and solve_result["action_data"]:
                 action = solve_result["action_data"]
                 if isinstance(action, dict):
                     result.action_used = action.get("action", "unknown")
+            
+            # NEW: Extract enhanced metadata from solve_result
+            if "metadata" in solve_result:
+                meta = solve_result["metadata"]
+                result.was_fallback_used = meta.get("was_fallback_used", False)
+                result.llm_proposed_action = meta.get("llm_proposed_action")
+                result.fallback_reason = meta.get("fallback_reason")
+                result.llm_response_time = meta.get("llm_response_time", 0.0)
+                result.detection_time = meta.get("detection_time", 0.0)
+                result.execution_action_time = meta.get("execution_time", 0.0)
             
             # Get accuracy and predicted grid
             if solve_result.get("analyses"):
@@ -378,6 +483,46 @@ class BatchRunner:
             batch_result.overall_accuracy = sum(r.accuracy for r in batch_result.task_results) / len(batch_result.task_results)
             batch_result.accuracy_when_successful = sum(r.accuracy for r in successful_results) / len(successful_results)
         
+        # === NEW: Calculate enhanced statistics ===
+        
+        # 1. Accuracy by transformation type
+        trans_accuracy = {}  # {trans_type: {"total": N, "correct": M, "accuracy_sum": X}}
+        for r in batch_result.task_results:
+            if r.primary_transformation and r.success:
+                trans = r.primary_transformation
+                if trans not in trans_accuracy:
+                    trans_accuracy[trans] = {"total": 0, "correct": 0, "accuracy_sum": 0.0}
+                trans_accuracy[trans]["total"] += 1
+                trans_accuracy[trans]["accuracy_sum"] += r.accuracy
+                if r.is_correct:
+                    trans_accuracy[trans]["correct"] += 1
+        
+        # Convert to final format
+        for trans, stats in trans_accuracy.items():
+            batch_result.accuracy_by_transformation[trans] = {
+                "count": stats["total"],
+                "correct": stats["correct"],
+                "accuracy": stats["accuracy_sum"] / max(1, stats["total"]),
+                "success_rate": stats["correct"] / max(1, stats["total"])
+            }
+        
+        # 2. LLM vs Fallback statistics
+        fallback_count = sum(1 for r in batch_result.task_results if r.was_fallback_used)
+        llm_only_results = [r for r in batch_result.task_results if not r.was_fallback_used and r.success]
+        llm_correct = sum(1 for r in llm_only_results if r.is_correct)
+        
+        batch_result.fallback_usage_rate = fallback_count / max(1, len(batch_result.task_results))
+        batch_result.llm_success_rate = llm_correct / max(1, len(llm_only_results)) if llm_only_results else 0.0
+        
+        # 3. Average timing breakdown
+        llm_times = [r.llm_response_time for r in batch_result.task_results if r.llm_response_time > 0]
+        detection_times = [r.detection_time for r in batch_result.task_results if r.detection_time > 0]
+        exec_times = [r.execution_action_time for r in batch_result.task_results if r.execution_action_time > 0]
+        
+        batch_result.avg_llm_time = sum(llm_times) / max(1, len(llm_times)) if llm_times else 0.0
+        batch_result.avg_detection_time = sum(detection_times) / max(1, len(detection_times)) if detection_times else 0.0
+        batch_result.avg_execution_time = sum(exec_times) / max(1, len(exec_times)) if exec_times else 0.0
+        
         return batch_result
     
     def print_summary(self, result: BatchResult):
@@ -414,6 +559,27 @@ class BatchRunner:
             print(f"\n🎯 ACTIONS EXECUTED:")
             for action, count in sorted(result.action_counts.items(), key=lambda x: -x[1]):
                 print(f"   {action}: {count}")
+        
+        # === NEW: Show accuracy by transformation ===
+        if result.accuracy_by_transformation:
+            print(f"\n📊 ACCURACY BY TRANSFORMATION TYPE:")
+            for trans, stats in sorted(result.accuracy_by_transformation.items(), key=lambda x: -x[1]['accuracy']):
+                acc = stats['accuracy']
+                correct = stats['correct']
+                total = stats['count']
+                print(f"   {trans}: {acc:.1%} ({correct}/{total} correct)")
+        
+        # === NEW: Show LLM vs Fallback stats ===
+        print(f"\n🤖 LLM vs FALLBACK:")
+        print(f"   Fallback usage:   {result.fallback_usage_rate:.1%}")
+        print(f"   LLM success rate: {result.llm_success_rate:.1%}")
+        
+        # === NEW: Show timing breakdown ===
+        if result.avg_llm_time > 0 or result.avg_detection_time > 0:
+            print(f"\n⏱️  TIMING BREAKDOWN (avg per task):")
+            print(f"   Detection:       {result.avg_detection_time:.3f}s")
+            print(f"   LLM response:    {result.avg_llm_time:.3f}s")
+            print(f"   Action exec:     {result.avg_execution_time:.3f}s")
         
         # Show failed tasks
         failed = [r for r in result.task_results if not r.success]
@@ -467,11 +633,17 @@ class BatchRunner:
         with open(path, 'w', newline='') as f:
             writer = csv.writer(f)
             
-            # Header
+            # Header - Enhanced for data analysis
             writer.writerow([
                 'task_id', 'success', 'is_correct', 'accuracy', 
                 'execution_time', 'transformations', 'action_used',
-                'grid_size', 'train_examples', 'test_examples', 'error'
+                'grid_size', 'train_examples', 'test_examples',
+                # NEW columns for analysis
+                'primary_transformation', 'transformation_confidence',
+                'was_fallback_used', 'llm_proposed_action', 'fallback_reason',
+                'llm_time', 'detection_time', 'action_time',
+                'num_colors', 'num_objects', 'mode',
+                'error'
             ])
             
             # Data rows
@@ -487,6 +659,18 @@ class BatchRunner:
                     r.grid_size or "",
                     r.num_train_examples,
                     r.num_test_examples,
+                    # NEW data
+                    r.primary_transformation or "",
+                    f"{r.transformation_confidence:.4f}",
+                    r.was_fallback_used,
+                    r.llm_proposed_action or "",
+                    r.fallback_reason or "",
+                    f"{r.llm_response_time:.3f}",
+                    f"{r.detection_time:.3f}",
+                    f"{r.execution_action_time:.3f}",
+                    r.num_colors_in_input,
+                    r.num_objects_in_input,
+                    r.mode_used,
                     r.error_message or ""
                 ])
         
@@ -635,6 +819,7 @@ class BatchRunner:
             "BRAIN Batch Evaluation Results",
             "=" * 50,
             "",
+            f"Program version: {result.program_version}",
             f"Run timestamp: {result.run_timestamp}",
             f"Model: {result.model_used}",
             f"Directory: {result.directory}",
@@ -653,13 +838,34 @@ class BatchRunner:
             "TIMING:",
             f"  Total time:        {result.total_time:.1f}s",
             f"  Avg per task:      {result.avg_time_per_task:.1f}s",
+            f"  Avg LLM time:      {result.avg_llm_time:.3f}s",
+            f"  Avg detection:     {result.avg_detection_time:.3f}s",
+            f"  Avg execution:     {result.avg_execution_time:.3f}s",
             "",
+            "LLM vs FALLBACK:",
+            f"  Fallback usage:    {result.fallback_usage_rate:.1%}",
+            f"  LLM success rate:  {result.llm_success_rate:.1%}",
+            "",
+        ]
+        
+        # Add accuracy by transformation if available
+        if result.accuracy_by_transformation:
+            lines.append("ACCURACY BY TRANSFORMATION:")
+            for trans, stats in sorted(result.accuracy_by_transformation.items(), key=lambda x: -x[1]['accuracy']):
+                acc = stats['accuracy']
+                correct = stats['correct']
+                total = stats['count']
+                lines.append(f"  {trans}: {acc:.1%} ({correct}/{total})")
+            lines.append("")
+        
+        lines.extend([
             "FILES:",
-            "  summary.json  - Full detailed report",
-            "  tasks.csv     - Task-level results for analysis",
+            "  summary.json  - Full detailed report (JSON)",
+            "  tasks.csv     - Task-level results for data analysis",
+            "  images/       - Visual results",
             "",
             "=" * 50,
-        ]
+        ])
         
         with open(filepath, 'w') as f:
             f.write("\n".join(lines))
