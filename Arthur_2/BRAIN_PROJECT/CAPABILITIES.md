@@ -1,7 +1,7 @@
 # BRAIN Project - Capacités du Système
 
 > **Dernière mise à jour :** Janvier 2026  
-> **Version :** 1.11.0
+> **Version :** 1.12.0
 
 ---
 
@@ -356,7 +356,57 @@ ou
 
 ---
 
+## 📁 Dataset de test (v1.12.0)
+
+Le projet inclut **52 tâches de test** couvrant toutes les transformations supportées, avec une répartition équilibrée pour des analyses statistiques robustes.
+
+### Répartition par type de transformation
+
+| Type | Nombre | Fichiers |
+|------|--------|----------|
+| **Translation** | 10 | `task_translation_01` à `08`, `task_blob_translation`, `task_l_shape` |
+| **Rotation** | 8 | `task_rotation_01` à `06`, `task_rotation_90`, `task_blob_rotation` |
+| **Reflection** | 7 | `task_reflection_01` à `05`, `task_reflection`, `task_blob_reflection` |
+| **Color change** | 7 | `task_color_change_01` à `05`, `task_color_change`, `task_blob_color_change` |
+| **Draw line** | 5 | `task_draw_line_01` à `04`, `task_draw_line` |
+| **Add border** | 4 | `task_add_border_01` à `03`, `task_add_border` |
+| **Tiling** | 5 | `task_tiling_01` à `03`, `task_pattern_tile`, `task_pattern_tile_3x3` |
+| **Composite** | 3 | `task_composite_01`, `02`, `task_composite_rotate_translate` |
+| **Multi-transform** | 3 | `task_multi_objects`, `task_multi_objects_same_transform`, `task_challenge_multi_transform` |
+
+### Variété des tests
+
+Chaque type de transformation inclut des variations :
+
+- **Formes différentes** : carrés, rectangles, L-shapes, T-shapes, blobs
+- **Couleurs variées** : toutes les couleurs ARC (1-9)
+- **Positions diverses** : coins, centre, bords
+- **Paramètres variés** : dx/dy, angles, axes de réflexion
+- **Tailles de grilles** : 6×6 à 9×9
+
+### Utilisation
+
+```bash
+# Tester une seule tâche
+python main.py --task data/task_translation_01.json
+
+# Batch complet (52 tâches)
+python main.py --batch data/
+
+# Filtrer par type
+python main.py --batch data/ --pattern "task_rotation_*.json"
+python main.py --batch data/ --pattern "task_color_change_*.json"
+```
+
+---
+
 ## 📝 Historique des versions
+
+### v1.12.0 (Janvier 2026) - Extended Test Dataset
+- ✅ **NOUVEAU: 52 tâches de test** - Dataset élargi pour analyses statistiques
+- ✅ **~10 tâches par transformation** - Répartition équilibrée
+- ✅ **Variété des formes** - Carrés, rectangles, L-shapes, T-shapes, blobs
+- ✅ **Paramètres variés** - Différentes positions, couleurs, paramètres
 
 ### v1.11.0 (Janvier 2026) - Data Analysis Module
 - ✅ **NOUVEAU: Module `data_analysis/`** - Analyse des résultats de batch
@@ -463,8 +513,11 @@ ou
 - [x] ~~Export des résultats en JSON~~ ✅ v1.5.0
 - [x] ~~Taille de grille variable (tiling)~~ ✅ v1.8.0
 - [x] ~~Support de transformations composées (translation + rotation simultanées)~~ ✅ v1.9.0
+- [x] ~~Module d'analyse de données pour publications~~ ✅ v1.11.0
+- [x] ~~Dataset élargi (~10 tâches par transformation)~~ ✅ v1.12.0
 - [ ] Auto-détection du mode (single vs multi-transform)
 - [ ] Détection de structures hiérarchiques (grilles dans grilles)
+- [ ] Support de transformations conditionnelles (si couleur X alors...)
 
 ---
 
