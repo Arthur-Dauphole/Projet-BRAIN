@@ -315,10 +315,11 @@ class LLMClient:
         """
         Extract the action JSON block from the LLM response.
         
-        Looks for JSON blocks in the format:
-        ```json
-        {"action": "translate", "params": {"dx": 3, "dy": 0}, "color_filter": 2}
-        ```
+        Uses multiple extraction strategies with increasing leniency:
+        1. Clean JSON in code blocks
+        2. JSON in generic code blocks
+        3. Standalone JSON objects
+        4. Fuzzy JSON extraction (handles common LLM mistakes)
         
         Args:
             text: Raw response text
@@ -326,48 +327,181 @@ class LLMClient:
         Returns:
             Parsed action dictionary or None
         """
-        # Pattern 1: JSON in code block with json marker
+        # Strategy 1: JSON in code block with json marker (cleanest)
+        result = self._try_json_code_block(text)
+        if result:
+            return result
+        
+        # Strategy 2: JSON in generic code block
+        result = self._try_generic_code_block(text)
+        if result:
+            return result
+        
+        # Strategy 3: Standalone JSON object
+        result = self._try_standalone_json(text)
+        if result:
+            return result
+        
+        # Strategy 4: Fuzzy extraction (more lenient)
+        result = self._try_fuzzy_json_extraction(text)
+        if result:
+            return result
+        
+        return None
+    
+    def _try_json_code_block(self, text: str) -> Optional[Dict[str, Any]]:
+        """Extract JSON from ```json ... ``` blocks."""
         json_block_pattern = r"```json\s*(\{[^`]+\})\s*```"
         matches = re.findall(json_block_pattern, text, re.DOTALL)
         
-        if matches:
-            # Take the last JSON block (most likely the final answer)
-            for json_str in reversed(matches):
-                try:
-                    action_data = json.loads(json_str.strip())
-                    if self._validate_action_data(action_data):
-                        return self._normalize_action_data(action_data)
-                except json.JSONDecodeError:
-                    continue
-        
-        # Pattern 2: JSON in generic code block
+        for json_str in reversed(matches):
+            try:
+                action_data = json.loads(json_str.strip())
+                if self._validate_action_data(action_data):
+                    return self._normalize_action_data(action_data)
+            except json.JSONDecodeError:
+                continue
+        return None
+    
+    def _try_generic_code_block(self, text: str) -> Optional[Dict[str, Any]]:
+        """Extract JSON from ``` ... ``` blocks."""
         generic_block_pattern = r"```\s*(\{[^`]+\})\s*```"
         matches = re.findall(generic_block_pattern, text, re.DOTALL)
         
-        if matches:
-            for json_str in reversed(matches):
-                try:
-                    action_data = json.loads(json_str.strip())
-                    if self._validate_action_data(action_data):
-                        return self._normalize_action_data(action_data)
-                except json.JSONDecodeError:
-                    continue
-        
-        # Pattern 3: Standalone JSON object (no code block)
-        # Look for {"action": ...} pattern
+        for json_str in reversed(matches):
+            try:
+                action_data = json.loads(json_str.strip())
+                if self._validate_action_data(action_data):
+                    return self._normalize_action_data(action_data)
+            except json.JSONDecodeError:
+                continue
+        return None
+    
+    def _try_standalone_json(self, text: str) -> Optional[Dict[str, Any]]:
+        """Extract standalone JSON objects from text."""
+        # Pattern for {"action": ...} with params
         standalone_pattern = r'(\{"action"\s*:\s*"[^"]+"\s*,\s*"params"\s*:\s*\{[^}]+\}[^}]*\})'
         matches = re.findall(standalone_pattern, text)
         
-        if matches:
-            for json_str in reversed(matches):
-                try:
-                    action_data = json.loads(json_str)
-                    if self._validate_action_data(action_data):
-                        return self._normalize_action_data(action_data)
-                except json.JSONDecodeError:
-                    continue
+        for json_str in reversed(matches):
+            try:
+                action_data = json.loads(json_str)
+                if self._validate_action_data(action_data):
+                    return self._normalize_action_data(action_data)
+            except json.JSONDecodeError:
+                continue
+        
+        # Simpler pattern for {"action": ...} without params
+        simple_pattern = r'(\{"action"\s*:\s*"[^"]+"\s*[^}]*\})'
+        matches = re.findall(simple_pattern, text)
+        
+        for json_str in reversed(matches):
+            try:
+                action_data = json.loads(json_str)
+                if self._validate_action_data(action_data):
+                    return self._normalize_action_data(action_data)
+            except json.JSONDecodeError:
+                continue
         
         return None
+    
+    def _try_fuzzy_json_extraction(self, text: str) -> Optional[Dict[str, Any]]:
+        """
+        Fuzzy JSON extraction - handles common LLM mistakes.
+        
+        Common issues handled:
+        - Trailing commas
+        - Single quotes instead of double quotes
+        - Unquoted keys
+        - Extra whitespace/newlines
+        - Comments in JSON
+        """
+        # Find anything that looks like a JSON object with "action" key
+        potential_json_pattern = r'\{[^{}]*"action"[^{}]*(?:\{[^{}]*\}[^{}]*)?\}'
+        matches = re.findall(potential_json_pattern, text, re.DOTALL)
+        
+        for json_str in reversed(matches):
+            # Try direct parse first
+            try:
+                action_data = json.loads(json_str)
+                if self._validate_action_data(action_data):
+                    return self._normalize_action_data(action_data)
+            except json.JSONDecodeError:
+                pass
+            
+            # Try with fixes
+            fixed_json = self._fix_json_string(json_str)
+            try:
+                action_data = json.loads(fixed_json)
+                if self._validate_action_data(action_data):
+                    return self._normalize_action_data(action_data)
+            except json.JSONDecodeError:
+                continue
+        
+        # Last resort: try to find action keywords and reconstruct
+        action_match = re.search(r'"action"\s*:\s*"(\w+)"', text)
+        if action_match:
+            action_type = action_match.group(1)
+            
+            # Try to find params
+            params = {}
+            
+            # Look for common params
+            dx_match = re.search(r'"dx"\s*:\s*(-?\d+)', text)
+            dy_match = re.search(r'"dy"\s*:\s*(-?\d+)', text)
+            angle_match = re.search(r'"angle"\s*:\s*(-?\d+)', text)
+            axis_match = re.search(r'"axis"\s*:\s*"(\w+)"', text)
+            color_match = re.search(r'"color(?:_filter)?"\s*:\s*(\d+)', text)
+            
+            if dx_match:
+                params["dx"] = int(dx_match.group(1))
+            if dy_match:
+                params["dy"] = int(dy_match.group(1))
+            if angle_match:
+                params["angle"] = int(angle_match.group(1))
+            if axis_match:
+                params["axis"] = axis_match.group(1)
+            
+            result = {"action": action_type, "params": params}
+            
+            if color_match:
+                result["color_filter"] = int(color_match.group(1))
+            
+            return self._normalize_action_data(result)
+        
+        return None
+    
+    def _fix_json_string(self, json_str: str) -> str:
+        """
+        Fix common JSON formatting issues from LLM output.
+        
+        Args:
+            json_str: Potentially malformed JSON string
+            
+        Returns:
+            Fixed JSON string (may still be invalid)
+        """
+        fixed = json_str
+        
+        # Remove comments (// and /* */)
+        fixed = re.sub(r'//[^\n]*', '', fixed)
+        fixed = re.sub(r'/\*.*?\*/', '', fixed, flags=re.DOTALL)
+        
+        # Replace single quotes with double quotes (but not in strings)
+        # This is a simplified fix that works for most cases
+        fixed = re.sub(r"'(\w+)'(\s*:)", r'"\1"\2', fixed)  # Fix keys
+        fixed = re.sub(r":\s*'([^']*)'", r': "\1"', fixed)  # Fix string values
+        
+        # Remove trailing commas before } or ]
+        fixed = re.sub(r',(\s*[}\]])', r'\1', fixed)
+        
+        # Fix unquoted keys (common LLM mistake)
+        fixed = re.sub(r'(\{|\,)\s*(\w+)\s*:', r'\1 "\2":', fixed)
+        
+        # Normalize whitespace
+        fixed = ' '.join(fixed.split())
+        
+        return fixed
     
     def _validate_action_data(self, data: dict) -> bool:
         """

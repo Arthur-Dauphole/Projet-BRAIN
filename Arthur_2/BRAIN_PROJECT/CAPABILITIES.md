@@ -1,7 +1,7 @@
 # BRAIN Project - Capacités du Système
 
 > **Dernière mise à jour :** Janvier 2026  
-> **Version :** 1.12.0
+> **Version :** 2.0.0 (Roadmap TIER 1-3 Implementation)
 
 ---
 
@@ -738,3 +738,286 @@ gen.generate_csv_summary("summary.csv")
 | `timing_action_execution` | Temps d'exécution (s) |
 | `complexity_num_colors` | Nombre de couleurs |
 | `complexity_num_objects` | Nombre d'objets |
+
+---
+
+## 🚀 ROADMAP TIER 1-3 (v2.0.0)
+
+Cette section documente les améliorations implémentées selon la roadmap en 3 niveaux.
+
+### TIER 1 : Robustesse & Engineering
+
+#### 1.1 Structured Logging (`modules/logger.py`)
+
+Système de logging structuré pour le suivi du pipeline.
+
+```python
+from modules import BRAINLogger, LogLevel
+
+logger = BRAINLogger(verbose=True, log_file="brain.log")
+
+# Log a step
+logger.step(LogLevel.DETECTION, "Found 3 objects", count=3)
+
+# Timed step (automatic duration tracking)
+with logger.timed_step(LogLevel.LLM, "Querying model"):
+    response = llm.query(prompt)
+
+# Get metrics
+logger.print_metrics_summary()
+```
+
+| Feature | Description |
+|---------|-------------|
+| `LogLevel` | Composants: PIPELINE, PERCEPTION, DETECTION, PROMPTING, LLM, EXECUTION, ANALYSIS |
+| Timing automatique | Contexte `timed_step` mesure la durée |
+| Performance Metrics | Collecte LLM calls, temps par composant |
+| Multi-output | Console (couleurs), fichier, JSON |
+
+#### 1.2 Defensive Error Handling (`modules/executor.py`)
+
+Gestion d'erreurs robuste dans l'exécuteur.
+
+| Helper | Description |
+|--------|-------------|
+| `_safe_int()` | Conversion int sécurisée (gère strings, floats, mots) |
+| `_safe_float()` | Conversion float sécurisée |
+| `_safe_color()` | Conversion couleur (noms → nombres) |
+| `_validate_grid()` | Validation de grille (NaN, dtype, empty) |
+| `_get_params()` | Extraction sécurisée des params |
+
+```python
+# Avant (fragile)
+dx = int(params.get("dx", 0))  # Crash si dx="three"
+
+# Après (robuste)
+dx = self._safe_int(params.get("dx", 0), default=0, name="dx")
+# ⚠ Warning: Invalid dx='three', using default=0
+```
+
+#### 1.3 Resilient JSON Parsing (`modules/llm_client.py`)
+
+Parsing JSON multi-stratégie pour gérer les erreurs LLM.
+
+| Stratégie | Description |
+|-----------|-------------|
+| 1. Code block | `\`\`\`json {...} \`\`\`` |
+| 2. Generic block | `\`\`\` {...} \`\`\`` |
+| 3. Standalone | `{"action": ...}` dans le texte |
+| 4. Fuzzy extraction | Reconstruction à partir de fragments |
+
+**Fuzzy extraction gère :**
+- Trailing commas
+- Single quotes → double quotes
+- Unquoted keys
+- Comments in JSON
+
+---
+
+### TIER 2 : DSL Étendu (Nouvelles Actions)
+
+Trois nouvelles primitives géométriques.
+
+#### 2.1 Symmetry (`symmetry`)
+
+Création de copies symétriques d'objets.
+
+```json
+{
+  "action": "symmetry",
+  "params": {
+    "axis": "vertical",
+    "position": "adjacent",
+    "keep_original": true
+  },
+  "color_filter": 2
+}
+```
+
+| Paramètre | Options | Description |
+|-----------|---------|-------------|
+| `axis` | horizontal, vertical, both, diagonal | Axe de symétrie |
+| `position` | adjacent, opposite, {offset_x, offset_y} | Placement de la copie |
+| `keep_original` | true/false | Conserver l'original |
+
+#### 2.2 Flood Fill (`flood_fill`)
+
+Remplissage de régions connectées (paint bucket).
+
+```json
+{
+  "action": "flood_fill",
+  "params": {
+    "seed_point": {"row": 5, "col": 5},
+    "fill_color": 3,
+    "connectivity": 4
+  }
+}
+```
+
+| Paramètre | Options | Description |
+|-----------|---------|-------------|
+| `seed_point` | dict, "enclosed_regions", "background" | Point de départ |
+| `fill_color` | 0-9 | Couleur de remplissage |
+| `connectivity` | 4, 8 | Connectivité (4 ou 8 voisins) |
+| `boundary_colors` | [int] | Couleurs formant barrière |
+
+#### 2.3 Conditional Color (`conditional_color`)
+
+Changements de couleur basés sur des conditions spatiales.
+
+```json
+{
+  "action": "conditional_color",
+  "params": {
+    "rules": [
+      {"condition": "is_edge", "from_color": 2, "to_color": 1},
+      {"condition": "has_neighbor_color_0", "to_color": 3}
+    ]
+  }
+}
+```
+
+| Condition | Description |
+|-----------|-------------|
+| `has_neighbor_color_X` | A un voisin de couleur X |
+| `no_neighbor_color_X` | N'a pas de voisin de couleur X |
+| `is_corner` | Pixel au coin de la grille |
+| `is_edge` | Pixel sur le bord de la grille |
+| `neighbor_count_ge_N` | ≥ N voisins non-fond |
+| `neighbor_count_le_N` | ≤ N voisins non-fond |
+| `is_isolated` | Aucun voisin non-fond |
+
+---
+
+### TIER 3 : Features Neuro-Symboliques Avancées
+
+#### 3.1 Rule Memory / RAG (`modules/rule_memory.py`)
+
+Système de mémoire pour l'apprentissage few-shot.
+
+```python
+from modules import RuleMemory
+
+memory = RuleMemory("rule_memory.json")
+
+# Stocker une règle réussie
+memory.store_rule(
+    task=task,
+    action_data={"action": "translate", "params": {"dx": 2}},
+    success=True,
+    accuracy=1.0
+)
+
+# Trouver des règles similaires
+similar = memory.find_similar_rules(new_task, top_k=3)
+
+# Formater pour prompt few-shot
+few_shot_text = memory.format_for_prompt(similar)
+```
+
+| Feature | Description |
+|---------|-------------|
+| `TaskSignature` | Extraction de features (shape, colors, transforms) |
+| Similarity search | Matching par features (sans embeddings) |
+| Persistence | Sauvegarde JSON automatique |
+| Few-shot formatting | Génère texte pour prompt LLM |
+
+**Task Signature Features:**
+- Grid shapes (input/output)
+- Colors (input, output, added, removed)
+- Object counts and types
+- Detected transformations
+
+#### 3.2 Self-Correction Loop
+
+Boucle d'auto-correction avec feedback d'erreur.
+
+```bash
+python main.py --task data/task.json --self-correct --max-retries 2
+```
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────────┐
+│           SELF-CORRECTION LOOP              │
+├─────────────────────────────────────────────┤
+│                                             │
+│  1. Initial Attempt                         │
+│     ├── Query LLM (with RAG examples)       │
+│     ├── Execute action                      │
+│     └── Analyze result                      │
+│                                             │
+│  2. If incorrect:                           │
+│     ├── Extract error feedback              │
+│     ├── Create correction prompt            │
+│     │   - Accuracy achieved                 │
+│     │   - Pixel errors                      │
+│     │   - Color confusions                  │
+│     └── Re-query LLM                        │
+│                                             │
+│  3. Repeat (max_retries times)              │
+│                                             │
+│  4. Store result in Rule Memory             │
+│                                             │
+└─────────────────────────────────────────────┘
+```
+
+**Correction Prompt includes:**
+- Previous action that failed
+- Accuracy achieved
+- Error count and pattern
+- Color confusion matrix
+- Suggestions for correction
+
+#### 3.3 Nouvelles Options CLI
+
+| Option | Description |
+|--------|-------------|
+| `--self-correct` | Activer la boucle d'auto-correction |
+| `--max-retries N` | Nombre max de tentatives (défaut: 2) |
+| `--no-memory` | Désactiver Rule Memory (RAG) |
+| `--memory-path FILE` | Chemin du fichier mémoire |
+
+---
+
+## 📊 Résumé des Actions Supportées (v2.0.0)
+
+| Action | TIER | Description |
+|--------|------|-------------|
+| `translate` | - | Translation (dx, dy) |
+| `rotate` | - | Rotation (90°, 180°, 270°) |
+| `reflect` | - | Réflexion (horizontal, vertical, diagonal) |
+| `scale` | - | Mise à l'échelle (facteur) |
+| `color_change` | - | Changement de couleur |
+| `fill` | - | Remplissage simple |
+| `copy` | - | Copie avec offset |
+| `replace_color` | - | Remplacement de couleur |
+| `draw_line` | - | Tracer ligne (Bresenham) |
+| `tile` | - | Pavage/Tiling |
+| `add_border` | - | Ajout de contour |
+| `composite` | - | Transformations combinées |
+| **`symmetry`** | **2** | **Création de symétrie** |
+| **`flood_fill`** | **2** | **Remplissage connecté** |
+| **`conditional_color`** | **2** | **Couleur conditionnelle** |
+
+---
+
+## 🧪 Tests et Validation
+
+Pour tester les nouvelles fonctionnalités:
+
+```bash
+# Test TIER 1 - Logging
+python -c "from modules import BRAINLogger, LogLevel; l=BRAINLogger(); l.step(LogLevel.PIPELINE, 'Test')"
+
+# Test TIER 2 - New actions
+python main.py --task data/mock_task.json
+
+# Test TIER 3 - Self-correction
+python main.py --task data/mock_task.json --self-correct --max-retries 2
+
+# Test TIER 3 - Rule Memory
+python -c "from modules import RuleMemory; m=RuleMemory(); print(m.get_statistics())"
+```
