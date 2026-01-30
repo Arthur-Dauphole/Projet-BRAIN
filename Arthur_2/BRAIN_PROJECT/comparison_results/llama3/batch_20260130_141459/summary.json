@@ -1,0 +1,159 @@
+{
+  "summary": {
+    "total_tasks": 3,
+    "successful_tasks": 3,
+    "correct_tasks": 3,
+    "failed_tasks": 0,
+    "success_rate": "100.0%",
+    "correctness_rate": "100.0%",
+    "overall_accuracy": "100.0%",
+    "accuracy_when_successful": "100.0%"
+  },
+  "timing": {
+    "total_time_seconds": 19.73,
+    "avg_time_per_task_seconds": 6.58,
+    "avg_llm_time_seconds": 6.432,
+    "avg_detection_time_seconds": 0.001,
+    "avg_action_execution_seconds": 0.0
+  },
+  "transformation_stats": {
+    "add_border": 7
+  },
+  "action_stats": {
+    "color_change": 3
+  },
+  "accuracy_by_transformation": {
+    "add_border": {
+      "count": 3,
+      "correct": 3,
+      "accuracy": 1.0,
+      "success_rate": 1.0
+    }
+  },
+  "llm_vs_fallback": {
+    "llm_success_rate": "0.0%",
+    "fallback_usage_rate": "100.0%"
+  },
+  "metadata": {
+    "run_timestamp": "2026-01-30T14:14:59.446073",
+    "run_folder": "batch_20260130_141459",
+    "model_used": "llama3",
+    "pattern_used": "task_*.json",
+    "directory": "data",
+    "program_version": "1.10.0"
+  },
+  "task_results": [
+    {
+      "task_id": "task_add_border",
+      "task_file": "data/task_add_border.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 8.637589931488037,
+      "detected_transformations": [
+        "add_border",
+        "add_border",
+        "add_border"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 3,
+      "num_test_examples": 1,
+      "grid_size": "7x8",
+      "primary_transformation": "add_border",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color_filter": 2,
+        "border_color": 1
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": "direct_add_border",
+      "timing": {
+        "total": 8.638,
+        "llm_response": 8.228,
+        "detection": 0.001,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_add_border_01",
+      "task_file": "data/task_add_border_01.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 5.336275815963745,
+      "detected_transformations": [
+        "add_border",
+        "add_border"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "add_border",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color_filter": 3,
+        "border_color": 1
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": "direct_add_border",
+      "timing": {
+        "total": 5.336,
+        "llm_response": 5.328,
+        "detection": 0.001,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_add_border_02",
+      "task_file": "data/task_add_border_02.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 5.750425815582275,
+      "detected_transformations": [
+        "add_border",
+        "add_border"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "9x9",
+      "primary_transformation": "add_border",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color_filter": 1,
+        "border_color": 4
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": "direct_add_border",
+      "timing": {
+        "total": 5.75,
+        "llm_response": 5.741,
+        "detection": 0.001,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    }
+  ]
+}

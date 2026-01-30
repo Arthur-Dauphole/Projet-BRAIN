@@ -209,6 +209,11 @@ class ModelComparator:
         """
         Evaluate a single model on a single task.
         
+        ALIGNED WITH main.py solve_task() for consistent results:
+        - Detects objects before prompting
+        - Uses direct fallback for composite/add_border transformations
+        - Same fallback logic as main.py
+        
         Args:
             model_name: Name of the model to use
             task: The ARC task to solve
@@ -225,7 +230,14 @@ class ModelComparator:
                 llm = LLMClient(model=model_name)
                 self.llm_clients[model_name] = llm
             
-            # Detect transformations
+            # === STEP 1a: DETECT OBJECTS (same as main.py) ===
+            for pair in task.train_pairs:
+                self.detector.detect(pair.input_grid)
+                self.detector.detect(pair.output_grid)
+            for pair in task.test_pairs:
+                self.detector.detect(pair.input_grid)
+            
+            # === STEP 1b: DETECT TRANSFORMATIONS ===
             detected_transforms = []
             for pair in task.train_pairs:
                 transforms = self.transformation_detector.detect_all(
@@ -233,48 +245,79 @@ class ModelComparator:
                 )
                 detected_transforms.append(transforms)
             
-            # Create prompt
-            prompt = self.prompt_maker.create_reasoning_chain_prompt(task)
-            system_prompt = self.prompt_maker.get_system_prompt()
+            # === CHECK FOR DIRECT FALLBACK (composite, add_border) ===
+            # Same logic as main.py - bypass LLM for these transformations
+            use_direct_fallback = False
+            direct_fallback_action = None
             
-            # Query model
-            try:
-                response = llm.query(prompt, system_prompt)
-                llm_success = True
-            except Exception as llm_error:
-                llm_success = False
-                response = None
-                if self.verbose:
-                    print(f"         LLM error: {llm_error}")
+            for trans_list in detected_transforms:
+                for t in trans_list:
+                    t_type = t.transformation_type if hasattr(t, 'transformation_type') else ''
+                    confidence = t.confidence if hasattr(t, 'confidence') else 0
+                    
+                    if t_type in ("composite", "add_border") and confidence >= 0.95:
+                        use_direct_fallback = True
+                        direct_fallback_action = self._build_fallback_action(detected_transforms, task)
+                        break
+                if use_direct_fallback:
+                    break
+            
+            # === STEP 2-3: PROMPTING + LLM (skip if direct fallback) ===
+            action_data = None
+            fallback_used = False
+            llm_success = False
+            response = None
+            
+            if use_direct_fallback and direct_fallback_action:
+                # Use direct fallback - same as main.py
+                action_data = dict(direct_fallback_action)
+                # Adjust color_filter for test input
+                if task.test_pairs:
+                    test_colors = [c for c in task.test_pairs[0].input_grid.unique_colors if c != 0]
+                    if test_colors:
+                        action_data["color_filter"] = test_colors[0]
+                fallback_used = True
+            else:
+                # Normal LLM path
+                prompt = self.prompt_maker.create_reasoning_chain_prompt(task)
+                system_prompt = self.prompt_maker.get_system_prompt()
+                
+                try:
+                    response = llm.query(prompt, system_prompt)
+                    llm_success = True
+                except Exception as llm_error:
+                    llm_success = False
+                    response = None
+                    if self.verbose:
+                        print(f"         LLM error: {llm_error}")
+                
+                # Check if we got a valid action from LLM
+                if llm_success and response and response.action_data:
+                    action_data = response.action_data
+                    fallback_used = False
+                else:
+                    # Try fallback from detection (same as main.py)
+                    fallback_action = self._build_fallback_action(detected_transforms, task)
+                    if fallback_action:
+                        action_data = fallback_action
+                        fallback_used = True
             
             response_time = (time.time() - start_time) * 1000
             
-            # Check if we got a valid action
-            action_data = None
-            fallback_used = False
+            # No action available
+            if not action_data:
+                error_msg = "No valid action from LLM" if llm_success else "LLM query failed"
+                return ModelResult(
+                    model_name=model_name,
+                    task_id=task.task_id,
+                    accuracy=0.0,
+                    is_correct=False,
+                    response_time_ms=response_time,
+                    fallback_used=False,
+                    error=error_msg
+                )
             
-            if llm_success and response and response.action_data:
-                action_data = response.action_data
-                fallback_used = False
-            else:
-                # Try fallback from detection
-                fallback_action = self._build_fallback_action(detected_transforms, task)
-                if fallback_action:
-                    action_data = fallback_action
-                    fallback_used = True
-                else:
-                    error_msg = "No valid action from LLM" if llm_success else "LLM query failed"
-                    return ModelResult(
-                        model_name=model_name,
-                        task_id=task.task_id,
-                        accuracy=0.0,
-                        is_correct=False,
-                        response_time_ms=response_time,
-                        fallback_used=False,
-                        error=error_msg
-                    )
-            
-            # Execute on test
+            # === STEP 4: EXECUTE ===
             if not task.test_pairs:
                 return ModelResult(
                     model_name=model_name,
@@ -336,24 +379,140 @@ class ModelComparator:
         detected_transforms: List[List[Any]],
         task: ARCTask
     ) -> Optional[Dict[str, Any]]:
-        """Build fallback action from detected transformations."""
+        """
+        Build fallback action from detected transformations.
+        
+        ALIGNED WITH main.py _build_fallback_action() for consistent results.
+        Supports all transformation types.
+        """
         if not detected_transforms:
             return None
         
+        # Get main color from test input (for color_filter)
+        color_filter = None
+        if task.test_pairs:
+            test_colors = [c for c in task.test_pairs[0].input_grid.unique_colors if c != 0]
+            if test_colors:
+                color_filter = test_colors[0]
+        
         for trans_list in detected_transforms:
             if trans_list:
-                t = trans_list[0]
-                t_type = getattr(t, 'transformation_type', None) or t.get('transformation_type')
-                params = dict(getattr(t, 'parameters', {}) or t.get('parameters', {}))
-                
-                if t_type == "translation":
-                    return {"action": "translate", "params": params}
-                elif t_type == "rotation":
-                    return {"action": "rotate", "params": params}
-                elif t_type == "reflection":
-                    return {"action": "reflect", "params": params}
-                elif t_type == "color_change":
-                    return {"action": "color_change", "params": params}
+                for t in trans_list:
+                    t_type = getattr(t, 'transformation_type', None)
+                    if t_type is None and isinstance(t, dict):
+                        t_type = t.get('transformation_type')
+                    
+                    params = {}
+                    if hasattr(t, 'parameters'):
+                        params = dict(t.parameters) if t.parameters else {}
+                    elif isinstance(t, dict):
+                        params = dict(t.get('parameters', {}))
+                    
+                    if not t_type:
+                        continue
+                    
+                    # Build action based on transformation type
+                    if t_type == "translation":
+                        return {
+                            "action": "translate",
+                            "params": {
+                                "dx": params.get("dx", 0),
+                                "dy": params.get("dy", 0)
+                            }
+                        }
+                    
+                    elif t_type == "rotation":
+                        angle = params.get("angle", 90)
+                        is_grid_level = params.get("grid_level", False)
+                        
+                        if is_grid_level:
+                            return {
+                                "action": "rotate",
+                                "params": {"angle": angle, "grid_level": True}
+                            }
+                        else:
+                            action = {"action": "rotate", "params": {"angle": angle}}
+                            if color_filter:
+                                action["color_filter"] = color_filter
+                            return action
+                    
+                    elif t_type == "reflection":
+                        axis = params.get("axis", "horizontal")
+                        is_grid_level = params.get("grid_level", False)
+                        
+                        if is_grid_level or color_filter is None:
+                            return {
+                                "action": "reflect",
+                                "params": {"axis": axis, "grid_level": True}
+                            }
+                        else:
+                            return {
+                                "action": "reflect",
+                                "params": {"axis": axis},
+                                "color_filter": color_filter
+                            }
+                    
+                    elif t_type == "color_change":
+                        return {
+                            "action": "color_change",
+                            "params": {
+                                "from_color": params.get("from_color", 1),
+                                "to_color": params.get("to_color", 2)
+                            }
+                        }
+                    
+                    elif t_type == "draw_line":
+                        # Auto-detect color from test input
+                        draw_color = None
+                        if task.test_pairs:
+                            test_data = task.test_pairs[0].input_grid.data
+                            for c in range(1, 10):
+                                count = int(np.sum(test_data == c))
+                                if count == 2:
+                                    draw_color = c
+                                    break
+                        
+                        if draw_color is None:
+                            draw_color = params.get("color") or color_filter or 1
+                        
+                        return {
+                            "action": "draw_line",
+                            "color_filter": draw_color
+                        }
+                    
+                    elif t_type == "tiling":
+                        return {
+                            "action": "tile",
+                            "params": {
+                                "repetitions_horizontal": params.get("repetitions_horizontal", 2),
+                                "repetitions_vertical": params.get("repetitions_vertical", 2)
+                            }
+                        }
+                    
+                    elif t_type == "scaling":
+                        return {
+                            "action": "scale",
+                            "params": {"factor": params.get("factor", 2)}
+                        }
+                    
+                    elif t_type == "add_border":
+                        return {
+                            "action": "add_border",
+                            "params": {
+                                "border_color": params.get("border_color", 1),
+                                "interior_color": params.get("interior_color")
+                            },
+                            "color_filter": color_filter
+                        }
+                    
+                    elif t_type == "composite":
+                        # Build composite action from sub-transformations
+                        sub_transforms = params.get("transformations", [])
+                        return {
+                            "action": "composite",
+                            "params": {"transformations": sub_transforms},
+                            "color_filter": color_filter
+                        }
         
         return None
     

@@ -1,14 +1,14 @@
 # Model Comparison Report
 
-**Date:** 2026-01-30T13:31:38.544589
-**Tasks evaluated:** 10
+**Date:** 2026-01-30T14:17:32.135510
+**Tasks evaluated:** 3
 **Models compared:** llama3, mistral
 
 ## Summary
 
 | Model | Accuracy | Correct | Avg Time | Fallback Rate |
 |-------|----------|---------|----------|---------------|
-| llama3 🏆 | 94.0% | 2/10 | 5608ms | 0.0% |
-| mistral | 91.4% | 2/10 | 8125ms | 0.0% |
+| llama3 🏆 | 100.0% | 3/3 | 6380ms | 100.0% |
+| mistral | 100.0% | 3/3 | 7781ms | 100.0% |
 
 **Best model:** llama3

@@ -1,0 +1,122 @@
+{
+  "summary": {
+    "total_tasks": 2,
+    "successful_tasks": 2,
+    "correct_tasks": 2,
+    "failed_tasks": 0,
+    "success_rate": "100.0%",
+    "correctness_rate": "100.0%",
+    "overall_accuracy": "100.0%",
+    "accuracy_when_successful": "100.0%"
+  },
+  "timing": {
+    "total_time_seconds": 6.84,
+    "avg_time_per_task_seconds": 3.42,
+    "avg_llm_time_seconds": 3.219,
+    "avg_detection_time_seconds": 0.0,
+    "avg_action_execution_seconds": 0.0
+  },
+  "transformation_stats": {
+    "add_border": 5
+  },
+  "action_stats": {
+    "color_change": 2
+  },
+  "accuracy_by_transformation": {
+    "add_border": {
+      "count": 2,
+      "correct": 2,
+      "accuracy": 1.0,
+      "success_rate": 1.0
+    }
+  },
+  "llm_vs_fallback": {
+    "llm_success_rate": "0.0%",
+    "fallback_usage_rate": "100.0%"
+  },
+  "metadata": {
+    "run_timestamp": "2026-01-30T14:13:51.888995",
+    "run_folder": "batch_20260130_141351",
+    "model_used": "llama3",
+    "pattern_used": "task_*.json",
+    "directory": "data",
+    "program_version": "1.10.0"
+  },
+  "task_results": [
+    {
+      "task_id": "task_add_border",
+      "task_file": "data/task_add_border.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 1.6883678436279297,
+      "detected_transformations": [
+        "add_border",
+        "add_border",
+        "add_border"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 3,
+      "num_test_examples": 1,
+      "grid_size": "7x8",
+      "primary_transformation": "add_border",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color_filter": 2,
+        "border_color": 1
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": "direct_add_border",
+      "timing": {
+        "total": 1.688,
+        "llm_response": 1.304,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_add_border_01",
+      "task_file": "data/task_add_border_01.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 5.140491008758545,
+      "detected_transformations": [
+        "add_border",
+        "add_border"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "add_border",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color_filter": 3,
+        "border_color": 1
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": "direct_add_border",
+      "timing": {
+        "total": 5.14,
+        "llm_response": 5.135,
+        "detection": 0.0,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    }
+  ]
+}

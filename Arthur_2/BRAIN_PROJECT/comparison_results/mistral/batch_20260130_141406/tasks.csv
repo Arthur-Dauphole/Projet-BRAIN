@@ -1,0 +1,3 @@
+task_id,success,is_correct,accuracy,execution_time,transformations,action_used,grid_size,train_examples,test_examples,primary_transformation,transformation_confidence,was_fallback_used,llm_proposed_action,fallback_reason,llm_time,detection_time,action_time,num_colors,num_objects,mode,error
+task_add_border,True,True,1.0000,15.02,add_border|add_border|add_border,color_change,7x8,3,1,add_border,1.0000,True,color_change,direct_add_border,15.010,0.000,0.001,1,0,single,
+task_add_border_01,True,True,1.0000,6.49,add_border|add_border,color_change,8x8,2,1,add_border,1.0000,True,color_change,direct_add_border,6.485,0.000,0.000,1,0,single,

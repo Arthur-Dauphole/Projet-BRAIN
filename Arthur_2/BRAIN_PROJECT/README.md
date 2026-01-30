@@ -4,6 +4,9 @@
 
 Un solveur neuro-symbolique pour les puzzles [ARC-AGI](https://arcprize.org/) (Abstraction and Reasoning Corpus).
 
+> **Version:** 2.3.0  
+> **Dernière mise à jour:** Janvier 2026
+
 ---
 
 ## 📋 Table des matières
@@ -12,6 +15,8 @@ Un solveur neuro-symbolique pour les puzzles [ARC-AGI](https://arcprize.org/) (A
 - [Prérequis](#prérequis)
 - [Installation](#installation)
 - [Utilisation](#utilisation)
+- [Évaluation batch](#évaluation-batch)
+- [Comparaison de modèles](#comparaison-de-modèles)
 - [Structure du projet](#structure-du-projet)
 - [Format des données](#format-des-données)
 - [Exemples](#exemples)
@@ -21,10 +26,12 @@ Un solveur neuro-symbolique pour les puzzles [ARC-AGI](https://arcprize.org/) (A
 ## Description
 
 BRAIN combine :
-- **Perception symbolique** : Détection automatique de formes géométriques (carrés, rectangles, lignes, formes en L/T/+, etc.)
-- **Détection de transformations** : Identification automatique des règles (translation, rotation, réflexion, changement de couleur)
+- **Perception symbolique** : Détection automatique de formes géométriques (carrés, rectangles, lignes, formes en L/T/+, blobs)
+- **Détection de transformations** : Identification automatique des règles (translation, rotation, réflexion, changement de couleur, tiling, etc.)
 - **Raisonnement LLM** : Utilisation d'un modèle de langage local (Ollama) pour inférer les règles
 - **Exécution symbolique** : Application des transformations sur les grilles
+- **Évaluation batch** : Exécution et analyse de multiples tâches
+- **Comparaison de modèles** : Benchmark de différents LLMs sur les mêmes tâches
 
 ### Pipeline
 
@@ -120,9 +127,12 @@ python main.py --task data/mock_task.json
 | Option | Description | Défaut |
 |--------|-------------|--------|
 | `--task FICHIER` | Chemin vers le fichier JSON de la tâche | - |
+| `--batch DIR` | Lancer un batch sur toutes les tâches d'un répertoire | - |
 | `--model MODELE` | Nom du modèle Ollama | `llama3` |
+| `--limit N` | Limiter le nombre de tâches (batch) | Toutes |
 | `--no-viz` | Désactiver la visualisation graphique | `False` |
 | `--quiet` | Mode silencieux (moins de logs) | `False` |
+| `--self-correct` | Activer la boucle d'auto-correction | `False` |
 | `--demo` | Exécuter une démo avec données d'exemple | - |
 
 ### Exemples de commandes
@@ -135,17 +145,76 @@ python main.py --task data/mock_task.json
 python main.py --task data/mock_task.json --no-viz
 
 # Avec un autre modèle
-python main.py --task data/mock_task.json --model llama3.2
+python main.py --task data/mock_task.json --model mistral
 
 # Mode silencieux
 python main.py --task data/mock_task.json --quiet --no-viz
+
+# Avec auto-correction (retry si erreur)
+python main.py --task data/mock_task.json --self-correct
 ```
 
-### Utilisation avec l'environnement virtuel (sans l'activer)
+---
+
+## Évaluation batch
+
+Exécutez plusieurs tâches et collectez des statistiques :
 
 ```bash
-./venv/bin/python main.py --task data/mock_task.json --no-viz
+# Toutes les tâches du dossier data/
+python main.py --batch data/
+
+# Limité à 10 tâches
+python main.py --batch data/ --limit 10
+
+# Avec un modèle spécifique
+python main.py --batch data/ --model mistral
+
+# Résultats dans un dossier personnalisé
+python main.py --batch data/ --output results_mistral/
 ```
+
+**Résultats générés :**
+- `summary.json` - Statistiques agrégées
+- `tasks.csv` - Résultats par tâche
+- `images/` - Visualisations de chaque tâche
+
+---
+
+## Comparaison de modèles
+
+Comparez les performances de plusieurs LLMs :
+
+```bash
+# Lister les modèles recommandés
+python compare_models.py --list-models
+
+# Comparer llama3 et mistral sur 10 tâches
+python compare_models.py --models llama3 mistral --limit 10
+
+# Avec génération de graphiques
+python compare_models.py --models llama3 mistral --visualize
+
+# Générer les graphiques depuis des résultats existants
+python compare_models.py --viz-only comparison_results/
+```
+
+**Important :** `compare_models.py` utilise exactement le même pipeline que `main.py --batch`, garantissant des résultats 100% cohérents.
+
+### Modèles recommandés
+
+| Modèle | Description | Taille | Installation |
+|--------|-------------|--------|--------------|
+| `llama3` | Meta Llama 3 8B - Bon généraliste | 4.7 GB | `ollama pull llama3` |
+| `mistral` | Mistral 7B - Excellent raisonnement | 4.1 GB | `ollama pull mistral` |
+| `phi3` | Microsoft Phi-3 - Petit mais capable | 2.2 GB | `ollama pull phi3` |
+
+### Visualisations générées
+
+- `accuracy_comparison.png` - Barplot accuracy par modèle
+- `time_comparison.png` - Temps de réponse moyen
+- `accuracy_vs_time.png` - Trade-off accuracy/temps
+- `summary_dashboard.png` - Dashboard complet
 
 ---
 
@@ -154,24 +223,43 @@ python main.py --task data/mock_task.json --quiet --no-viz
 ```
 BRAIN_PROJECT/
 │
-├── data/                       # Données d'entrée (puzzles ARC)
-│   └── mock_task.json          # Exemple de tâche
+├── data/                           # Données d'entrée (52 puzzles ARC)
+│   ├── task_translation_*.json     # Tâches de translation
+│   ├── task_rotation_*.json        # Tâches de rotation
+│   ├── task_reflection_*.json      # Tâches de réflexion
+│   ├── task_color_change_*.json    # Tâches de changement de couleur
+│   └── ...                         # Autres types de transformations
 │
-├── modules/                    # Modules du pipeline
-│   ├── __init__.py             # Exports
-│   ├── types.py                # Classes de données (Grid, ARCTask)
-│   ├── detector.py             # Détection de formes
+├── modules/                        # Modules du pipeline
+│   ├── __init__.py                 # Exports
+│   ├── types.py                    # Classes de données (Grid, ARCTask)
+│   ├── detector.py                 # Détection de formes
 │   ├── transformation_detector.py  # Détection de transformations
-│   ├── prompt_maker.py         # Génération de prompts
-│   ├── llm_client.py           # Communication avec Ollama
-│   ├── executor.py             # Exécution des actions
-│   ├── analyzer.py             # Analyse des résultats
-│   └── visualizer.py           # Visualisation matplotlib
+│   ├── prompt_maker.py             # Génération de prompts
+│   ├── llm_client.py               # Communication avec Ollama
+│   ├── executor.py                 # Exécution des actions
+│   ├── analyzer.py                 # Analyse des résultats
+│   ├── visualizer.py               # Visualisation matplotlib
+│   ├── batch_runner.py             # Évaluation batch
+│   ├── model_comparator.py         # Comparaison de modèles + visualisations
+│   ├── logger.py                   # Logging structuré (TIER 1)
+│   └── rule_memory.py              # Mémoire de règles RAG (TIER 3)
 │
-├── main.py                     # Point d'entrée principal
-├── requirements.txt            # Dépendances Python
-├── CAPABILITIES.md             # Documentation des capacités
-└── README.md                   # Ce fichier
+├── data_analysis/                  # Outils d'analyse de données
+│   ├── data_loader.py              # Chargement des résultats
+│   ├── metrics.py                  # Calcul de métriques
+│   ├── visualizer.py               # Graphiques IEEE
+│   └── report_generator.py         # Génération de rapports
+│
+├── notebooks/                      # Jupyter notebooks
+│   └── analysis_example.ipynb      # Exemple d'analyse
+│
+├── main.py                         # Point d'entrée principal
+├── compare_models.py               # Outil de comparaison de modèles
+├── analyze.py                      # CLI pour analyse de données
+├── requirements.txt                # Dépendances Python
+├── CAPABILITIES.md                 # Documentation détaillée
+└── README.md                       # Ce fichier
 ```
 
 ---

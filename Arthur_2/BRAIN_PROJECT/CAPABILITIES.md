@@ -1,7 +1,7 @@
 # BRAIN Project - Capacités du Système
 
 > **Dernière mise à jour :** Janvier 2026  
-> **Version :** 2.2.0 (Model Comparison Visualizations)
+> **Version :** 2.3.0 (Unified Model Comparison)
 
 ---
 
@@ -1024,9 +1024,23 @@ python -c "from modules import RuleMemory; m=RuleMemory(); print(m.get_statistic
 
 ---
 
-## 🔄 Module MODEL COMPARATOR (v2.1.0)
+## 🔄 Module MODEL COMPARATOR (v2.3.0)
 
 Outil pour comparer les performances de différents modèles LLM.
+
+### Architecture unifiée (v2.3.0)
+
+**Important :** `compare_models.py` utilise maintenant `main.py --batch` (via `BatchRunner`) pour chaque modèle, garantissant des résultats **100% cohérents** avec le pipeline principal.
+
+```
+compare_models.py
+     │
+     ├── Model 1: BatchRunner(model="llama3")  → results/llama3/
+     ├── Model 2: BatchRunner(model="mistral") → results/mistral/
+     └── Model N: BatchRunner(model="...")     → results/.../
+                    │
+                    └── Même code que main.py --batch
+```
 
 ### Modèles recommandés
 
@@ -1050,34 +1064,23 @@ python compare_models.py --list-models
 # Comparer 2 modèles sur 5 tâches
 python compare_models.py --models llama3 mistral --limit 5
 
-# Comparaison complète sur toutes les tâches
-python compare_models.py --models llama3 mistral phi3 --output results/comparison/
+# Comparaison complète avec visualisations
+python compare_models.py --models llama3 mistral phi3 --visualize
+
+# Comparaison sur toutes les tâches
+python compare_models.py --models llama3 mistral --output comparison_full/
+
+# Générer uniquement les visualisations (depuis résultats existants)
+python compare_models.py --viz-only comparison_results/
 ```
 
-### Utilisation en Python
+### Ce qui se passe en interne
 
-```python
-from modules import ModelComparator
-
-# Créer le comparateur
-comparator = ModelComparator(
-    models=["llama3", "mistral", "phi3"],
-    verbose=True
-)
-
-# Comparer sur les tâches
-results = comparator.compare_on_tasks(
-    task_dir="data/",
-    limit=10
-)
-
-# Générer le rapport
-comparator.generate_report(results, "comparison_results/")
-
-# Accéder aux résultats
-print(f"Meilleur modèle: {results.best_model}")
-print(f"Accuracy: {results.model_accuracies}")
-```
+Pour chaque modèle, `compare_models.py` :
+1. Crée un `BatchRunner` avec ce modèle
+2. Exécute `runner.run_batch()` (identique à `main.py --batch`)
+3. Sauvegarde les résultats dans `output_dir/model_name/`
+4. Agrège les résultats pour la comparaison
 
 ### Rapports générés
 
