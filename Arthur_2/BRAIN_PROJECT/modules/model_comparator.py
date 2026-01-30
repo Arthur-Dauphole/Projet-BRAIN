@@ -540,6 +540,439 @@ class ModelComparator:
         return output_path
 
 
+class ModelComparisonVisualizer:
+    """
+    Visualize model comparison results.
+    
+    Generates publication-quality figures comparing LLM performance.
+    """
+    
+    def __init__(self, comparison: ModelComparisonResult = None, results_path: str = None):
+        """
+        Initialize visualizer with comparison results.
+        
+        Args:
+            comparison: ModelComparisonResult object
+            results_path: Path to comparison.json file
+        """
+        if comparison:
+            self.comparison = comparison
+        elif results_path:
+            self.comparison = self._load_results(results_path)
+        else:
+            raise ValueError("Provide either comparison or results_path")
+        
+        self._setup_style()
+    
+    def _load_results(self, path: str) -> ModelComparisonResult:
+        """Load results from JSON file."""
+        import json
+        with open(path) as f:
+            data = json.load(f)
+        
+        # Reconstruct ModelComparisonResult
+        detailed = [ModelResult(**r) for r in data.get("detailed_results", [])]
+        
+        return ModelComparisonResult(
+            models=data["models"],
+            tasks_evaluated=data["tasks_evaluated"],
+            timestamp=data["timestamp"],
+            model_accuracies=data.get("model_accuracies", {}),
+            model_correct_counts=data.get("model_correct_counts", {}),
+            model_avg_response_times=data.get("model_avg_response_times", {}),
+            model_fallback_rates=data.get("model_fallback_rates", {}),
+            detailed_results=detailed,
+            best_model=data.get("best_model", ""),
+        )
+    
+    def _setup_style(self):
+        """Setup matplotlib style for publication quality."""
+        import matplotlib.pyplot as plt
+        import shutil
+        
+        latex_available = shutil.which('latex') is not None
+        
+        plt.rcParams.update({
+            "text.usetex": latex_available,
+            "font.family": "serif",
+            "font.serif": ["Computer Modern Roman"] if latex_available else ["DejaVu Serif"],
+            "font.size": 10,
+            "axes.labelsize": 10,
+            "legend.fontsize": 8,
+            "xtick.labelsize": 9,
+            "ytick.labelsize": 9,
+            "figure.figsize": (6, 4),
+            "axes.grid": True,
+            "grid.alpha": 0.3,
+            "lines.linewidth": 1.5,
+            "savefig.bbox": "tight",
+            "savefig.dpi": 300,
+        })
+        
+        # Color palette (colorblind-friendly)
+        self.colors = ['#0077BB', '#EE7733', '#009988', '#CC3311', '#33BBEE', '#EE3377']
+    
+    def plot_accuracy_comparison(self, save_path: str = None, show: bool = True):
+        """
+        Bar plot comparing accuracy across models.
+        
+        Args:
+            save_path: Path to save figure
+            show: Whether to display the figure
+        """
+        import matplotlib.pyplot as plt
+        
+        models = self.comparison.models
+        accuracies = [self.comparison.model_accuracies.get(m, 0) * 100 for m in models]
+        
+        fig, ax = plt.subplots(figsize=(6, 4), layout='constrained')
+        
+        bars = ax.bar(models, accuracies, color=self.colors[:len(models)], edgecolor='black', linewidth=0.5)
+        
+        # Add value labels on bars
+        for bar, acc in zip(bars, accuracies):
+            height = bar.get_height()
+            ax.annotate(f'{acc:.1f}%',
+                       xy=(bar.get_x() + bar.get_width() / 2, height),
+                       xytext=(0, 3),
+                       textcoords="offset points",
+                       ha='center', va='bottom', fontsize=9)
+        
+        # Highlight best model
+        best_idx = models.index(self.comparison.best_model) if self.comparison.best_model in models else 0
+        bars[best_idx].set_edgecolor('gold')
+        bars[best_idx].set_linewidth(2)
+        
+        ax.set_ylabel('Accuracy (%)')
+        ax.set_xlabel('Model')
+        ax.set_title(f'Model Accuracy Comparison (n={self.comparison.tasks_evaluated} tasks)')
+        ax.set_ylim(0, 105)
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"  Saved: {save_path}")
+        
+        if show:
+            plt.show()
+        else:
+            plt.close()
+        
+        return fig
+    
+    def plot_time_comparison(self, save_path: str = None, show: bool = True):
+        """
+        Bar plot comparing response times across models.
+        """
+        import matplotlib.pyplot as plt
+        
+        models = self.comparison.models
+        times = [self.comparison.model_avg_response_times.get(m, 0) / 1000 for m in models]  # Convert to seconds
+        
+        fig, ax = plt.subplots(figsize=(6, 4), layout='constrained')
+        
+        bars = ax.bar(models, times, color=self.colors[:len(models)], edgecolor='black', linewidth=0.5)
+        
+        # Add value labels
+        for bar, t in zip(bars, times):
+            height = bar.get_height()
+            ax.annotate(f'{t:.1f}s',
+                       xy=(bar.get_x() + bar.get_width() / 2, height),
+                       xytext=(0, 3),
+                       textcoords="offset points",
+                       ha='center', va='bottom', fontsize=9)
+        
+        ax.set_ylabel('Average Response Time (s)')
+        ax.set_xlabel('Model')
+        ax.set_title('Model Response Time Comparison')
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"  Saved: {save_path}")
+        
+        if show:
+            plt.show()
+        else:
+            plt.close()
+        
+        return fig
+    
+    def plot_accuracy_vs_time(self, save_path: str = None, show: bool = True):
+        """
+        Scatter plot: accuracy vs response time for each model.
+        """
+        import matplotlib.pyplot as plt
+        
+        fig, ax = plt.subplots(figsize=(6, 4), layout='constrained')
+        
+        for i, model in enumerate(self.comparison.models):
+            acc = self.comparison.model_accuracies.get(model, 0) * 100
+            time_s = self.comparison.model_avg_response_times.get(model, 0) / 1000
+            
+            marker = '*' if model == self.comparison.best_model else 'o'
+            size = 200 if model == self.comparison.best_model else 100
+            
+            ax.scatter(time_s, acc, c=self.colors[i], s=size, marker=marker, 
+                      label=model, edgecolors='black', linewidth=0.5)
+        
+        ax.set_xlabel('Average Response Time (s)')
+        ax.set_ylabel('Accuracy (%)')
+        ax.set_title('Accuracy vs Response Time Trade-off')
+        ax.legend(loc='best', framealpha=0.9)
+        ax.set_ylim(0, 105)
+        
+        # Add quadrant annotations
+        ax.axhline(y=50, color='gray', linestyle='--', alpha=0.3)
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"  Saved: {save_path}")
+        
+        if show:
+            plt.show()
+        else:
+            plt.close()
+        
+        return fig
+    
+    def plot_accuracy_boxplot(self, save_path: str = None, show: bool = True):
+        """
+        Box plot showing accuracy distribution per model.
+        """
+        import matplotlib.pyplot as plt
+        
+        fig, ax = plt.subplots(figsize=(6, 4), layout='constrained')
+        
+        # Group accuracies by model
+        data = []
+        labels = []
+        for model in self.comparison.models:
+            model_results = [r.accuracy * 100 for r in self.comparison.detailed_results 
+                           if r.model_name == model]
+            if model_results:
+                data.append(model_results)
+                labels.append(model)
+        
+        bp = ax.boxplot(data, labels=labels, patch_artist=True)
+        
+        # Color the boxes
+        for i, (box, median) in enumerate(zip(bp['boxes'], bp['medians'])):
+            box.set_facecolor(self.colors[i % len(self.colors)])
+            box.set_alpha(0.7)
+            median.set_color('black')
+            median.set_linewidth(2)
+        
+        ax.set_ylabel('Accuracy (%)')
+        ax.set_xlabel('Model')
+        ax.set_title('Accuracy Distribution by Model')
+        ax.set_ylim(-5, 105)
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"  Saved: {save_path}")
+        
+        if show:
+            plt.show()
+        else:
+            plt.close()
+        
+        return fig
+    
+    def plot_per_task_comparison(self, save_path: str = None, show: bool = True):
+        """
+        Grouped bar chart showing accuracy per task for each model.
+        """
+        import matplotlib.pyplot as plt
+        
+        # Get unique tasks
+        tasks = list(set(r.task_id for r in self.comparison.detailed_results))
+        tasks.sort()
+        
+        # Limit to 15 tasks max for readability
+        if len(tasks) > 15:
+            tasks = tasks[:15]
+        
+        fig, ax = plt.subplots(figsize=(10, 5), layout='constrained')
+        
+        x = np.arange(len(tasks))
+        width = 0.8 / len(self.comparison.models)
+        
+        for i, model in enumerate(self.comparison.models):
+            accuracies = []
+            for task in tasks:
+                result = next((r for r in self.comparison.detailed_results 
+                              if r.task_id == task and r.model_name == model), None)
+                accuracies.append(result.accuracy * 100 if result else 0)
+            
+            offset = (i - len(self.comparison.models) / 2 + 0.5) * width
+            ax.bar(x + offset, accuracies, width, label=model, 
+                  color=self.colors[i % len(self.colors)], edgecolor='black', linewidth=0.3)
+        
+        ax.set_ylabel('Accuracy (%)')
+        ax.set_xlabel('Task')
+        ax.set_title('Per-Task Accuracy Comparison')
+        ax.set_xticks(x)
+        ax.set_xticklabels([t.replace('task_', '') for t in tasks], rotation=45, ha='right')
+        ax.legend(loc='upper right', framealpha=0.9)
+        ax.set_ylim(0, 105)
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"  Saved: {save_path}")
+        
+        if show:
+            plt.show()
+        else:
+            plt.close()
+        
+        return fig
+    
+    def plot_fallback_comparison(self, save_path: str = None, show: bool = True):
+        """
+        Bar chart comparing fallback usage rates.
+        """
+        import matplotlib.pyplot as plt
+        
+        models = self.comparison.models
+        fallback_rates = [self.comparison.model_fallback_rates.get(m, 0) * 100 for m in models]
+        
+        fig, ax = plt.subplots(figsize=(6, 4), layout='constrained')
+        
+        bars = ax.bar(models, fallback_rates, color=self.colors[:len(models)], 
+                     edgecolor='black', linewidth=0.5)
+        
+        # Add value labels
+        for bar, rate in zip(bars, fallback_rates):
+            height = bar.get_height()
+            ax.annotate(f'{rate:.1f}%',
+                       xy=(bar.get_x() + bar.get_width() / 2, height),
+                       xytext=(0, 3),
+                       textcoords="offset points",
+                       ha='center', va='bottom', fontsize=9)
+        
+        ax.set_ylabel('Fallback Usage Rate (%)')
+        ax.set_xlabel('Model')
+        ax.set_title('LLM Fallback Rate (lower is better)')
+        ax.set_ylim(0, max(fallback_rates) * 1.2 + 5 if fallback_rates else 10)
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"  Saved: {save_path}")
+        
+        if show:
+            plt.show()
+        else:
+            plt.close()
+        
+        return fig
+    
+    def plot_summary_dashboard(self, save_path: str = None, show: bool = True):
+        """
+        Create a 2x2 dashboard with all key metrics.
+        """
+        import matplotlib.pyplot as plt
+        
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10), layout='constrained')
+        
+        models = self.comparison.models
+        
+        # 1. Accuracy comparison
+        ax = axes[0, 0]
+        accuracies = [self.comparison.model_accuracies.get(m, 0) * 100 for m in models]
+        bars = ax.bar(models, accuracies, color=self.colors[:len(models)], edgecolor='black')
+        ax.set_ylabel('Accuracy (%)')
+        ax.set_title('Overall Accuracy')
+        ax.set_ylim(0, 105)
+        for bar, acc in zip(bars, accuracies):
+            ax.annotate(f'{acc:.1f}%', xy=(bar.get_x() + bar.get_width()/2, bar.get_height()),
+                       xytext=(0, 3), textcoords="offset points", ha='center', fontsize=8)
+        
+        # 2. Response time
+        ax = axes[0, 1]
+        times = [self.comparison.model_avg_response_times.get(m, 0) / 1000 for m in models]
+        bars = ax.bar(models, times, color=self.colors[:len(models)], edgecolor='black')
+        ax.set_ylabel('Avg Response Time (s)')
+        ax.set_title('Response Time')
+        for bar, t in zip(bars, times):
+            ax.annotate(f'{t:.1f}s', xy=(bar.get_x() + bar.get_width()/2, bar.get_height()),
+                       xytext=(0, 3), textcoords="offset points", ha='center', fontsize=8)
+        
+        # 3. Accuracy vs Time scatter
+        ax = axes[1, 0]
+        for i, model in enumerate(models):
+            acc = self.comparison.model_accuracies.get(model, 0) * 100
+            time_s = self.comparison.model_avg_response_times.get(model, 0) / 1000
+            marker = '*' if model == self.comparison.best_model else 'o'
+            ax.scatter(time_s, acc, c=self.colors[i], s=150, marker=marker, 
+                      label=model, edgecolors='black')
+        ax.set_xlabel('Response Time (s)')
+        ax.set_ylabel('Accuracy (%)')
+        ax.set_title('Accuracy vs Time Trade-off')
+        ax.legend(loc='best', fontsize=7)
+        ax.set_ylim(0, 105)
+        
+        # 4. Correct count
+        ax = axes[1, 1]
+        correct = [self.comparison.model_correct_counts.get(m, 0) for m in models]
+        total = self.comparison.tasks_evaluated
+        bars = ax.bar(models, correct, color=self.colors[:len(models)], edgecolor='black')
+        ax.axhline(y=total, color='red', linestyle='--', label=f'Total tasks ({total})')
+        ax.set_ylabel('Tasks Solved')
+        ax.set_title('Tasks Correctly Solved')
+        ax.legend(loc='best', fontsize=7)
+        for bar, c in zip(bars, correct):
+            ax.annotate(f'{c}/{total}', xy=(bar.get_x() + bar.get_width()/2, bar.get_height()),
+                       xytext=(0, 3), textcoords="offset points", ha='center', fontsize=8)
+        
+        fig.suptitle(f'Model Comparison Dashboard\n{self.comparison.timestamp[:10]}', fontsize=12, fontweight='bold')
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"  Saved: {save_path}")
+        
+        if show:
+            plt.show()
+        else:
+            plt.close()
+        
+        return fig
+    
+    def save_all_plots(self, output_dir: str, formats: List[str] = None):
+        """
+        Generate and save all comparison plots.
+        
+        Args:
+            output_dir: Directory to save figures
+            formats: List of formats (default: ['png', 'pdf'])
+        """
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        formats = formats or ['png', 'pdf']
+        
+        print(f"\n📊 Generating comparison visualizations...")
+        
+        plots = [
+            ('accuracy_comparison', self.plot_accuracy_comparison),
+            ('time_comparison', self.plot_time_comparison),
+            ('accuracy_vs_time', self.plot_accuracy_vs_time),
+            ('accuracy_boxplot', self.plot_accuracy_boxplot),
+            ('per_task_comparison', self.plot_per_task_comparison),
+            ('fallback_comparison', self.plot_fallback_comparison),
+            ('summary_dashboard', self.plot_summary_dashboard),
+        ]
+        
+        for name, plot_func in plots:
+            for fmt in formats:
+                save_path = output_path / f"{name}.{fmt}"
+                try:
+                    plot_func(save_path=str(save_path), show=False)
+                except Exception as e:
+                    print(f"  ⚠ Warning: Could not generate {name}: {e}")
+        
+        print(f"\n✅ All plots saved to: {output_path}")
+        return output_path
+
+
 def compare_models_cli():
     """Command-line interface for model comparison."""
     import argparse
@@ -557,6 +990,8 @@ def compare_models_cli():
                        help="Output directory for reports")
     parser.add_argument("--list-models", action="store_true",
                        help="List recommended models and exit")
+    parser.add_argument("--visualize", "-v", action="store_true",
+                       help="Generate visualization plots")
     
     args = parser.parse_args()
     
@@ -567,6 +1002,11 @@ def compare_models_cli():
     comparator = ModelComparator(models=args.models)
     results = comparator.compare_on_tasks(args.tasks, args.pattern, args.limit)
     comparator.generate_report(results, args.output)
+    
+    # Generate visualizations if requested
+    if args.visualize:
+        viz = ModelComparisonVisualizer(comparison=results)
+        viz.save_all_plots(f"{args.output}/figures")
 
 
 if __name__ == "__main__":

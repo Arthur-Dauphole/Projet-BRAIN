@@ -30,7 +30,13 @@ from .logger import BRAINLogger, LogLevel, LogEntry, PerformanceMetrics, get_log
 from .rule_memory import RuleMemory, StoredRule, TaskSignature
 
 # Model Comparison
-from .model_comparator import ModelComparator, ModelComparisonResult, ModelResult, RECOMMENDED_MODELS
+from .model_comparator import (
+    ModelComparator, 
+    ModelComparisonResult, 
+    ModelResult, 
+    ModelComparisonVisualizer,
+    RECOMMENDED_MODELS
+)
 
 __all__ = [
     # Data Types
@@ -71,8 +77,9 @@ __all__ = [
     "TaskSignature",            # Task feature signature
     
     # Model Comparison
-    "ModelComparator",          # Multi-model comparison
-    "ModelComparisonResult",    # Comparison results
-    "ModelResult",              # Single model result
-    "RECOMMENDED_MODELS",       # Suggested models dict
+    "ModelComparator",              # Multi-model comparison
+    "ModelComparisonResult",        # Comparison results
+    "ModelResult",                  # Single model result
+    "ModelComparisonVisualizer",    # Comparison visualizations
+    "RECOMMENDED_MODELS",           # Suggested models dict
 ]

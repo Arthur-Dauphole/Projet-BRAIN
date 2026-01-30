@@ -1,7 +1,7 @@
 # BRAIN Project - Capacités du Système
 
 > **Dernière mise à jour :** Janvier 2026  
-> **Version :** 2.1.0 (Multi-Model Comparison)
+> **Version :** 2.2.0 (Model Comparison Visualizations)
 
 ---
 
@@ -1096,6 +1096,52 @@ print(f"Accuracy: {results.model_accuracies}")
 | `correct_count` | Nombre de tâches résolues |
 | `avg_response_time` | Temps de réponse moyen (ms) |
 | `fallback_rate` | % d'utilisation du fallback |
+
+### Visualisations de comparaison (v2.2.0)
+
+7 types de graphiques générés automatiquement en PNG et PDF :
+
+| Graphique | Description |
+|-----------|-------------|
+| `accuracy_comparison` | Barplot accuracy par modèle |
+| `time_comparison` | Barplot temps de réponse par modèle |
+| `accuracy_vs_time` | Scatter plot accuracy vs temps (trade-off) |
+| `accuracy_boxplot` | Distribution des accuracies par modèle |
+| `per_task_comparison` | Barplot groupé accuracy par tâche |
+| `fallback_comparison` | Taux d'utilisation du fallback |
+| `summary_dashboard` | Dashboard 2x2 avec toutes les métriques |
+
+#### Commandes de visualisation
+
+```bash
+# Générer visualisations depuis résultats existants
+python compare_models.py --viz-only comparison_results/
+
+# Nouvelle comparaison AVEC visualisations
+python compare_models.py --models llama3 mistral --limit 10 --visualize
+
+# Comparaison complète avec graphiques
+python compare_models.py -m llama3 mistral -v -o comparison_full/
+```
+
+#### Utilisation en Python
+
+```python
+from modules.model_comparator import ModelComparisonVisualizer
+
+# Depuis résultats existants
+viz = ModelComparisonVisualizer(results_path="comparison_results/comparison.json")
+
+# Ou depuis un objet ModelComparisonResult
+viz = ModelComparisonVisualizer(comparison=results)
+
+# Générer un graphique spécifique
+viz.plot_accuracy_comparison(save_path="accuracy.png", show=True)
+viz.plot_summary_dashboard(save_path="dashboard.pdf")
+
+# Générer tous les graphiques
+viz.save_all_plots("output/figures/", formats=['png', 'pdf'])
+```
 
 ### Installation rapide (3 modèles)
 

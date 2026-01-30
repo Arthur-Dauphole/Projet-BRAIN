@@ -117,11 +117,45 @@ Examples:
         help="Less verbose output"
     )
     
+    parser.add_argument(
+        "--visualize", "-v",
+        action="store_true",
+        help="Generate visualization plots after comparison"
+    )
+    
+    parser.add_argument(
+        "--viz-only",
+        type=str,
+        metavar="PATH",
+        help="Only generate visualizations from existing comparison.json"
+    )
+    
     args = parser.parse_args()
     
     # Just list models
     if args.list_models:
         print_install_instructions()
+        return
+    
+    # Visualization only mode
+    if args.viz_only:
+        from modules.model_comparator import ModelComparisonVisualizer
+        
+        viz_path = Path(args.viz_only)
+        if viz_path.is_dir():
+            json_path = viz_path / "comparison.json"
+        else:
+            json_path = viz_path
+        
+        if not json_path.exists():
+            print(f"❌ Error: comparison.json not found at {json_path}")
+            sys.exit(1)
+        
+        print(f"\n📊 Generating visualizations from: {json_path}")
+        viz = ModelComparisonVisualizer(results_path=str(json_path))
+        output_dir = json_path.parent / "figures"
+        viz.save_all_plots(str(output_dir))
+        print(f"\n✅ Visualizations saved to: {output_dir}")
         return
     
     # Check if tasks directory exists
@@ -181,9 +215,20 @@ Examples:
     # Generate reports
     output_dir = comparator.generate_report(results, args.output)
     
+    # Generate visualizations if requested
+    if args.visualize:
+        from modules.model_comparator import ModelComparisonVisualizer
+        
+        viz = ModelComparisonVisualizer(comparison=results)
+        fig_dir = output_dir / "figures"
+        viz.save_all_plots(str(fig_dir))
+    
     print(f"\n✅ Comparison complete!")
     print(f"   Best model: {results.best_model} ({results.model_accuracies.get(results.best_model, 0):.1%})")
     print(f"   Reports saved to: {output_dir}")
+    
+    if args.visualize:
+        print(f"   Visualizations: {output_dir}/figures/")
 
 
 if __name__ == "__main__":
