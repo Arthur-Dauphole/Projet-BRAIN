@@ -3,22 +3,26 @@
 analyze.py - Script d'analyse des résultats de batch
 ====================================================
 
+Generates publication-quality figures (IEEE standard) in PDF vectorial format.
+
 Usage:
     python analyze.py                           # Analyse tous les batchs
     python analyze.py --dir results/            # Spécifier le répertoire
     python analyze.py --output figures/         # Spécifier la sortie
     python analyze.py --format latex            # Générer des tableaux LaTeX
     python analyze.py --interactive             # Mode interactif (afficher les graphiques)
+    python analyze.py --ieee-size single        # Figures pour IEEE single column
     
 Example workflow:
     1. Lancer plusieurs batchs avec différents modèles
     2. Exécuter: python analyze.py --output analysis/
-    3. Utiliser les figures et tableaux dans l'article
+    3. Utiliser les figures PDF et tableaux LaTeX dans l'article
 """
 
 import argparse
 from pathlib import Path
 import sys
+import shutil
 
 # Ajouter le répertoire parent au path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -28,14 +32,17 @@ from data_analysis import DataLoader, MetricsCalculator, AnalysisVisualizer, Rep
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Analyse des résultats de batch BRAIN",
+        description="Analyse des résultats de batch BRAIN (IEEE Publication Quality)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python analyze.py                         # Analyse basique
+  python analyze.py                         # Analyse basique (PDF output)
   python analyze.py --output analysis/      # Sauvegarder dans un dossier
   python analyze.py --format all            # Générer tous les formats
   python analyze.py --interactive           # Afficher les graphiques
+  python analyze.py --ieee-size single      # Figures IEEE single column (3.5in)
+  python analyze.py --ieee-size double      # Figures IEEE double column (7.16in)
+  python analyze.py --fig-format pdf,png    # Générer PDF et PNG
         """
     )
     
@@ -56,6 +63,17 @@ Examples:
         help="Format de sortie (default: all)"
     )
     parser.add_argument(
+        "--fig-format",
+        default="pdf,png",
+        help="Formats des figures, séparés par virgule (default: pdf,png)"
+    )
+    parser.add_argument(
+        "--ieee-size",
+        choices=["single", "double", "full"],
+        default="double",
+        help="Taille IEEE des figures: single (3.5in), double (7.16in), full (default: double)"
+    )
+    parser.add_argument(
         "--interactive", "-i",
         action="store_true",
         help="Afficher les graphiques interactivement"
@@ -68,12 +86,21 @@ Examples:
     
     args = parser.parse_args()
     
+    # Parse figure formats
+    fig_formats = [f.strip() for f in args.fig_format.split(",")]
+    
+    # Check LaTeX availability
+    latex_available = shutil.which('latex') is not None
+    
     print("=" * 60)
-    print("  BRAIN Data Analysis")
+    print("  BRAIN Data Analysis (IEEE Publication Quality)")
     print("=" * 60)
     print(f"\n📁 Source: {args.dir}")
     print(f"📊 Output: {args.output}")
     print(f"📄 Format: {args.format}")
+    print(f"🖼️  Figure formats: {', '.join(fig_formats)}")
+    print(f"📐 IEEE size: {args.ieee_size} column")
+    print(f"📝 LaTeX available: {'Yes' if latex_available else 'No (using fallback fonts)'}")
     print()
     
     # === 1. CHARGER LES DONNÉES ===
@@ -132,32 +159,63 @@ Examples:
     
     # Figures
     if args.format in ["figures", "all"]:
-        print("\n📈 Generating figures...")
+        print("\n📈 Generating publication-quality figures...")
         figures_dir = output_path / "figures"
         figures_dir.mkdir(exist_ok=True)
         
-        viz = AnalysisVisualizer(df)
+        viz = AnalysisVisualizer(df, style="publication")
         
         viz.plot_accuracy_by_transformation(
-            save_path=str(figures_dir / "accuracy_by_transformation.png")
+            ieee_size=args.ieee_size,
+            save_path=str(figures_dir / "accuracy_by_transformation"),
+            save_formats=fig_formats
         )
         
-        if df["model"].nunique() > 1:
+        if "model" in df.columns and df["model"].nunique() > 1:
             viz.plot_model_comparison(
-                save_path=str(figures_dir / "model_comparison.png")
+                ieee_size=args.ieee_size,
+                save_path=str(figures_dir / "model_comparison"),
+                save_formats=fig_formats
             )
         
         viz.plot_accuracy_boxplot(
-            save_path=str(figures_dir / "accuracy_boxplot.png")
+            ieee_size=args.ieee_size,
+            save_path=str(figures_dir / "accuracy_boxplot"),
+            save_formats=fig_formats
         )
         
         viz.plot_timing_breakdown(
-            save_path=str(figures_dir / "timing_breakdown.png")
+            ieee_size=args.ieee_size,
+            save_path=str(figures_dir / "timing_breakdown"),
+            save_formats=fig_formats
         )
         
         viz.plot_llm_vs_fallback(
-            save_path=str(figures_dir / "llm_vs_fallback.png")
+            ieee_size=args.ieee_size,
+            save_path=str(figures_dir / "llm_vs_fallback"),
+            save_formats=fig_formats
         )
+        
+        # Additional plots (with error handling)
+        if "complexity_num_objects" in df.columns:
+            try:
+                viz.plot_accuracy_by_complexity(
+                    ieee_size=args.ieee_size,
+                    save_path=str(figures_dir / "accuracy_by_complexity"),
+                    save_formats=fig_formats
+                )
+            except Exception as e:
+                print(f"  Skipping accuracy_by_complexity: {e}")
+        
+        if "action_used" in df.columns and "primary_transformation" in df.columns:
+            try:
+                viz.plot_confusion_matrix(
+                    ieee_size=args.ieee_size,
+                    save_path=str(figures_dir / "confusion_matrix"),
+                    save_formats=fig_formats
+                )
+            except Exception as e:
+                print(f"  Skipping confusion_matrix: {e}")
         
         if args.interactive:
             viz.show_all()

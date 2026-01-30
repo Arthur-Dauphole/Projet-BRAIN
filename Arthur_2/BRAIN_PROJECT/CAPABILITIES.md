@@ -402,11 +402,14 @@ python main.py --batch data/ --pattern "task_color_change_*.json"
 
 ## 📝 Historique des versions
 
-### v1.12.0 (Janvier 2026) - Extended Test Dataset
-- ✅ **NOUVEAU: 52 tâches de test** - Dataset élargi pour analyses statistiques
+### v1.12.0 (Janvier 2026) - IEEE Publication Quality + Extended Dataset
+- ✅ **NOUVEAU: Figures vectorielles PDF** - Sortie compatible LaTeX/Overleaf
+- ✅ **Détection automatique de LaTeX** - Fallback gracieux avec DejaVu Serif
+- ✅ **Tailles IEEE standardisées** - Single column (3.5in), double column (7.16in)
+- ✅ **Palette colorblind-friendly** - Wong palette pour accessibilité
+- ✅ **Fonts Computer Modern** - Compatibilité parfaite avec LaTeX
+- ✅ **52 tâches de test** - Dataset élargi pour analyses statistiques
 - ✅ **~10 tâches par transformation** - Répartition équilibrée
-- ✅ **Variété des formes** - Carrés, rectangles, L-shapes, T-shapes, blobs
-- ✅ **Paramètres variés** - Différentes positions, couleurs, paramètres
 
 ### v1.11.0 (Janvier 2026) - Data Analysis Module
 - ✅ **NOUVEAU: Module `data_analysis/`** - Analyse des résultats de batch
@@ -609,9 +612,17 @@ Pour désactiver l'affichage final : `python main.py --batch data/ --no-viz`
 
 ---
 
-## 📊 Module DATA_ANALYSIS (v1.11.0) **NEW**
+## 📊 Module DATA_ANALYSIS (v1.12.0) - IEEE Publication Quality
 
-Module d'analyse de données pour exploiter les résultats des batchs et générer des visualisations pour articles scientifiques.
+Module d'analyse de données optimisé pour générer des **figures vectorielles PDF** compatibles avec **LaTeX/Overleaf** et les standards **IEEE**.
+
+### Caractéristiques
+
+- **Sortie vectorielle PDF** par défaut (qualité publication)
+- **Détection automatique de LaTeX** (fallback gracieux si non installé)
+- **Tailles IEEE standardisées** (single column: 3.5in, double column: 7.16in)
+- **Palette colorblind-friendly** (Wong palette)
+- **Fonts Computer Modern** (compatibles LaTeX)
 
 ### Structure
 
@@ -620,18 +631,24 @@ data_analysis/
 ├── __init__.py
 ├── data_loader.py      # Charger et agréger les résultats de batchs
 ├── metrics.py          # Calcul de métriques statistiques
-├── visualizer.py       # Graphiques (matplotlib)
+├── visualizer.py       # Graphiques IEEE (matplotlib + LaTeX)
 └── report_generator.py # Export LaTeX/CSV/Markdown
 ```
 
 ### Utilisation rapide
 
 ```bash
-# Analyser tous les batchs et générer des figures/rapports
+# Analyser tous les batchs (PDF vectoriel par défaut)
 python analyze.py
 
-# Spécifier le répertoire et la sortie
-python analyze.py --dir results/ --output analysis/
+# Figures IEEE single column (3.5 inches)
+python analyze.py --ieee-size single
+
+# Figures IEEE double column (7.16 inches)
+python analyze.py --ieee-size double
+
+# Formats multiples (PDF + PNG)
+python analyze.py --fig-format pdf,png
 
 # Générer uniquement les tableaux LaTeX
 python analyze.py --format latex
@@ -654,11 +671,21 @@ calc = MetricsCalculator(df)
 print(calc.accuracy_by_transformation())
 print(calc.llm_vs_fallback_comparison())
 
-# 3. Créer des visualisations
-viz = AnalysisVisualizer(df)
-viz.plot_accuracy_by_transformation(save_path="figures/acc_trans.png")
-viz.plot_model_comparison(save_path="figures/models.png")
-viz.plot_llm_vs_fallback()
+# 3. Créer des visualisations IEEE (PDF vectoriel)
+viz = AnalysisVisualizer(df, style="publication")
+
+# Figures avec taille IEEE
+viz.plot_accuracy_by_transformation(
+    ieee_size="double",                    # 7.16 inches width
+    save_path="figures/accuracy",          # Sans extension
+    save_formats=["pdf", "png"]            # Multi-format
+)
+
+# Générer tous les plots d'un coup
+viz.generate_all_plots(
+    output_dir="figures/",
+    formats=["pdf"]
+)
 
 # 4. Générer des rapports
 gen = ReportGenerator(df, calc)
@@ -669,19 +696,30 @@ gen.generate_csv_summary("summary.csv")
 
 ### Visualisations disponibles
 
-| Graphique | Description |
-|-----------|-------------|
-| `plot_accuracy_by_transformation()` | Barplot accuracy par type de transformation |
-| `plot_model_comparison()` | Comparaison des performances par modèle LLM |
-| `plot_accuracy_boxplot()` | Boxplot de la distribution des accuracies |
-| `plot_confusion_matrix()` | Matrice transformation détectée vs action utilisée |
-| `plot_timing_breakdown()` | Décomposition du temps (détection, LLM, exécution) |
-| `plot_llm_vs_fallback()` | Comparaison LLM seul vs avec fallback |
+| Graphique | Description | Taille recommandée |
+|-----------|-------------|-------------------|
+| `plot_accuracy_by_transformation()` | Barplot accuracy par type | double |
+| `plot_model_comparison()` | Comparaison par modèle LLM | single |
+| `plot_accuracy_boxplot()` | Distribution des accuracies | double |
+| `plot_confusion_matrix()` | Détection vs exécution | single |
+| `plot_timing_breakdown()` | Temps (détection, LLM, exécution) | double |
+| `plot_llm_vs_fallback()` | LLM vs fallback | double |
+| `plot_accuracy_by_complexity()` | Scatter accuracy vs complexité | single |
+
+### Tailles IEEE
+
+| Size | Width | Usage |
+|------|-------|-------|
+| `single` | 3.5 in (88.9 mm) | IEEE single column |
+| `double` | 7.16 in (181.9 mm) | IEEE double column |
+| `full` | 7.16 × 9 in | Full page figure |
 
 ### Exports disponibles
 
 | Format | Fichier | Usage |
 |--------|---------|-------|
+| **PDF** | `*.pdf` | **Vectoriel pour LaTeX** (recommandé) |
+| PNG | `*.png` | Raster 300 DPI pour prévisualisations |
 | LaTeX | `*.tex` | Tableaux pour articles scientifiques |
 | CSV | `summary.csv`, `full_data.csv` | Analyse Excel/Pandas |
 | Markdown | `report.md` | Documentation |
