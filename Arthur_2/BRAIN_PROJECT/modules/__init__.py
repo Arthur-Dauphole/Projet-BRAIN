@@ -29,6 +29,9 @@ from .logger import BRAINLogger, LogLevel, LogEntry, PerformanceMetrics, get_log
 # TIER 3: Rule Memory (RAG)
 from .rule_memory import RuleMemory, StoredRule, TaskSignature
 
+# Model Comparison
+from .model_comparator import ModelComparator, ModelComparisonResult, ModelResult, RECOMMENDED_MODELS
+
 __all__ = [
     # Data Types
     "Grid",
@@ -66,4 +69,10 @@ __all__ = [
     "RuleMemory",               # Rule storage and retrieval
     "StoredRule",               # Stored rule structure
     "TaskSignature",            # Task feature signature
+    
+    # Model Comparison
+    "ModelComparator",          # Multi-model comparison
+    "ModelComparisonResult",    # Comparison results
+    "ModelResult",              # Single model result
+    "RECOMMENDED_MODELS",       # Suggested models dict
 ]

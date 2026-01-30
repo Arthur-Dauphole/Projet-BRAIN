@@ -1,7 +1,7 @@
 # BRAIN Project - Capacités du Système
 
 > **Dernière mise à jour :** Janvier 2026  
-> **Version :** 2.0.0 (Roadmap TIER 1-3 Implementation)
+> **Version :** 2.1.0 (Multi-Model Comparison)
 
 ---
 
@@ -1020,4 +1020,91 @@ python main.py --task data/mock_task.json --self-correct --max-retries 2
 
 # Test TIER 3 - Rule Memory
 python -c "from modules import RuleMemory; m=RuleMemory(); print(m.get_statistics())"
+```
+
+---
+
+## 🔄 Module MODEL COMPARATOR (v2.1.0)
+
+Outil pour comparer les performances de différents modèles LLM.
+
+### Modèles recommandés
+
+| Modèle | Description | Taille | Installation |
+|--------|-------------|--------|--------------|
+| `llama3` | Meta Llama 3 8B - Bon généraliste | 4.7 GB | `ollama pull llama3` |
+| `mistral` | Mistral 7B - Excellent raisonnement, rapide | 4.1 GB | `ollama pull mistral` |
+| `phi3` | Microsoft Phi-3 Mini - Petit mais capable | 2.2 GB | `ollama pull phi3` |
+| `gemma2` | Google Gemma 2 9B - Bon raisonnement | 5.4 GB | `ollama pull gemma2` |
+| `codellama` | Meta Code Llama - Optimisé code/logique | 3.8 GB | `ollama pull codellama` |
+| `qwen2` | Alibaba Qwen 2 7B - Multilingue, bonne logique | 4.4 GB | `ollama pull qwen2` |
+| `llama3.1` | Meta Llama 3.1 8B - Dernière version | 4.7 GB | `ollama pull llama3.1` |
+| `deepseek-coder` | DeepSeek Coder 6.7B - Spécialisé code | 3.8 GB | `ollama pull deepseek-coder` |
+
+### Utilisation CLI
+
+```bash
+# Lister les modèles recommandés
+python compare_models.py --list-models
+
+# Comparer 2 modèles sur 5 tâches
+python compare_models.py --models llama3 mistral --limit 5
+
+# Comparaison complète sur toutes les tâches
+python compare_models.py --models llama3 mistral phi3 --output results/comparison/
+```
+
+### Utilisation en Python
+
+```python
+from modules import ModelComparator
+
+# Créer le comparateur
+comparator = ModelComparator(
+    models=["llama3", "mistral", "phi3"],
+    verbose=True
+)
+
+# Comparer sur les tâches
+results = comparator.compare_on_tasks(
+    task_dir="data/",
+    limit=10
+)
+
+# Générer le rapport
+comparator.generate_report(results, "comparison_results/")
+
+# Accéder aux résultats
+print(f"Meilleur modèle: {results.best_model}")
+print(f"Accuracy: {results.model_accuracies}")
+```
+
+### Rapports générés
+
+| Fichier | Format | Contenu |
+|---------|--------|---------|
+| `comparison.json` | JSON | Résultats complets avec détails |
+| `model_summary.csv` | CSV | Résumé par modèle (accuracy, temps, etc.) |
+| `detailed_results.csv` | CSV | Résultats par tâche et modèle |
+| `comparison_report.md` | Markdown | Rapport formaté pour lecture |
+
+### Métriques collectées
+
+| Métrique | Description |
+|----------|-------------|
+| `accuracy` | Précision moyenne (0-1) |
+| `correct_count` | Nombre de tâches résolues |
+| `avg_response_time` | Temps de réponse moyen (ms) |
+| `fallback_rate` | % d'utilisation du fallback |
+
+### Installation rapide (3 modèles)
+
+```bash
+# Installer les modèles
+ollama pull llama3
+ollama pull mistral  
+ollama pull phi3
+
+# Lancer la comparaison
+python compare_models.py -m llama3 mistral phi3 -l 10
 ```

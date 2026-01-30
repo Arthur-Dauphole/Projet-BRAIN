@@ -1,0 +1,418 @@
+{
+  "models": [
+    "llama3",
+    "mistral"
+  ],
+  "tasks_evaluated": 10,
+  "timestamp": "2026-01-30T13:31:38.544589",
+  "model_accuracies": {
+    "llama3": 0.9402132936507936,
+    "mistral": 0.9143382936507937
+  },
+  "model_correct_counts": {
+    "llama3": 2,
+    "mistral": 2
+  },
+  "model_avg_response_times": {
+    "llama3": 5608.180713653564,
+    "mistral": 8125.120043754578
+  },
+  "model_fallback_rates": {
+    "llama3": 0.0,
+    "mistral": 0.0
+  },
+  "detailed_results": [
+    {
+      "model_name": "llama3",
+      "task_id": "task_add_border",
+      "accuracy": 0.9642857142857143,
+      "is_correct": false,
+      "response_time_ms": 6552.106142044067,
+      "action_proposed": {
+        "action": "color_change",
+        "params": {
+          "from_color": 2,
+          "to_color": 1
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "mistral",
+      "task_id": "task_add_border",
+      "accuracy": 0.9642857142857143,
+      "is_correct": false,
+      "response_time_ms": 7363.452196121216,
+      "action_proposed": {
+        "action": "color_change",
+        "params": {
+          "from_color": 2,
+          "to_color": 1
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "llama3",
+      "task_id": "task_add_border_01",
+      "accuracy": 0.9375,
+      "is_correct": false,
+      "response_time_ms": 5436.638832092285,
+      "action_proposed": {
+        "action": "color_change",
+        "params": {
+          "from_color": 3,
+          "to_color": 1
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "mistral",
+      "task_id": "task_add_border_01",
+      "accuracy": 0.75,
+      "is_correct": false,
+      "response_time_ms": 5501.475095748901,
+      "action_proposed": {
+        "action": "color_change",
+        "params": {
+          "from_color": 3,
+          "to_color": 0
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "llama3",
+      "task_id": "task_add_border_02",
+      "accuracy": 0.8888888888888888,
+      "is_correct": false,
+      "response_time_ms": 4891.932010650635,
+      "action_proposed": {
+        "action": "color_change",
+        "params": {
+          "from_color": 1,
+          "to_color": 4
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "mistral",
+      "task_id": "task_add_border_02",
+      "accuracy": 0.8888888888888888,
+      "is_correct": false,
+      "response_time_ms": 7964.79606628418,
+      "action_proposed": {
+        "action": "color_change",
+        "params": {
+          "from_color": 1,
+          "to_color": 4
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "llama3",
+      "task_id": "task_add_border_03",
+      "accuracy": 0.953125,
+      "is_correct": false,
+      "response_time_ms": 4506.01601600647,
+      "action_proposed": {
+        "action": "color_change",
+        "params": {
+          "from_color": 6,
+          "to_color": 2
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "mistral",
+      "task_id": "task_add_border_03",
+      "accuracy": 0.953125,
+      "is_correct": false,
+      "response_time_ms": 5328.120946884155,
+      "action_proposed": {
+        "action": "color_change",
+        "params": {
+          "from_color": 6,
+          "to_color": 2
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "llama3",
+      "task_id": "task_blob_color_change",
+      "accuracy": 1.0,
+      "is_correct": true,
+      "response_time_ms": 4614.419221878052,
+      "action_proposed": {
+        "action": "color_change",
+        "params": {
+          "from_color": 2,
+          "to_color": 1
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "mistral",
+      "task_id": "task_blob_color_change",
+      "accuracy": 1.0,
+      "is_correct": true,
+      "response_time_ms": 10824.249267578125,
+      "action_proposed": {
+        "action": "color_change",
+        "params": {
+          "from_color": 2,
+          "to_color": 1
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "llama3",
+      "task_id": "task_blob_reflection",
+      "accuracy": 0.90625,
+      "is_correct": false,
+      "response_time_ms": 5905.466794967651,
+      "action_proposed": {
+        "action": "composite",
+        "color_filter": 3,
+        "params": {
+          "transformations": [
+            {
+              "action": "rotate",
+              "params": {
+                "angle": 270
+              }
+            },
+            {
+              "action": "translate",
+              "params": {
+                "dx": 0,
+                "dy": 0
+              }
+            }
+          ]
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "mistral",
+      "task_id": "task_blob_reflection",
+      "accuracy": 0.90625,
+      "is_correct": false,
+      "response_time_ms": 10321.512222290039,
+      "action_proposed": {
+        "action": "composite",
+        "color_filter": 3,
+        "params": {
+          "transformations": [
+            {
+              "action": "rotate",
+              "params": {
+                "angle": 270
+              }
+            },
+            {
+              "action": "translate",
+              "params": {
+                "dx": 0,
+                "dy": 0
+              }
+            }
+          ]
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "llama3",
+      "task_id": "task_blob_rotation",
+      "accuracy": 0.96875,
+      "is_correct": false,
+      "response_time_ms": 5531.297922134399,
+      "action_proposed": {
+        "action": "translate",
+        "params": {
+          "dx": 0,
+          "dy": 0
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "mistral",
+      "task_id": "task_blob_rotation",
+      "accuracy": 1.0,
+      "is_correct": true,
+      "response_time_ms": 7024.091720581055,
+      "action_proposed": {
+        "action": "composite",
+        "color_filter": 3,
+        "params": {
+          "transformations": [
+            {
+              "action": "rotate",
+              "params": {
+                "angle": 90
+              }
+            },
+            {
+              "action": "translate",
+              "params": {
+                "dx": 0,
+                "dy": 0
+              }
+            }
+          ]
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "llama3",
+      "task_id": "task_blob_translation",
+      "accuracy": 0.9,
+      "is_correct": false,
+      "response_time_ms": 5889.960050582886,
+      "action_proposed": {
+        "action": "translate",
+        "params": {
+          "dx": 2,
+          "dy": 3
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "mistral",
+      "task_id": "task_blob_translation",
+      "accuracy": 0.91,
+      "is_correct": false,
+      "response_time_ms": 11583.434104919434,
+      "action_proposed": {
+        "action": "translate",
+        "params": {
+          "dx": 2,
+          "dy": -3
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "llama3",
+      "task_id": "task_challenge_multi_transform",
+      "accuracy": 0.8833333333333333,
+      "is_correct": false,
+      "response_time_ms": 8168.07222366333,
+      "action_proposed": {
+        "action": "composite",
+        "color_filter": 1,
+        "params": {
+          "transformations": [
+            {
+              "action": "rotate",
+              "params": {
+                "angle": 180
+              }
+            },
+            {
+              "action": "translate",
+              "params": {
+                "dx": 0,
+                "dy": 0
+              }
+            }
+          ]
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "mistral",
+      "task_id": "task_challenge_multi_transform",
+      "accuracy": 0.8333333333333334,
+      "is_correct": false,
+      "response_time_ms": 9830.809831619263,
+      "action_proposed": {
+        "action": "composite",
+        "color_filter": 2,
+        "params": {
+          "transformations": [
+            {
+              "action": "rotate",
+              "params": {
+                "angle": 180
+              }
+            },
+            {
+              "action": "translate",
+              "params": {
+                "dx": 0,
+                "dy": 0
+              }
+            }
+          ]
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "llama3",
+      "task_id": "task_color_change",
+      "accuracy": 1.0,
+      "is_correct": true,
+      "response_time_ms": 4585.897922515869,
+      "action_proposed": {
+        "action": "color_change",
+        "params": {
+          "from_color": 2,
+          "to_color": 1
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    },
+    {
+      "model_name": "mistral",
+      "task_id": "task_color_change",
+      "accuracy": 0.9375,
+      "is_correct": false,
+      "response_time_ms": 5509.258985519409,
+      "action_proposed": {
+        "action": "color_change",
+        "params": {
+          "from_color": 2,
+          "to_color": 0
+        }
+      },
+      "fallback_used": false,
+      "error": null
+    }
+  ],
+  "best_model": "llama3",
+  "statistical_significance": {}
+}
