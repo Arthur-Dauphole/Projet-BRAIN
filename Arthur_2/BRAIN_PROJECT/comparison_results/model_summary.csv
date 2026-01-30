@@ -1,3 +1,4 @@
 model,accuracy,correct,total,avg_time_ms,fallback_rate
-llama3,1.0000,3,3,6380.4,1.0000
-mistral,1.0000,3,3,7781.3,1.0000
+llama3,0.9830,44,52,6266.4,0.2308
+mistral,0.9763,41,52,7453.7,0.2308
+phi3,0.9000,39,52,7408.0,0.2308
