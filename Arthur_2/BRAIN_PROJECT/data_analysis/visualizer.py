@@ -224,7 +224,8 @@ class AnalysisVisualizer:
         
         for fmt in formats:
             filepath = base_path.with_suffix(f".{fmt}")
-            fig.savefig(filepath, format=fmt, dpi=300 if fmt == "png" else None)
+            # Export Safety: bbox_inches='tight' prevents label clipping, dpi=300 for high resolution
+            fig.savefig(filepath, format=fmt, dpi=300, bbox_inches='tight')
             print(f"Saved: {filepath}")
     
     # ==================== BAR PLOTS ====================
@@ -264,8 +265,8 @@ class AnalysisVisualizer:
         if figsize is None:
             figsize = self._get_figsize(ieee_size)
         
-        # Créer la figure
-        fig, ax = plt.subplots(figsize=figsize)
+        # Créer la figure avec layout contraint
+        fig, ax = plt.subplots(figsize=figsize, layout='constrained')
         
         # Couleurs pour chaque barre
         colors = [self._get_transform_color(t) for t in stats.index]
@@ -306,8 +307,6 @@ class AnalysisVisualizer:
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         
-        plt.tight_layout()
-        
         if save_path:
             self._save_figure(fig, save_path, save_formats)
         
@@ -347,8 +346,8 @@ class AnalysisVisualizer:
         if figsize is None:
             figsize = self._get_figsize(ieee_size)
         
-        # Créer la figure
-        fig, ax = plt.subplots(figsize=figsize)
+        # Créer la figure avec layout contraint
+        fig, ax = plt.subplots(figsize=figsize, layout='constrained')
         
         x = range(len(stats))
         bars = ax.bar(
@@ -383,8 +382,6 @@ class AnalysisVisualizer:
         # Clean up spines
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
         
         if save_path:
             self._save_figure(fig, save_path, save_formats)
@@ -423,7 +420,7 @@ class AnalysisVisualizer:
         if figsize is None:
             figsize = self._get_figsize(ieee_size)
         
-        fig, ax = plt.subplots(figsize=figsize)
+        fig, ax = plt.subplots(figsize=figsize, layout='constrained')
         
         # Préparer les données
         groups = self.df.groupby(group_by)["accuracy"].apply(list).to_dict()
@@ -461,8 +458,6 @@ class AnalysisVisualizer:
         # Clean up spines
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
         
         if save_path:
             self._save_figure(fig, save_path, save_formats)
@@ -507,7 +502,7 @@ class AnalysisVisualizer:
             base = self._get_figsize(ieee_size)
             figsize = (base[0], base[0])  # Square
         
-        fig, ax = plt.subplots(figsize=figsize)
+        fig, ax = plt.subplots(figsize=figsize, layout='constrained')
         
         # Heatmap with sequential colormap
         im = ax.imshow(confusion.iloc[:-1, :-1], cmap="Blues", aspect='auto')
@@ -534,8 +529,6 @@ class AnalysisVisualizer:
         cbar = plt.colorbar(im, ax=ax, shrink=0.8)
         cbar.ax.tick_params(labelsize=7)
         cbar.set_label('Count', fontsize=8)
-        
-        plt.tight_layout()
         
         if save_path:
             self._save_figure(fig, save_path, save_formats)
@@ -575,7 +568,7 @@ class AnalysisVisualizer:
         if figsize is None:
             figsize = self._get_figsize(ieee_size)
         
-        fig, ax = plt.subplots(figsize=figsize)
+        fig, ax = plt.subplots(figsize=figsize, layout='constrained')
         
         # Grouper par transformation si possible
         if "primary_transformation" in self.df.columns:
@@ -602,13 +595,11 @@ class AnalysisVisualizer:
         ax.set_xticks(x)
         ax.set_xticklabels(means.index, rotation=45, ha='right', fontsize=7)
         ax.set_ylabel("Time (seconds)")
-        ax.legend(loc='upper right', fontsize=7)
+        ax.legend(loc='best', framealpha=0.9, fontsize=7)
         
         # Clean up spines
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
         
         if save_path:
             self._save_figure(fig, save_path, save_formats)
@@ -643,7 +634,7 @@ class AnalysisVisualizer:
         if figsize is None:
             figsize = self._get_figsize(ieee_size)
         
-        fig, axes = plt.subplots(1, 2, figsize=figsize)
+        fig, axes = plt.subplots(1, 2, figsize=figsize, layout='constrained')
         
         # Pie chart: proportion LLM vs Fallback
         fallback_counts = self.df["was_fallback_used"].value_counts()
@@ -699,8 +690,6 @@ class AnalysisVisualizer:
         axes[1].spines['top'].set_visible(False)
         axes[1].spines['right'].set_visible(False)
         
-        plt.tight_layout()
-        
         if save_path:
             self._save_figure(fig, save_path, save_formats)
         
@@ -749,7 +738,7 @@ class AnalysisVisualizer:
         if figsize is None:
             figsize = self._get_figsize(ieee_size)
         
-        fig, ax = plt.subplots(figsize=figsize)
+        fig, ax = plt.subplots(figsize=figsize, layout='constrained')
         
         # Scatter plot
         ax.scatter(
@@ -778,7 +767,7 @@ class AnalysisVisualizer:
                 x_line = np.linspace(x_clean.min(), x_clean.max(), 100)
                 ax.plot(x_line, p(x_line), color=self.COLORS["error"], 
                        linestyle='--', linewidth=1.2, label='Trend')
-                ax.legend(fontsize=7)
+                ax.legend(loc='best', framealpha=0.9, fontsize=7)
         except (np.linalg.LinAlgError, ValueError) as e:
             # Skip trend line if regression fails
             print(f"Warning: Could not compute trend line: {e}")
@@ -791,8 +780,6 @@ class AnalysisVisualizer:
         # Clean up spines
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
         
         if save_path:
             self._save_figure(fig, save_path, save_formats)
@@ -823,7 +810,8 @@ class AnalysisVisualizer:
         for name, fig in self.figures.items():
             for fmt in formats:
                 filepath = output_path / f"{name}.{fmt}"
-                fig.savefig(filepath, format=fmt, dpi=300 if fmt == "png" else None)
+                # Export Safety: bbox_inches='tight' prevents label clipping, dpi=300 for high resolution
+                fig.savefig(filepath, format=fmt, dpi=300, bbox_inches='tight')
                 print(f"Saved: {filepath}")
     
     def show_all(self):
