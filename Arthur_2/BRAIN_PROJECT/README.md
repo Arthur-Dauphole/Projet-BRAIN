@@ -223,44 +223,65 @@ python compare_models.py --viz-only comparison_results/
 ```
 BRAIN_PROJECT/
 │
-├── data/                           # Données d'entrée (52 puzzles ARC)
-│   ├── task_translation_*.json     # Tâches de translation
-│   ├── task_rotation_*.json        # Tâches de rotation
-│   ├── task_reflection_*.json      # Tâches de réflexion
-│   ├── task_color_change_*.json    # Tâches de changement de couleur
-│   └── ...                         # Autres types de transformations
+├── 📂 data/                              # 53 puzzles ARC au format JSON
+│   ├── task_translation_*.json           # 8 tâches de translation
+│   ├── task_rotation_*.json              # 7 tâches de rotation
+│   ├── task_reflection_*.json            # 6 tâches de réflexion
+│   ├── task_color_change_*.json          # 6 tâches de changement de couleur
+│   ├── task_draw_line_*.json             # 5 tâches de tracé de ligne
+│   ├── task_add_border_*.json            # 4 tâches d'ajout de contour
+│   ├── task_tiling_*.json                # 3 tâches de pavage
+│   ├── task_composite_*.json             # 3 tâches de transformations composées
+│   ├── task_blob_*.json                  # 4 tâches sur formes irrégulières
+│   └── task_multi_objects*.json          # 2 tâches multi-objets
 │
-├── modules/                        # Modules du pipeline
-│   ├── __init__.py                 # Exports
-│   ├── types.py                    # Classes de données (Grid, ARCTask)
-│   ├── detector.py                 # Détection de formes
-│   ├── transformation_detector.py  # Détection de transformations
-│   ├── prompt_maker.py             # Génération de prompts
-│   ├── llm_client.py               # Communication avec Ollama
-│   ├── executor.py                 # Exécution des actions
-│   ├── analyzer.py                 # Analyse des résultats
-│   ├── visualizer.py               # Visualisation matplotlib
-│   ├── batch_runner.py             # Évaluation batch
-│   ├── model_comparator.py         # Comparaison de modèles + visualisations
-│   ├── logger.py                   # Logging structuré (TIER 1)
-│   └── rule_memory.py              # Mémoire de règles RAG (TIER 3)
+├── 📂 modules/                           # Pipeline principal (12 modules)
+│   ├── __init__.py                       # Exports publics
+│   ├── types.py                          # Structures de données (Grid, ARCTask)
+│   ├── detector.py                       # Perception : détection de formes
+│   ├── transformation_detector.py        # Analyse : détection de transformations
+│   ├── prompt_maker.py                   # Génération de prompts LLM
+│   ├── llm_client.py                     # Communication Ollama (parsing JSON)
+│   ├── executor.py                       # Exécution des actions DSL
+│   ├── analyzer.py                       # Évaluation des résultats
+│   ├── visualizer.py                     # Visualisation matplotlib
+│   ├── batch_runner.py                   # Évaluation batch de tâches
+│   ├── model_comparator.py               # Comparaison de modèles + graphiques
+│   ├── logger.py                         # Logging structuré (TIER 1)
+│   └── rule_memory.py                    # Mémoire RAG de règles (TIER 3)
 │
-├── data_analysis/                  # Outils d'analyse de données
-│   ├── data_loader.py              # Chargement des résultats
-│   ├── metrics.py                  # Calcul de métriques
-│   ├── visualizer.py               # Graphiques IEEE
-│   └── report_generator.py         # Génération de rapports
+├── 📂 data_analysis/                     # Outils d'analyse scientifique
+│   ├── __init__.py                       # Exports
+│   ├── data_loader.py                    # Chargement résultats batch
+│   ├── metrics.py                        # Calcul de métriques statistiques
+│   ├── visualizer.py                     # Graphiques IEEE/LaTeX
+│   └── report_generator.py               # Génération rapports (Markdown, LaTeX)
 │
-├── notebooks/                      # Jupyter notebooks
-│   └── analysis_example.ipynb      # Exemple d'analyse
+├── 📂 notebooks/                         # Jupyter notebooks
+│   └── analysis_example.ipynb            # Exemple d'analyse de données
 │
-├── main.py                         # Point d'entrée principal
-├── compare_models.py               # Outil de comparaison de modèles
-├── analyze.py                      # CLI pour analyse de données
-├── requirements.txt                # Dépendances Python
-├── CAPABILITIES.md                 # Documentation détaillée
-└── README.md                       # Ce fichier
+├── 📂 results/                           # [Généré] Résultats single/batch
+├── 📂 comparison_results/                # [Généré] Résultats comparaison modèles
+├── 📂 analysis/                          # [Généré] Figures et rapports
+│
+├── 🐍 main.py                            # Point d'entrée (single + batch)
+├── 🐍 compare_models.py                  # CLI comparaison de modèles
+├── 🐍 analyze.py                         # CLI analyse de données
+│
+├── 📋 requirements.txt                   # Dépendances Python
+├── 📋 CAPABILITIES.md                    # Documentation technique détaillée
+└── 📋 README.md                          # Ce fichier
 ```
+
+### Description des modules principaux
+
+| Module | Rôle |
+|--------|------|
+| `detector.py` | Identifie les formes (carrés, rectangles, L, T, blobs...) |
+| `transformation_detector.py` | Détecte les règles entre input/output |
+| `executor.py` | Applique les transformations (translate, rotate, etc.) |
+| `batch_runner.py` | Exécute et agrège plusieurs tâches |
+| `model_comparator.py` | Compare les performances de plusieurs LLMs |
 
 ---
 
