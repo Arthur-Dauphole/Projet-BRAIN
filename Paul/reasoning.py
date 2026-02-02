@@ -1,123 +1,165 @@
 import numpy as np
-from geometry import GeometryObject
 
-ARC_COLORS = {
-    0: "Noir", 1: "Bleu", 2: "Rouge", 3: "Vert", 4: "Jaune",
-    5: "Gris", 6: "Magenta", 7: "Orange", 8: "Azur", 9: "Marron"
+# English Colors
+COLOR_NAMES = {
+    0: 'Black', 1: 'Blue', 2: 'Red', 3: 'Green', 4: 'Yellow',
+    5: 'Grey', 6: 'Magenta', 7: 'Orange', 8: 'Azure', 9: 'Maroon'
 }
 
-def normalize_shape(cells):
-    """
-    Ramène une liste de pixels (r, c) vers (0,0) et la trie pour comparaison.
-    """
-    if not cells: return []
-    min_r = min(r for r, c in cells)
-    min_c = min(c for r, c in cells)
-    # On soustrait le min pour coller la forme en haut à gauche (0,0)
-    return sorted([(r - min_r, c - min_c) for r, c in cells])
-
-class Transformation:
-    def __init__(self, obj_in, obj_out):
-        self.obj_in = obj_in
-        self.obj_out = obj_out
-        self.actions = []
-        self.analyze()
-
-    def analyze(self):
-        # 1. TRANSLATION
-        x1, y1 = self.obj_in.top_left
-        x2, y2 = self.obj_out.top_left
-        dx, dy = x2 - x1, y2 - y1
-        if dx != 0 or dy != 0: 
-            self.actions.append(f"Translation ({dx:+d}, {dy:+d})")
-
-        # 2. ROTATIONS & SYMÉTRIES
-        # On compare la forme pure (normalisée) de l'entrée et de la sortie
-        shape_in_norm = normalize_shape(self.obj_in.cells)
-        shape_out_norm = normalize_shape(self.obj_out.cells)
-
-        # Si les formes sont différentes, on cherche pourquoi (Rotation ?)
-        if shape_in_norm != shape_out_norm:
-            found_geo = False
-            # Liste des transformations à tester : (Nom, Fonction lambda sur (r,c))
-            geo_tests = [
-                ("Rotation 90°", lambda r, c: (c, -r)),
-                ("Rotation 180°", lambda r, c: (-r, -c)),
-                ("Rotation 270°", lambda r, c: (-c, r)),
-                ("Symétrie Horizontale", lambda r, c: (-r, c)), # Flip haut/bas
-                ("Symétrie Verticale", lambda r, c: (r, -c))    # Flip gauche/droite
-            ]
-
-            for name, func in geo_tests:
-                # On applique la transformation sur les pixels d'origine
-                transformed_cells = [func(r, c) for r, c in shape_in_norm]
-                # On re-normalise le résultat (car une rotation peut donner des coords négatives)
-                if normalize_shape(transformed_cells) == shape_out_norm:
-                    self.actions.append(name)
-                    found_geo = True
-                    break # On s'arrête à la première transfo trouvée
-            
-            # Si on a tout testé et rien trouvé (cas rare de déformation non rigide)
-            if not found_geo:
-                self.actions.append("Déformation inconnue")
-
-        # 3. COULEUR
-        if self.obj_in.color_code != self.obj_out.color_code:
-            self.actions.append(f"Couleur {self.obj_in.color_code}->{self.obj_out.color_code}")
-
-        # 4. IDENTIQUE (Seulement si rien d'autre n'a changé)
-        if not self.actions:
-            self.actions.append("Identique")
-
 class ReasoningEngine:
-    def compare_grids(self, objects_input, objects_output, grid_out):
-        transformations = []
-        available_outputs = list(objects_output)
-        grid_h = len(grid_out)
-        grid_w = len(grid_out[0]) if grid_h > 0 else 0
+    def __init__(self):
+        pass
+
+    def get_object_name(self, obj):
+        """Tente de nommer la forme via l'objet GeometryObject."""
+        pixels = obj.cells 
+        if not pixels: return "Nothing"
         
-        # 1. Matching et détection de transformations
-        for obj_in in objects_input:
-            for obj_out in available_outputs[:]:
-                # On utilise shape_signature (qui est invariant par translation) pour le matching
-                # Note: get_all_variants() doit renvoyer les signatures des rotations possibles
-                if obj_out.shape_signature in obj_in.get_all_variants():
-                    
-                    # C'est ici que la classe Transformation fait le travail d'analyse
-                    trans = Transformation(obj_in, obj_out)
-                    transformations.append(trans)
-                    
-                    # --- Détection de Remplissage (Holes) ---
-                    # On calcule le delta pour savoir où regarder dans la grille de sortie
-                    x1, y1 = obj_in.top_left
-                    x2, y2 = obj_out.top_left
-                    dx, dy = x2 - x1, y2 - y1
-                    
-                    holes = obj_in.get_internal_holes(grid_w, grid_h, offset=(dx, dy))
-                    if holes:
-                        hole_colors = [grid_out[y][x] for x, y in holes if 0 <= y < grid_h and 0 <= x < grid_w and grid_out[y][x] != 0]
-                        if hole_colors:
-                            # On prend la couleur dominante ou la première trouvée
-                            fill_id = hole_colors[0] 
-                            fill_name = ARC_COLORS.get(fill_id, str(fill_id))
-                            obj_color_name = ARC_COLORS.get(obj_in.color_code, str(obj_in.color_code))
-                            
-                            transformations.append(f"Règle : L'intérieur de {obj_color_name} est rempli en {fill_name}.")
-                            
-                            # Nettoyage : Si le remplissage a créé des "objets" parasites dans available_outputs, on les vire
-                            for out_item in available_outputs[:]:
-                                # Si un objet de sortie est composé entièrement de pixels qui sont des trous remplis
-                                if all((c, r) in holes for r, c in out_item.cells): # Attention à l'ordre r,c selon ta classe
-                                    if out_item in available_outputs:
-                                        available_outputs.remove(out_item)
+        rs = [p[0] for p in pixels]
+        cs = [p[1] for p in pixels]
+        h = max(rs) - min(rs) + 1
+        w = max(cs) - min(cs) + 1
+        area = len(pixels)
+        
+        if h == w and area == h*w: return "Square"
+        if h != w and area == h*w: 
+            if h==1 or w==1: return "Line"
+            return "Rectangle"
+        
+        return "Arbitrary Shape"
 
-                    if obj_out in available_outputs:
-                        available_outputs.remove(obj_out)
-                    break
+    def normalize(self, pixels):
+        """Ramène la forme en (0,0)."""
+        if not pixels: return []
+        min_r = min(p[0] for p in pixels)
+        min_c = min(p[1] for p in pixels)
+        return sorted([(r - min_r, c - min_c) for r, c in pixels])
 
-        # 2. Objets vraiment orphelins (Apparition spontanée)
-        for obj_out in available_outputs:
-            color_name = ARC_COLORS.get(obj_out.color_code, str(obj_out.color_code))
-            transformations.append(f"Nouvel objet {obj_out.shape} ({color_name}) apparu.")
+    def detect_transformation(self, obj_in, obj_out):
+        """Compare deux GeometryObjects et retourne description EN ANGLAIS."""
+        
+        c_in_name = COLOR_NAMES.get(obj_in.color_code, 'Unknown')
+        c_out_name = COLOR_NAMES.get(obj_out.color_code, 'Unknown')
+        name = self.get_object_name(obj_in)
+        
+        shape_in = self.normalize(obj_in.cells)
+        shape_out = self.normalize(obj_out.cells)
+        
+        # 1. IDENTICAL
+        if shape_in == shape_out and obj_in.cells == obj_out.cells and obj_in.color_code == obj_out.color_code:
+            return f"{c_in_name} {name} stayed identical."
 
-        return transformations
+        # 2. COLOR CHANGE
+        if shape_in == shape_out and obj_in.cells == obj_out.cells:
+            return f"{c_in_name} {name} became {c_out_name} (Color)."
+
+        # 3. TRANSLATION
+        if shape_in == shape_out:
+            r_in, c_in = min(list(obj_in.cells))
+            r_out, c_out = min(list(obj_out.cells))
+            dr, dc = r_out - r_in, c_out - c_in
+            return f"{c_in_name} {name} underwent Translation ({dr:+d}, {dc:+d})."
+
+        # 4. ROTATION
+        pixels_in = list(obj_in.cells)
+        for angle in [90, 180, 270]:
+            rotated = []
+            for r, c in pixels_in:
+                rel_r, rel_c = r, c 
+                if angle == 90: nr, nc = c, -r
+                elif angle == 180: nr, nc = -r, -c
+                elif angle == 270: nr, nc = -c, r
+                rotated.append((nr, nc))
+            
+            if self.normalize(rotated) == shape_out:
+                return f"{c_in_name} {name} underwent Rotation {angle}°."
+
+        # 5. SYMMETRY
+        sym_v = self.normalize([(p[0], -p[1]) for p in pixels_in])
+        if sym_v == shape_out:
+            return f"{c_in_name} {name} underwent Vertical Symmetry."
+            
+        sym_h = self.normalize([(-p[0], p[1]) for p in pixels_in])
+        if sym_h == shape_out:
+            return f"{c_in_name} {name} underwent Horizontal Symmetry."
+
+        # 6. FILL (OLD LOGIC - kept for simple cases)
+        set_in = obj_in.cells
+        set_out = obj_out.cells
+        if set_in.issubset(set_out) and len(set_out) > len(set_in):
+            return f"{c_in_name} {name} was filled (Fill)."
+
+        return f"{c_in_name} {name} changed into a new shape."
+
+    def compare_grids(self, objects_in, objects_out, grid_out):
+        log = []
+        matched_indices = set()
+        
+        # Stockage des paires matchées pour analyse ultérieure (Remplissage)
+        matched_pairs = [] # Liste de tuples (obj_in, obj_out)
+        
+        # 1. MATCHING DES OBJETS EXISTANTS
+        for obj_in in objects_in:
+            best_match = None
+            min_dist = 9999
+            
+            cin_r = sum(p[0] for p in obj_in.cells)/len(obj_in.cells)
+            cin_c = sum(p[1] for p in obj_in.cells)/len(obj_in.cells)
+            
+            for i, obj_out in enumerate(objects_out):
+                if i in matched_indices: continue
+                
+                cout_r = sum(p[0] for p in obj_out.cells)/len(obj_out.cells)
+                cout_c = sum(p[1] for p in obj_out.cells)/len(obj_out.cells)
+                
+                dist = (cin_r - cout_r)**2 + (cin_c - cout_c)**2
+                if obj_in.color_code == obj_out.color_code: dist -= 5
+                
+                # Bonus inclusion
+                if obj_in.cells.issubset(obj_out.cells): dist -= 10
+                
+                if dist < min_dist:
+                    min_dist = dist
+                    best_match = i
+            
+            if best_match is not None:
+                matched_indices.add(best_match)
+                obj_out_match = objects_out[best_match]
+                
+                # On stocke la paire
+                matched_pairs.append((obj_in, obj_out_match))
+                
+                # On détecte la transfo basique
+                desc = self.detect_transformation(obj_in, obj_out_match)
+                log.append(desc)
+            else:
+                c_name = COLOR_NAMES.get(obj_in.color_code, 'Unknown')
+                log.append(f"{c_name} object disappeared.")
+        
+        # 2. ANALYSE DES NOUVEAUX OBJETS (ET DÉTECTION DU REMPLISSAGE COMPLEXE)
+        grid_h, grid_w = len(grid_out), len(grid_out[0])
+        
+        for i, obj_out in enumerate(objects_out):
+            if i not in matched_indices:
+                # C'est un nouvel objet (ex: le Gris)
+                is_filling = False
+                
+                # On regarde s'il rentre dans les TROUS d'un objet existant matché (ex: le Magenta)
+                for m_in, m_out in matched_pairs:
+                    # On calcule les trous de l'objet contenant (Output)
+                    holes = set(m_out.get_internal_holes(grid_w, grid_h))
+                    
+                    # Si le nouvel objet est DANS les trous
+                    if obj_out.cells.issubset(holes):
+                        container_name = COLOR_NAMES.get(m_out.color_code, 'Unknown')
+                        content_name = COLOR_NAMES.get(obj_out.color_code, 'Unknown')
+                        
+                        log.append(f"{container_name} object was filled with {content_name} (Fill).")
+                        is_filling = True
+                        break
+                
+                if not is_filling:
+                    c_name = COLOR_NAMES.get(obj_out.color_code, 'Unknown')
+                    log.append(f"New {c_name} object appeared.")
+                
+        return log
