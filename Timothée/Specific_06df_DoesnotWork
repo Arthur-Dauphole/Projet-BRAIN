@@ -1,0 +1,1002 @@
+"""
+SYSTÈME COMPLET DE RÉSOLUTION DE GRILLES ARC AVEC DÉTECTION DE FORMES AVANCÉE
+- Détection fine des formes géométriques
+- Extraction des règles de transformation
+- Génération des outputs pour les tests
+- Visualisation améliorée
+"""
+
+import json
+import matplotlib.pyplot as plt
+import numpy as np
+from collections import defaultdict, Counter
+from typing import List, Dict, Tuple, Set, Optional
+import copy
+from scipy import ndimage
+
+# ============================================
+# PARTIE 1: DÉTECTEUR DE FORMES GÉOMÉTRIQUES AMÉLIORÉ
+# ============================================
+
+class AdvancedGeometryDetector:
+    """Détecte tous les objets géométriques et analyse les motifs de grille."""
+    
+    def __init__(self):
+        self.grid = None
+        self.objects = []
+        
+    def load_grid(self, grid):
+        """Charge une grille pour l'analyser."""
+        self.grid = np.array(grid)
+        self.objects = []
+        
+    def detect_grid_pattern(self):
+        """Détecte si la grille a un motif de quadrillage."""
+        h, w = self.grid.shape
+        
+        # Chercher une couleur qui forme un quadrillage
+        for color in range(1, 10):
+            mask = (self.grid == color).astype(int)
+            if np.sum(mask) < 4:  # Trop peu de pixels
+                continue
+                
+            # Vérifier les lignes horizontales régulières
+            row_sums = np.sum(mask, axis=1)
+            regular_rows = np.sum(row_sums > 0) > h/3  # Au moins 1/3 des lignes
+            
+            # Vérifier les colonnes verticales régulières
+            col_sums = np.sum(mask, axis=0)
+            regular_cols = np.sum(col_sums > 0) > w/3  # Au moins 1/3 des colonnes
+            
+            if regular_rows and regular_cols:
+                return {
+                    'grid_color': color,
+                    'row_spacing': self._detect_spacing(row_sums > 0),
+                    'col_spacing': self._detect_spacing(col_sums > 0)
+                }
+        
+        return None
+    
+    def _detect_spacing(self, line_mask):
+        """Détecte l'espacement entre les lignes."""
+        indices = np.where(line_mask)[0]
+        if len(indices) < 2:
+            return 1
+        
+        spacing = np.diff(indices)
+        if len(spacing) == 0:
+            return 1
+        
+        # Prendre l'espacement le plus fréquent
+        return int(np.median(spacing))
+    
+    def extract_squares(self, color):
+        """Extrait tous les carrés 2x2 d'une couleur donnée."""
+        h, w = self.grid.shape
+        squares = []
+        
+        for i in range(h - 1):
+            for j in range(w - 1):
+                # Vérifier un carré 2x2
+                if (self.grid[i, j] == color and 
+                    self.grid[i, j+1] == color and
+                    self.grid[i+1, j] == color and
+                    self.grid[i+1, j+1] == color):
+                    squares.append({
+                        'top_left': (i, j),
+                        'bottom_right': (i+1, j+1),
+                        'center_row': i + 0.5,
+                        'center_col': j + 0.5
+                    })
+        
+        return squares
+    
+    def analyze_square_pattern(self, squares):
+        """Analyse le motif des carrés."""
+        if len(squares) < 2:
+            return None
+        
+        # Regrouper par ligne et colonne
+        rows = defaultdict(list)
+        cols = defaultdict(list)
+        
+        for sq in squares:
+            center_row = sq['center_row']
+            center_col = sq['center_col']
+            
+            # Arrondir pour grouper
+            row_key = int(round(center_row))
+            col_key = int(round(center_col))
+            
+            rows[row_key].append(sq)
+            cols[col_key].append(sq)
+        
+        # Vérifier les alignements
+        patterns = {}
+        
+        # Lignes avec plusieurs carrés
+        for row, row_squares in rows.items():
+            if len(row_squares) >= 2:
+                # Trier par colonne
+                row_squares.sort(key=lambda x: x['center_col'])
+                cols_in_row = [s['center_col'] for s in row_squares]
+                
+                # Calculer les espacements
+                if len(cols_in_row) > 1:
+                    spacings = np.diff(cols_in_row)
+                    if np.std(spacings) < 0.5:  # Espacement régulier
+                        patterns.setdefault('horizontal', []).append({
+                            'row': row,
+                            'squares': row_squares,
+                            'spacing': np.mean(spacings)
+                        })
+        
+        # Colonnes avec plusieurs carrés
+        for col, col_squares in cols.items():
+            if len(col_squares) >= 2:
+                # Trier par ligne
+                col_squares.sort(key=lambda x: x['center_row'])
+                rows_in_col = [s['center_row'] for s in col_squares]
+                
+                # Calculer les espacements
+                if len(rows_in_col) > 1:
+                    spacings = np.diff(rows_in_col)
+                    if np.std(spacings) < 0.5:  # Espacement régulier
+                        patterns.setdefault('vertical', []).append({
+                            'col': col,
+                            'squares': col_squares,
+                            'spacing': np.mean(spacings)
+                        })
+        
+        return patterns
+
+# ============================================
+# PARTIE 2: GESTION DES COULEURS ET VISUALISATION
+# ============================================
+
+class ColorMapper:
+    """Mappe les codes de couleur (0-9) vers des couleurs hexadécimales."""
+    COLOR_MAP = {
+        0: "#000000",  # Noir (fond)
+        1: "#0074D9",  # Bleu
+        2: "#FF4136",  # Rouge
+        3: "#2ECC40",  # Vert
+        4: "#FFDC00",  # Jaune
+        5: "#AAAAAA",  # Gris
+        6: "#F012BE",  # Magenta
+        7: "#FF851B",  # Orange
+        8: "#7FDBFF",  # Cyan
+        9: "#870C25",  # Marron
+    }
+    
+    @staticmethod
+    def hex(color_code: int) -> str:
+        return ColorMapper.COLOR_MAP.get(color_code, "#FFFFFF")
+    
+    @staticmethod
+    def name(color_code: int) -> str:
+        names = {
+            0: "Noir", 1: "Bleu", 2: "Rouge", 3: "Vert", 4: "Jaune",
+            5: "Gris", 6: "Magenta", 7: "Orange", 8: "Cyan", 9: "Marron"
+        }
+        return names.get(color_code, f"Couleur {color_code}")
+
+def grid_to_rgb(grid: List[List[int]]) -> np.ndarray:
+    """Convertit une grille en tableau RGB."""
+    h, w = len(grid), len(grid[0])
+    rgb_array = np.zeros((h, w, 3))
+    
+    for y in range(h):
+        for x in range(w):
+            hex_color = ColorMapper.hex(grid[y][x])
+            hex_color = hex_color.lstrip('#')
+            rgb = tuple(int(hex_color[i:i+2], 16) / 255.0 
+                       for i in (0, 2, 4))
+            rgb_array[y, x] = rgb
+    
+    return rgb_array
+
+def visualize_grids_with_patterns(input_grid: List[List[int]], 
+                                 output_grid: List[List[int]], 
+                                 title_left: str = "INPUT",
+                                 title_right: str = "OUTPUT",
+                                 patterns: Dict = None):
+    """Visualise deux grilles avec mise en évidence des motifs."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
+    
+    # --- Grille d'entrée ---
+    ax1.imshow(grid_to_rgb(input_grid))
+    ax1.set_title(title_left, fontsize=14, fontweight='bold', pad=20)
+    
+    # --- Grille de sortie ---
+    ax2.imshow(grid_to_rgb(output_grid))
+    ax2.set_title(title_right, fontsize=14, fontweight='bold', pad=20)
+    
+    # Ajouter les grilles
+    h, w = len(input_grid), len(input_grid[0])
+    for ax in [ax1, ax2]:
+        ax.set_xticks(np.arange(-0.5, w, 1), minor=True)
+        ax.set_yticks(np.arange(-0.5, h, 1), minor=True)
+        ax.grid(which='minor', color='white', linewidth=0.5, alpha=0.5)
+        ax.tick_params(which='both', 
+                      bottom=False, left=False, 
+                      labelbottom=False, labelleft=False)
+    
+    # Mettre en évidence les motifs si fournis
+    if patterns:
+        colors_to_highlight = patterns.get('propagation_colors', [])
+        
+        for color in colors_to_highlight:
+            # Dans l'input
+            for i in range(h):
+                for j in range(w):
+                    if input_grid[i][j] == color:
+                        # Dessiner un contour
+                        rect = plt.Rectangle((j-0.5, i-0.5), 1, 1,
+                                           linewidth=2, edgecolor='yellow',
+                                           facecolor='none', alpha=0.7)
+                        ax1.add_patch(rect)
+            
+            # Dans l'output
+            for i in range(h):
+                for j in range(w):
+                    if output_grid[i][j] == color:
+                        rect = plt.Rectangle((j-0.5, i-0.5), 1, 1,
+                                           linewidth=2, edgecolor='yellow',
+                                           facecolor='none', alpha=0.7)
+                        ax2.add_patch(rect)
+    
+    # Légende
+    legend_elements = []
+    colors_in_grid = set()
+    
+    for row in input_grid + output_grid:
+        colors_in_grid.update(set(row))
+    
+    colors_in_grid = sorted(list(colors_in_grid))
+    for color in colors_in_grid:
+        if color != 0:
+            legend_elements.append(
+                plt.Rectangle((0, 0), 1, 1, 
+                            facecolor=ColorMapper.hex(color),
+                            label=f"{color}: {ColorMapper.name(color)}")
+            )
+    
+    if legend_elements:
+        fig.legend(handles=legend_elements, 
+                  loc='upper center', 
+                  ncol=min(6, len(legend_elements)),
+                  bbox_to_anchor=(0.5, 0.95))
+    
+    plt.suptitle("Analyse des Grilles avec Détection de Motifs", 
+                fontsize=16, fontweight='bold', y=0.98)
+    plt.tight_layout()
+    plt.show()
+
+# ============================================
+# PARTIE 3: EXTRACTION DE RÈGLES AVANCÉE
+# ============================================
+
+class PatternAwareRuleExtractor:
+    """Extrait les règles en comprenant les motifs de grille et de propagation."""
+    
+    def __init__(self):
+        self.color_changes = {}
+        self.connections = {}
+        self.translations = {}
+        self.propagations = {}  # Nouvelles règles de propagation
+        
+    def extract_from_examples(self, train_examples: List[Dict]) -> None:
+        """Extrait les règles en analysant les motifs."""
+        print("=== Extraction des règles avec analyse de motifs ===")
+        
+        all_square_patterns = []
+        
+        for idx, example in enumerate(train_examples):
+            print(f"\n--- Analyse de l'exemple {idx+1} ---")
+            
+            input_grid = example["input"]
+            output_grid = example["output"]
+            
+            # Analyser les motifs
+            patterns = self._analyze_patterns(input_grid, output_grid)
+            
+            # Extraire les règles de cet exemple
+            self._extract_rules_from_patterns(input_grid, output_grid, patterns, idx)
+            
+            all_square_patterns.append(patterns.get('squares', {}))
+        
+        # Consolider les règles de propagation entre exemples
+        self._consolidate_propagations(all_square_patterns)
+    
+    def _analyze_patterns(self, input_grid: List[List[int]], 
+                         output_grid: List[List[int]]) -> Dict:
+        """Analyse les motifs dans les grilles."""
+        detector = AdvancedGeometryDetector()
+        
+        patterns = {
+            'squares': {},
+            'propagations': []
+        }
+        
+        # Pour chaque couleur (1-9)
+        for color in range(1, 10):
+            detector.load_grid(np.array(input_grid))
+            input_squares = detector.extract_squares(color)
+            
+            detector.load_grid(np.array(output_grid))
+            output_squares = detector.extract_squares(color)
+            
+            if input_squares and output_squares:
+                patterns['squares'][color] = {
+                    'input': input_squares,
+                    'output': output_squares,
+                    'count_change': len(output_squares) - len(input_squares)
+                }
+                
+                # Analyser la propagation
+                propagation_info = self._analyze_propagation(input_squares, output_squares, color)
+                if propagation_info:
+                    patterns['propagations'].append(propagation_info)
+        
+        return patterns
+    
+    def _analyze_propagation(self, input_squares, output_squares, color):
+        """Analyse comment les carrés se propagent."""
+        if len(input_squares) < 2 or len(output_squares) <= len(input_squares):
+            return None
+        
+        # Regrouper par ligne et colonne
+        input_by_row = defaultdict(list)
+        input_by_col = defaultdict(list)
+        
+        for sq in input_squares:
+            row = int(sq['center_row'])
+            col = int(sq['center_col'])
+            input_by_row[row].append(col)
+            input_by_col[col].append(row)
+        
+        output_by_row = defaultdict(list)
+        output_by_col = defaultdict(list)
+        
+        for sq in output_squares:
+            row = int(sq['center_row'])
+            col = int(sq['center_col'])
+            output_by_row[row].append(col)
+            output_by_col[col].append(row)
+        
+        # Vérifier les propagations horizontales
+        horizontal_props = []
+        for row, input_cols in input_by_row.items():
+            if len(input_cols) >= 2 and row in output_by_row:
+                output_cols = output_by_row[row]
+                if len(output_cols) > len(input_cols):
+                    # Propagation horizontale détectée
+                    input_cols.sort()
+                    output_cols.sort()
+                    
+                    # Vérifier si c'est une extension complète
+                    min_col = min(output_cols)
+                    max_col = max(output_cols)
+                    expected_cols = list(range(min_col, max_col + 1, 2))  # Pas de 2
+                    
+                    if set(output_cols) == set(expected_cols):
+                        horizontal_props.append({
+                            'type': 'horizontal',
+                            'row': row,
+                            'color': color,
+                            'input_cols': input_cols,
+                            'output_cols': output_cols,
+                            'full_range': (min_col, max_col)
+                        })
+        
+        # Vérifier les propagations verticales
+        vertical_props = []
+        for col, input_rows in input_by_col.items():
+            if len(input_rows) >= 2 and col in output_by_col:
+                output_rows = output_by_col[col]
+                if len(output_rows) > len(input_rows):
+                    # Propagation verticale détectée
+                    input_rows.sort()
+                    output_rows.sort()
+                    
+                    min_row = min(output_rows)
+                    max_row = max(output_rows)
+                    expected_rows = list(range(min_row, max_row + 1, 2))  # Pas de 2
+                    
+                    if set(output_rows) == set(expected_rows):
+                        vertical_props.append({
+                            'type': 'vertical',
+                            'col': col,
+                            'color': color,
+                            'input_rows': input_rows,
+                            'output_rows': output_rows,
+                            'full_range': (min_row, max_row)
+                        })
+        
+        if horizontal_props or vertical_props:
+            return {
+                'color': color,
+                'horizontal': horizontal_props,
+                'vertical': vertical_props
+            }
+        
+        return None
+    
+    def _extract_rules_from_patterns(self, input_grid, output_grid, patterns, example_idx):
+        """Extrait les règles à partir des motifs détectés."""
+        h, w = len(input_grid), len(input_grid[0])
+        
+        # 1. Changements de couleur simples
+        for i in range(h):
+            for j in range(w):
+                old_color = input_grid[i][j]
+                new_color = output_grid[i][j]
+                
+                if old_color != 0 and old_color != new_color:
+                    if old_color not in self.color_changes:
+                        self.color_changes[old_color] = new_color
+                        print(f"  Changement couleur: {old_color} -> {new_color}")
+        
+        # 2. Règles de propagation
+        for propagation in patterns.get('propagations', []):
+            color = propagation['color']
+            
+            for horiz in propagation['horizontal']:
+                key = (color, 'horizontal', horiz['row'])
+                if key not in self.propagations:
+                    self.propagations[key] = {
+                        'type': 'horizontal',
+                        'color': color,
+                        'row': horiz['row'],
+                        'full_range': horiz['full_range'],
+                        'examples': [example_idx]
+                    }
+                    print(f"  Propagation horizontale: couleur {color}, ligne {horiz['row']}")
+            
+            for vert in propagation['vertical']:
+                key = (color, 'vertical', vert['col'])
+                if key not in self.propagations:
+                    self.propagations[key] = {
+                        'type': 'vertical',
+                        'color': color,
+                        'col': vert['col'],
+                        'full_range': vert['full_range'],
+                        'examples': [example_idx]
+                    }
+                    print(f"  Propagation verticale: couleur {color}, colonne {vert['col']}")
+        
+        # 3. Connexions simples (pour compatibilité)
+        self._extract_simple_connections(input_grid, output_grid)
+    
+    def _extract_simple_connections(self, input_grid, output_grid):
+        """Extrait les connexions simples (pour compatibilité)."""
+        h, w = len(input_grid), len(input_grid[0])
+        
+        input_points_by_color = defaultdict(set)
+        output_points_by_color = defaultdict(set)
+        
+        for i in range(h):
+            for j in range(w):
+                c_in = input_grid[i][j]
+                c_out = output_grid[i][j]
+                if c_in != 0:
+                    input_points_by_color[c_in].add((i, j))
+                if c_out != 0:
+                    output_points_by_color[c_out].add((i, j))
+        
+        for color_out in output_points_by_color.keys():
+            possible_input_colors = []
+            
+            for old_color, new_color in self.color_changes.items():
+                if new_color == color_out:
+                    possible_input_colors.append(old_color)
+            
+            if color_out not in self.color_changes.values():
+                possible_input_colors.append(color_out)
+            
+            input_points_for_color = set()
+            for c_in in possible_input_colors:
+                if c_in in input_points_by_color:
+                    input_points_for_color.update(input_points_by_color[c_in])
+            
+            output_points = output_points_by_color[color_out]
+            
+            if not input_points_for_color:
+                continue
+            
+            if not self._try_detect_translation(input_points_for_color, output_points, color_out):
+                self._try_detect_connection(input_points_for_color, output_points, color_out)
+    
+    def _try_detect_translation(self, input_points, output_points, color):
+        """Détecte les translations simples."""
+        if len(input_points) != len(output_points) or not input_points:
+            return False
+        
+        # Vérifier si c'est une translation pure
+        displacements = set()
+        for p_in in input_points:
+            for p_out in output_points:
+                displacements.add((p_out[0] - p_in[0], p_out[1] - p_in[1]))
+        
+        for dx, dy in displacements:
+            all_match = True
+            for p_in in input_points:
+                if (p_in[0] + dy, p_in[1] + dx) not in output_points:
+                    all_match = False
+                    break
+            
+            if all_match:
+                self.translations[color] = (dx, dy)
+                print(f"  Translation pour {color}: ({dx}, {dy})")
+                return True
+        
+        return False
+    
+    def _try_detect_connection(self, input_points, output_points, color):
+        """Détecte les connexions simples."""
+        base_points = input_points.intersection(output_points)
+        added_points = output_points - input_points
+        
+        if not added_points or len(base_points) < 2:
+            return
+        
+        base_list = list(base_points)
+        for i in range(len(base_list)):
+            for j in range(i+1, len(base_list)):
+                p1 = base_list[i]
+                p2 = base_list[j]
+                
+                # Horizontal
+                if p1[0] == p2[0]:
+                    min_y = min(p1[1], p2[1])
+                    max_y = max(p1[1], p2[1])
+                    if all((p1[0], y) in output_points for y in range(min_y, max_y + 1)):
+                        self.connections[color] = 'H'
+                        print(f"  Connexion horizontale pour {color}")
+                        return
+                
+                # Vertical
+                if p1[1] == p2[1]:
+                    min_x = min(p1[0], p2[0])
+                    max_x = max(p1[0], p2[0])
+                    if all((x, p1[1]) in output_points for x in range(min_x, max_x + 1)):
+                        self.connections[color] = 'V'
+                        print(f"  Connexion verticale pour {color}")
+                        return
+    
+    def _consolidate_propagations(self, all_patterns):
+        """Consolide les règles de propagation entre exemples."""
+        # Pour chaque couleur, vérifier les motifs récurrents
+        color_patterns = defaultdict(list)
+        
+        for patterns in all_patterns:
+            for color, info in patterns.items():
+                color_patterns[color].append(info)
+        
+        # Identifier les propagations cohérentes
+        for color, patterns_list in color_patterns.items():
+            if len(patterns_list) >= 2:
+                # Analyser la cohérence
+                horizontal_counts = defaultdict(int)
+                vertical_counts = defaultdict(int)
+                
+                for pattern in patterns_list:
+                    input_squares = pattern['input']
+                    output_squares = pattern['output']
+                    
+                    # Analyser la propagation pour cet exemple
+                    propagation_info = self._analyze_propagation(input_squares, output_squares, color)
+                    if propagation_info:
+                        for horiz in propagation_info['horizontal']:
+                            horizontal_counts[(horiz['row'], horiz['full_range'])] += 1
+                        for vert in propagation_info['vertical']:
+                            vertical_counts[(vert['col'], vert['full_range'])] += 1
+                
+                # Garder les propagations qui apparaissent dans au moins 2 exemples
+                for (row, full_range), count in horizontal_counts.items():
+                    if count >= 2:
+                        key = (color, 'horizontal', row)
+                        if key not in self.propagations:
+                            self.propagations[key] = {
+                                'type': 'horizontal',
+                                'color': color,
+                                'row': row,
+                                'full_range': full_range,
+                                'examples': list(range(count))
+                            }
+                            print(f"  Propagation consolidée horizontale: couleur {color}, ligne {row}")
+                
+                for (col, full_range), count in vertical_counts.items():
+                    if count >= 2:
+                        key = (color, 'vertical', col)
+                        if key not in self.propagations:
+                            self.propagations[key] = {
+                                'type': 'vertical',
+                                'color': color,
+                                'col': col,
+                                'full_range': full_range,
+                                'examples': list(range(count))
+                            }
+                            print(f"  Propagation consolidée verticale: couleur {color}, colonne {col}")
+    
+    def get_rules(self) -> Dict:
+        """Retourne toutes les règles extraites."""
+        return {
+            "color_changes": self.color_changes,
+            "connections": self.connections,
+            "translations": self.translations,
+            "propagations": self.propagations
+        }
+
+# ============================================
+# PARTIE 4: APPLICATION DES RÈGLES AVEC PROPAGATION
+# ============================================
+
+class PatternAwareGridTransformer:
+    """Applique les règles avec prise en compte des propagations."""
+    
+    def __init__(self, rules: Dict):
+        self.color_changes = rules.get("color_changes", {})
+        self.connections = rules.get("connections", {})
+        self.translations = rules.get("translations", {})
+        self.propagations = rules.get("propagations", {})
+    
+    def apply_rules(self, input_grid: List[List[int]]) -> List[List[int]]:
+        """Applique les règles avec propagation."""
+        grid = copy.deepcopy(input_grid)
+        h, w = len(grid), len(grid[0])
+        
+        # 1. Changements de couleur
+        grid = self._apply_color_changes(grid)
+        
+        # 2. Propagations (NOUVELLE ÉTAPE)
+        grid = self._apply_propagations(grid)
+        
+        # 3. Connexions
+        grid = self._apply_connections(grid)
+        
+        # 4. Translations
+        grid = self._apply_translations(grid)
+        
+        return grid
+    
+    def _apply_color_changes(self, grid: List[List[int]]) -> List[List[int]]:
+        h, w = len(grid), len(grid[0])
+        
+        for i in range(h):
+            for j in range(w):
+                if grid[i][j] in self.color_changes:
+                    grid[i][j] = self.color_changes[grid[i][j]]
+        
+        return grid
+    
+    def _apply_propagations(self, grid: List[List[int]]) -> List[List[int]]:
+        """Applique les règles de propagation."""
+        h, w = len(grid), len(grid[0])
+        
+        # Détecter les carrés dans l'input
+        detector = AdvancedGeometryDetector()
+        detector.load_grid(np.array(grid))
+        
+        # Pour chaque règle de propagation
+        for key, rule in self.propagations.items():
+            color = rule['color']
+            rule_type = rule['type']
+            
+            # Détecter les carrés de cette couleur dans l'input
+            squares = detector.extract_squares(color)
+            
+            if not squares:
+                continue
+            
+            if rule_type == 'horizontal':
+                # Regrouper par ligne
+                squares_by_row = defaultdict(list)
+                for sq in squares:
+                    row = int(sq['center_row'])
+                    squares_by_row[row].append(sq)
+                
+                # Appliquer la propagation pour chaque ligne concernée
+                for row, row_squares in squares_by_row.items():
+                    # Vérifier si on a une règle pour cette ligne spécifique
+                    # ou une règle générale pour cette couleur
+                    rule_key = (color, 'horizontal', row)
+                    if rule_key in self.propagations:
+                        propagation_rule = self.propagations[rule_key]
+                        self._propagate_horizontally(grid, row_squares, color, propagation_rule)
+                    else:
+                        # Chercher une règle générale pour cette couleur
+                        for key2, rule2 in self.propagations.items():
+                            if rule2['color'] == color and rule2['type'] == 'horizontal':
+                                # Vérifier si les carrés sont alignés avec cette règle
+                                if self._check_horizontal_alignment(row_squares, rule2):
+                                    self._propagate_horizontally(grid, row_squares, color, rule2)
+                                    break
+            
+            elif rule_type == 'vertical':
+                # Regrouper par colonne
+                squares_by_col = defaultdict(list)
+                for sq in squares:
+                    col = int(sq['center_col'])
+                    squares_by_col[col].append(sq)
+                
+                # Appliquer la propagation pour chaque colonne concernée
+                for col, col_squares in squares_by_col.items():
+                    rule_key = (color, 'vertical', col)
+                    if rule_key in self.propagations:
+                        propagation_rule = self.propagations[rule_key]
+                        self._propagate_vertically(grid, col_squares, color, propagation_rule)
+                    else:
+                        # Chercher une règle générale
+                        for key2, rule2 in self.propagations.items():
+                            if rule2['color'] == color and rule2['type'] == 'vertical':
+                                if self._check_vertical_alignment(col_squares, rule2):
+                                    self._propagate_vertically(grid, col_squares, color, rule2)
+                                    break
+        
+        return grid
+    
+    def _check_horizontal_alignment(self, squares, rule):
+        """Vérifie si les carrés sont alignés avec la règle de propagation horizontale."""
+        if not squares:
+            return False
+        
+        # Tous les carrés doivent être sur la même ligne
+        rows = [int(sq['center_row']) for sq in squares]
+        if len(set(rows)) != 1:
+            return False
+        
+        # La ligne doit correspondre à la règle
+        row = rows[0]
+        if 'row' in rule and row != rule['row']:
+            return False
+        
+        return True
+    
+    def _check_vertical_alignment(self, squares, rule):
+        """Vérifie si les carrés sont alignés avec la règle de propagation verticale."""
+        if not squares:
+            return False
+        
+        # Tous les carrés doivent être sur la même colonne
+        cols = [int(sq['center_col']) for sq in squares]
+        if len(set(cols)) != 1:
+            return False
+        
+        # La colonne doit correspondre à la règle
+        col = cols[0]
+        if 'col' in rule and col != rule['col']:
+            return False
+        
+        return True
+    
+    def _propagate_horizontally(self, grid, squares, color, rule):
+        """Propage horizontalement les carrés."""
+        if len(squares) < 2:
+            return
+        
+        # Trier par colonne
+        squares.sort(key=lambda x: x['center_col'])
+        
+        # Déterminer la plage complète
+        min_col = int(min(sq['top_left'][1] for sq in squares))
+        max_col = int(max(sq['top_left'][1] for sq in squares))
+        
+        # Si la règle spécifie une plage complète, l'utiliser
+        if 'full_range' in rule:
+            rule_min, rule_max = rule['full_range']
+            min_col = min(min_col, rule_min)
+            max_col = max(max_col, rule_max)
+        
+        # Remplir tous les carrés entre min_col et max_col (par pas de 2)
+        row = int(squares[0]['top_left'][0])
+        
+        for col in range(min_col, max_col + 1, 2):
+            # Vérifier si un carré existe déjà
+            if col + 1 < len(grid[0]) and row + 1 < len(grid):
+                if (grid[row][col] != color or grid[row][col+1] != color or
+                    grid[row+1][col] != color or grid[row+1][col+1] != color):
+                    # Créer un nouveau carré
+                    grid[row][col] = color
+                    grid[row][col+1] = color
+                    grid[row+1][col] = color
+                    grid[row+1][col+1] = color
+    
+    def _propagate_vertically(self, grid, squares, color, rule):
+        """Propage verticalement les carrés."""
+        if len(squares) < 2:
+            return
+        
+        # Trier par ligne
+        squares.sort(key=lambda x: x['center_row'])
+        
+        # Déterminer la plage complète
+        min_row = int(min(sq['top_left'][0] for sq in squares))
+        max_row = int(max(sq['top_left'][0] for sq in squares))
+        
+        # Si la règle spécifie une plage complète, l'utiliser
+        if 'full_range' in rule:
+            rule_min, rule_max = rule['full_range']
+            min_row = min(min_row, rule_min)
+            max_row = max(max_row, rule_max)
+        
+        # Remplir tous les carrés entre min_row et max_row (par pas de 2)
+        col = int(squares[0]['top_left'][1])
+        
+        for row in range(min_row, max_row + 1, 2):
+            # Vérifier si un carré existe déjà
+            if row + 1 < len(grid) and col + 1 < len(grid[0]):
+                if (grid[row][col] != color or grid[row][col+1] != color or
+                    grid[row+1][col] != color or grid[row+1][col+1] != color):
+                    # Créer un nouveau carré
+                    grid[row][col] = color
+                    grid[row][col+1] = color
+                    grid[row+1][col] = color
+                    grid[row+1][col+1] = color
+    
+    def _apply_connections(self, grid: List[List[int]]) -> List[List[int]]:
+        """Applique les connexions simples."""
+        h, w = len(grid), len(grid[0])
+        
+        for color, conn_type in self.connections.items():
+            points = [(i, j) for i in range(h) for j in range(w) 
+                     if grid[i][j] == color]
+            
+            if len(points) < 2:
+                continue
+            
+            for k in range(len(points)):
+                for l in range(k+1, len(points)):
+                    p1 = points[k]
+                    p2 = points[l]
+                    
+                    if conn_type == 'H' and p1[0] == p2[0]:
+                        self._draw_horizontal_line(grid, p1, p2, color)
+                    elif conn_type == 'V' and p1[1] == p2[1]:
+                        self._draw_vertical_line(grid, p1, p2, color)
+        
+        return grid
+    
+    def _draw_horizontal_line(self, grid, p1, p2, color):
+        row = p1[0]
+        start_col = min(p1[1], p2[1])
+        end_col = max(p1[1], p2[1])
+        
+        for col in range(start_col, end_col + 1):
+            if grid[row][col] == 0:
+                grid[row][col] = color
+    
+    def _draw_vertical_line(self, grid, p1, p2, color):
+        col = p1[1]
+        start_row = min(p1[0], p2[0])
+        end_row = max(p1[0], p2[0])
+        
+        for row in range(start_row, end_row + 1):
+            if grid[row][col] == 0:
+                grid[row][col] = color
+    
+    def _apply_translations(self, grid: List[List[int]]) -> List[List[int]]:
+        """Applique les translations."""
+        h, w = len(grid), len(grid[0])
+        new_grid = [[0 for _ in range(w)] for _ in range(h)]
+        
+        # Copier ce qui ne se translate pas
+        for i in range(h):
+            for j in range(w):
+                color = grid[i][j]
+                if color != 0 and color not in self.translations:
+                    new_grid[i][j] = color
+        
+        # Appliquer les translations
+        for color, (dx, dy) in self.translations.items():
+            for i in range(h):
+                for j in range(w):
+                    if grid[i][j] == color:
+                        new_i = i + dy
+                        new_j = j + dx
+                        if 0 <= new_i < h and 0 <= new_j < w:
+                            new_grid[new_i][new_j] = color
+        
+        return new_grid
+
+# ============================================
+# PARTIE 5: FONCTION PRINCIPALE AMÉLIORÉE
+# ============================================
+
+def main_improved(json_file: str = "grid_data.json", visualize: bool = True):
+    """Fonction principale avec détection de motifs."""
+    
+    # Charger les données
+    print("Chargement des données...")
+    with open(json_file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    
+    # Extraire les règles avec analyse de motifs
+    print("\nExtraction des règles avec analyse de motifs...")
+    extractor = PatternAwareRuleExtractor()
+    extractor.extract_from_examples(data["train"])
+    rules = extractor.get_rules()
+    
+    print(f"\n=== RÈGLES EXTRACTES ===")
+    print(f"Changements de couleur: {rules['color_changes']}")
+    print(f"Connexions: {rules['connections']}")
+    print(f"Translations: {rules['translations']}")
+    print(f"\nPropagations détectées:")
+    for key, rule in rules['propagations'].items():
+        print(f"  {rule['type']} - Couleur {rule['color']}")
+    
+    # Appliquer aux tests
+    print(f"\n=== APPLICATION AUX TESTS ===")
+    transformer = PatternAwareGridTransformer(rules)
+    results = []
+    
+    test_key = "test" if "test" in data else "Test"
+    
+    if test_key in data:
+        for test_idx, test_case in enumerate(data[test_key]):
+            print(f"\n=== TEST {test_idx + 1} ===")
+            
+            input_grid = test_case["input"]
+            
+            # Analyser l'input
+            detector = AdvancedGeometryDetector()
+            detector.load_grid(np.array(input_grid))
+            
+            print("Analyse des motifs dans l'input:")
+            for color in range(1, 10):
+                squares = detector.extract_squares(color)
+                if squares:
+                    print(f"  Couleur {color}: {len(squares)} carrés 2x2")
+            
+            # Générer l'output
+            output_grid = transformer.apply_rules(input_grid)
+            
+            results.append({
+                "input": input_grid,
+                "output": output_grid
+            })
+            
+            # Visualisation
+            if visualize:
+                # Détecter les couleurs avec propagation pour la visualisation
+                propagation_colors = []
+                for key, rule in rules['propagations'].items():
+                    if rule['color'] not in propagation_colors:
+                        propagation_colors.append(rule['color'])
+                
+                visualize_grids_with_patterns(
+                    input_grid=input_grid,
+                    output_grid=output_grid,
+                    title_left=f"TEST {test_idx+1} - INPUT",
+                    title_right=f"TEST {test_idx+1} - OUTPUT PRÉDIT",
+                    patterns={'propagation_colors': propagation_colors}
+                )
+    
+    # Sauvegarder
+    output_file = "grid_results_with_patterns.json"
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump({"test_results": results}, f, indent=2)
+    
+    print(f"\n✓ Terminé! Résultats sauvegardés dans '{output_file}'")
+    return results
+
+# ============================================
+# EXÉCUTION
+# ============================================
+
+if __name__ == "__main__":
+    print("=" * 70)
+    print("SYSTÈME AMÉLIORÉ AVEC DÉTECTION DE PROPAGATION")
+    print("=" * 70)
+    
+    json_file = input("Nom du fichier JSON (défaut: grid_data.json): ").strip()
+    if not json_file:
+        json_file = "grid_data.json"
+    
+    try:
+        main_improved(json_file, visualize=True)
+    except Exception as e:
+        print(f"Erreur: {e}")
+        import traceback
+        traceback.print_exc()

@@ -1,0 +1,1132 @@
+"""
+SYSTÈME COMPLET DE RÉSOLUTION DE GRILLES ARC AVEC DÉTECTION DE FORMES AVANCÉE
+- Détection fine des formes géométriques
+- Extraction des règles de transformation
+- Génération des outputs pour les tests
+- Visualisation améliorée
+"""
+
+import json
+import matplotlib.pyplot as plt
+import numpy as np
+from collections import defaultdict, Counter
+from typing import List, Dict, Tuple, Set, Optional
+import copy
+from scipy import ndimage
+
+# ============================================
+# PARTIE 1: DÉTECTEUR DE FORMES GÉOMÉTRIQUES
+# ============================================
+
+class GeometryDetector:
+    """Détecte tous les objets géométriques présents dans une grille."""
+    
+    def __init__(self):
+        self.grid = None
+        self.objects = []
+        
+    def load_grid(self, grid):
+        """Charge une grille pour l'analyser."""
+        self.grid = np.array(grid)
+        self.objects = []
+        
+    def extract_objects(self):
+        """
+        Extrait tous les objets distincts de la grille.
+        Un objet = pixels de même couleur connectés (8-connectivité).
+        
+        Returns:
+            list: Liste de (color, positions) pour chaque objet
+        """
+        objects = []
+        
+        # Pour chaque couleur non-noire
+        for color in range(1, 10):
+            # Créer un masque binaire pour cette couleur
+            mask = (self.grid == color).astype(int)
+            
+            if not mask.any():
+                continue
+            
+            # Trouver les composantes connexes (8-connectivité)
+            labeled, num_features = ndimage.label(mask, structure=np.ones((3, 3)))
+            
+            # Pour chaque composante
+            for obj_id in range(1, num_features + 1):
+                positions = np.argwhere(labeled == obj_id)
+                objects.append({
+                    'color': color,
+                    'positions': positions,
+                    'size': len(positions)
+                })
+        
+        return objects
+    
+    def detect_line_segment(self, positions):
+        """Détecte si un ensemble de positions forme un segment de ligne."""
+        if len(positions) < 2:
+            return None
+        
+        # Vérifier alignement horizontal
+        rows = positions[:, 0]
+        if len(set(rows)) == 1:
+            cols = sorted(positions[:, 1])
+            if all(cols[i+1] - cols[i] == 1 for i in range(len(cols)-1)):
+                return {
+                    "orientation": "horizontal",
+                    "length": len(positions),
+                    "start": tuple(positions[0]),
+                    "end": tuple(positions[-1])
+                }
+        
+        # Vérifier alignement vertical
+        cols = positions[:, 1]
+        if len(set(cols)) == 1:
+            rows = sorted(positions[:, 0])
+            if all(rows[i+1] - rows[i] == 1 for i in range(len(rows)-1)):
+                return {
+                    "orientation": "vertical",
+                    "length": len(positions),
+                    "start": tuple(positions[0]),
+                    "end": tuple(positions[-1])
+                }
+        
+        # Vérifier diagonale
+        sorted_positions = positions[positions[:, 0].argsort()]
+        diffs = np.diff(sorted_positions, axis=0)
+        
+        # Diagonale descendante (↘)
+        if len(diffs) > 0 and np.all((diffs[:, 0] == 1) & (diffs[:, 1] == 1)):
+            return {
+                "orientation": "diagonal_down_right",
+                "length": len(positions),
+                "start": tuple(sorted_positions[0]),
+                "end": tuple(sorted_positions[-1])
+            }
+        
+        # Diagonale montante (↗)
+        if len(diffs) > 0 and np.all((diffs[:, 0] == 1) & (diffs[:, 1] == -1)):
+            return {
+                "orientation": "diagonal_up_right",
+                "length": len(positions),
+                "start": tuple(sorted_positions[0]),
+                "end": tuple(sorted_positions[-1])
+            }
+        
+        # Diagonale descendante vers la gauche (↙)
+        sorted_by_col = positions[positions[:, 1].argsort()]
+        diffs_col = np.diff(sorted_by_col, axis=0)
+        if len(diffs_col) > 0 and np.all((diffs_col[:, 0] == 1) & (diffs_col[:, 1] == -1)):
+            return {
+                "orientation": "diagonal_down_left",
+                "length": len(positions),
+                "start": tuple(sorted_by_col[0]),
+                "end": tuple(sorted_by_col[-1])
+            }
+        
+        return None
+    
+    def detect_rectangle(self, positions):
+        """Détecte si c'est un rectangle ou un carré."""
+        if len(positions) < 4:
+            return None
+        
+        min_row = positions[:, 0].min()
+        max_row = positions[:, 0].max()
+        min_col = positions[:, 1].min()
+        max_col = positions[:, 1].max()
+        
+        height = max_row - min_row + 1
+        width = max_col - min_col + 1
+        
+        # Rectangle plein
+        expected_size = height * width
+        if len(positions) == expected_size:
+            # Vérifier que c'est bien un rectangle plein
+            rect_positions = set()
+            for r in range(min_row, max_row + 1):
+                for c in range(min_col, max_col + 1):
+                    rect_positions.add((r, c))
+            
+            actual_positions = set(map(tuple, positions))
+            if rect_positions == actual_positions:
+                is_square = (height == width)
+                return {
+                    "shape": "square" if is_square else "rectangle",
+                    "filled": True,
+                    "height": height,
+                    "width": width,
+                    "top_left": (min_row, min_col),
+                    "bottom_right": (max_row, max_col)
+                }
+        
+        # Rectangle contour
+        perimeter_size = 2 * (height + width) - 4
+        if len(positions) == perimeter_size and height > 2 and width > 2:
+            is_square = (height == width)
+            return {
+                "shape": "square" if is_square else "rectangle",
+                "filled": False,
+                "height": height,
+                "width": width,
+                "top_left": (min_row, min_col),
+                "bottom_right": (max_row, max_col)
+            }
+        
+        return None
+    
+    def classify_object(self, obj):
+        """Classifie un objet selon sa géométrie."""
+        positions = obj['positions']
+        color = obj['color']
+        
+        result = {
+            'color': color,
+            'size': obj['size']
+        }
+        
+        # Essayer segment
+        segment = self.detect_line_segment(positions)
+        if segment:
+            result['type'] = 'segment'
+            result.update(segment)
+            return result
+        
+        # Essayer rectangle
+        rectangle = self.detect_rectangle(positions)
+        if rectangle:
+            result['type'] = rectangle['shape']
+            result.update(rectangle)
+            return result
+        
+        # Par défaut : blob/cluster
+        min_row = positions[:, 0].min()
+        max_row = positions[:, 0].max()
+        min_col = positions[:, 1].min()
+        max_col = positions[:, 1].max()
+        
+        result['type'] = 'blob'
+        result['bounding_box'] = {
+            'top_left': (min_row, min_col),
+            'bottom_right': (max_row, max_col),
+            'height': max_row - min_row + 1,
+            'width': max_col - min_col + 1
+        }
+        
+        return result
+    
+    def detect_all(self, grid):
+        """
+        Détecte tous les objets géométriques dans une grille.
+        
+        Returns:
+            dict: Résumé de l'analyse avec tous les objets détectés
+        """
+        self.load_grid(grid)
+        
+        # Extraire tous les objets
+        objects = self.extract_objects()
+        
+        if not objects:
+            return {
+                "total_objects": 0,
+                "objects": [],
+                "summary": "Grille vide"
+            }
+        
+        # Classifier chaque objet
+        classified_objects = []
+        for obj in objects:
+            classified = self.classify_object(obj)
+            classified_objects.append(classified)
+        
+        # Créer un résumé
+        type_counts = Counter([obj['type'] for obj in classified_objects])
+        
+        return {
+            "total_objects": len(classified_objects),
+            "objects": classified_objects,
+            "summary": dict(type_counts),
+            "colors_used": list(set(obj['color'] for obj in classified_objects))
+        }
+
+# ============================================
+# PARTIE 2: GESTION DES COULEURS ET VISUALISATION
+# ============================================
+
+class ColorMapper:
+    """Mappe les codes de couleur (0-9) vers des couleurs hexadécimales."""
+    COLOR_MAP = {
+        0: "#000000",  # Noir (fond)
+        1: "#0074D9",  # Bleu
+        2: "#FF4136",  # Rouge
+        3: "#2ECC40",  # Vert
+        4: "#FFDC00",  # Jaune
+        5: "#AAAAAA",  # Gris
+        6: "#F012BE",  # Magenta
+        7: "#FF851B",  # Orange
+        8: "#7FDBFF",  # Cyan
+        9: "#870C25",  # Marron
+    }
+    
+    @staticmethod
+    def hex(color_code: int) -> str:
+        return ColorMapper.COLOR_MAP.get(color_code, "#FFFFFF")
+    
+    @staticmethod
+    def name(color_code: int) -> str:
+        names = {
+            0: "Noir", 1: "Bleu", 2: "Rouge", 3: "Vert", 4: "Jaune",
+            5: "Gris", 6: "Magenta", 7: "Orange", 8: "Cyan", 9: "Marron"
+        }
+        return names.get(color_code, f"Couleur {color_code}")
+
+def grid_to_rgb(grid: List[List[int]]) -> np.ndarray:
+    """Convertit une grille en tableau RGB."""
+    h, w = len(grid), len(grid[0])
+    rgb_array = np.zeros((h, w, 3))
+    
+    for y in range(h):
+        for x in range(w):
+            hex_color = ColorMapper.hex(grid[y][x])
+            hex_color = hex_color.lstrip('#')
+            rgb = tuple(int(hex_color[i:i+2], 16) / 255.0 
+                       for i in (0, 2, 4))
+            rgb_array[y, x] = rgb
+    
+    return rgb_array
+
+def visualize_grids(input_grid: List[List[int]], 
+                   output_grid: List[List[int]], 
+                   title_left: str = "INPUT",
+                   title_right: str = "OUTPUT",
+                   rules_text: str = "",
+                   show_gridlines: bool = True,
+                   shape_info: Dict = None):
+    """Visualise deux grilles côte à côte avec des règles et informations de forme."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 7))
+    
+    # --- Grille d'entrée ---
+    ax1.imshow(grid_to_rgb(input_grid))
+    ax1.set_title(title_left, fontsize=14, fontweight='bold', pad=20)
+    
+    # --- Grille de sortie ---
+    ax2.imshow(grid_to_rgb(output_grid))
+    ax2.set_title(title_right, fontsize=14, fontweight='bold', pad=20)
+    
+    # Ajouter les grilles si demandé
+    if show_gridlines:
+        h, w = len(input_grid), len(input_grid[0])
+        for ax in [ax1, ax2]:
+            ax.set_xticks(np.arange(-0.5, w, 1), minor=True)
+            ax.set_yticks(np.arange(-0.5, h, 1), minor=True)
+            ax.grid(which='minor', color='white', linewidth=1)
+            ax.tick_params(which='both', 
+                          bottom=False, left=False, 
+                          labelbottom=False, labelleft=False)
+    
+    # Ajouter les règles en bas si fournies
+    if rules_text:
+        fig.text(0.5, 0.02, rules_text, 
+                ha='center', va='bottom',
+                fontsize=11, 
+                bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
+    
+    # Ajouter informations de forme si fournies
+    if shape_info:
+        shape_text = f"Formes détectées: {shape_info.get('summary', {})}\n"
+        shape_text += f"Couleurs: {shape_info.get('colors_used', [])}"
+        fig.text(0.5, 0.06, shape_text,
+                ha='center', va='bottom',
+                fontsize=9,
+                bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.8))
+    
+    # Ajuster l'espace pour les textes
+    bottom_space = 0.1
+    if rules_text:
+        bottom_space += 0.08
+    if shape_info:
+        bottom_space += 0.08
+    
+    plt.subplots_adjust(bottom=bottom_space)
+    
+    # Légende des couleurs
+    legend_elements = []
+    colors_in_grid = set()
+    
+    for row in input_grid + output_grid:
+        colors_in_grid.update(set(row))
+    
+    colors_in_grid = sorted(list(colors_in_grid))
+    for color in colors_in_grid:
+        if color != 0:
+            legend_elements.append(
+                plt.Rectangle((0, 0), 1, 1, 
+                            facecolor=ColorMapper.hex(color),
+                            label=f"{color}: {ColorMapper.name(color)}")
+            )
+    
+    if legend_elements:
+        fig.legend(handles=legend_elements, 
+                  loc='upper center', 
+                  ncol=min(5, len(legend_elements)),
+                  bbox_to_anchor=(0.5, 0.95))
+    
+    plt.suptitle("Analyse des Grilles - Système de Règles avec Détection de Formes", 
+                fontsize=16, fontweight='bold', y=0.98)
+    plt.tight_layout(rect=[0, 0.02, 1, 0.95])
+    plt.show()
+
+# ============================================
+# PARTIE 3: EXTRACTION DE RÈGLES AVANCÉE AVEC DÉTECTION DE FORMES
+# ============================================
+
+class AdvancedGridRuleExtractor:
+    """Extrait les règles de transformation en utilisant la détection de formes."""
+    
+    def __init__(self, use_shape_detection: bool = True):
+        self.color_changes = {}  # {old_color: new_color}
+        self.connections = {}    # {color: type} où type = 'H', 'V', ou 'D'
+        self.translations = {}   # {color: (dx, dy)}
+        self.use_shape_detection = use_shape_detection
+        
+        if use_shape_detection:
+            self.shape_detector = GeometryDetector()
+        else:
+            self.shape_detector = None
+        
+    def extract_from_examples(self, train_examples: List[Dict]) -> None:
+        """Extrait les règles à partir des exemples d'entraînement."""
+        print("=== Extraction des règles depuis les exemples ===")
+        
+        for idx, example in enumerate(train_examples):
+            print(f"\n--- Analyse de l'exemple {idx+1} ---")
+            
+            input_grid = example["input"]
+            output_grid = example["output"]
+            
+            # Détecter les changements de couleur
+            self._extract_color_changes(input_grid, output_grid)
+            
+            # Analyser les formes si activé
+            if self.use_shape_detection:
+                self._analyze_shapes(input_grid, output_grid)
+            
+            # Analyser les transformations
+            self._analyze_transformations(input_grid, output_grid)
+    
+    def _extract_color_changes(self, input_grid: List[List[int]], 
+                               output_grid: List[List[int]]) -> None:
+        """Extrait les changements de couleur (même position)."""
+        h = len(input_grid)
+        w = len(input_grid[0])
+        
+        for i in range(h):
+            for j in range(w):
+                old_color = input_grid[i][j]
+                new_color = output_grid[i][j]
+                
+                if old_color != 0 and old_color != new_color:
+                    if old_color in self.color_changes:
+                        if self.color_changes[old_color] != new_color:
+                            print(f"  Attention: conflit pour {old_color} -> {self.color_changes[old_color]} ou {new_color}")
+                    self.color_changes[old_color] = new_color
+                    print(f"  Changement couleur: {old_color} -> {new_color}")
+    
+    def _analyze_shapes(self, input_grid: List[List[int]], 
+                       output_grid: List[List[int]]) -> None:
+        """Analyse les formes dans les grilles."""
+        if not self.shape_detector:
+            return
+        
+        print("  Analyse des formes:")
+        
+        # Analyser l'input
+        input_shapes = self.shape_detector.detect_all(input_grid)
+        print(f"    Input: {input_shapes['total_objects']} objets - {input_shapes['summary']}")
+        
+        # Analyser l'output
+        output_shapes = self.shape_detector.detect_all(output_grid)
+        print(f"    Output: {output_shapes['total_objects']} objets - {output_shapes['summary']}")
+        
+        # Comparer les formes pour déduire des règles
+        self._extract_shape_rules(input_shapes, output_shapes)
+    
+    def _extract_shape_rules(self, input_shapes: Dict, output_shapes: Dict) -> None:
+        """Extrait des règles basées sur les changements de forme."""
+        # Pour chaque couleur présente dans les deux
+        input_colors = set(obj['color'] for obj in input_shapes['objects'])
+        output_colors = set(obj['color'] for obj in output_shapes['objects'])
+        
+        common_colors = input_colors.intersection(output_colors)
+        
+        for color in common_colors:
+            input_objs = [obj for obj in input_shapes['objects'] if obj['color'] == color]
+            output_objs = [obj for obj in output_shapes['objects'] if obj['color'] == color]
+            
+            # Si le nombre d'objets change, c'est une fusion ou division
+            if len(input_objs) != len(output_objs):
+                print(f"    Changement nombre objets couleur {color}: {len(input_objs)} -> {len(output_objs)}")
+    
+    def _analyze_transformations(self, input_grid: List[List[int]], 
+                                output_grid: List[List[int]]) -> None:
+        """Analyse les transformations (connexions et translations)."""
+        h = len(input_grid)
+        w = len(input_grid[0])
+        
+        input_points_by_color = defaultdict(set)
+        output_points_by_color = defaultdict(set)
+        
+        for i in range(h):
+            for j in range(w):
+                c_in = input_grid[i][j]
+                c_out = output_grid[i][j]
+                if c_in != 0:
+                    input_points_by_color[c_in].add((i, j))
+                if c_out != 0:
+                    output_points_by_color[c_out].add((i, j))
+        
+        for color_out in output_points_by_color.keys():
+            possible_input_colors = []
+            
+            for old_color, new_color in self.color_changes.items():
+                if new_color == color_out:
+                    possible_input_colors.append(old_color)
+            
+            if color_out not in self.color_changes.values():
+                possible_input_colors.append(color_out)
+            
+            input_points_for_color = set()
+            for c_in in possible_input_colors:
+                if c_in in input_points_by_color:
+                    input_points_for_color.update(input_points_by_color[c_in])
+            
+            output_points = output_points_by_color[color_out]
+            
+            if not input_points_for_color:
+                continue
+            
+            if not self._try_detect_translation(input_points_for_color, 
+                                              output_points, color_out):
+                self._try_detect_connection(input_points_for_color,
+                                          output_points, color_out)
+    
+    def _try_detect_translation(self, input_points: Set[Tuple[int, int]],
+                               output_points: Set[Tuple[int, int]], 
+                               color: int) -> bool:
+        """Détecte si c'est une translation. Retourne True si détectée."""
+        if len(input_points) != len(output_points) or not input_points:
+            return False
+        
+        ref_in = next(iter(input_points))
+        possible_displacements = set()
+        
+        for p_out in output_points:
+            dx = p_out[0] - ref_in[0]
+            dy = p_out[1] - ref_in[1]
+            possible_displacements.add((dx, dy))
+        
+        for dx, dy in possible_displacements:
+            match_all = True
+            for p_in in input_points:
+                moved = (p_in[0] + dx, p_in[1] + dy)
+                if moved not in output_points:
+                    match_all = False
+                    break
+            
+            if match_all:
+                for p_out in output_points:
+                    original = (p_out[0] - dx, p_out[1] - dy)
+                    if original not in input_points:
+                        match_all = False
+                        break
+            
+            if match_all:
+                self.translations[color] = (dx, dy)
+                print(f"  Translation pour {color}: ({dx}, {dy})")
+                return True
+        
+        return False
+    
+    def _try_detect_connection(self, input_points: Set[Tuple[int, int]],
+                              output_points: Set[Tuple[int, int]],
+                              color: int) -> None:
+        """Détecte le type de connexion entre les points."""
+        base_points = input_points.intersection(output_points)
+        added_points = output_points - input_points
+        
+        if not added_points or len(base_points) < 2:
+            return
+        
+        base_list = list(base_points)
+        for i in range(len(base_list)):
+            for j in range(i+1, len(base_list)):
+                p1 = base_list[i]
+                p2 = base_list[j]
+                
+                if p1[0] == p2[0]:  # Horizontal
+                    min_y = min(p1[1], p2[1])
+                    max_y = max(p1[1], p2[1])
+                    line_points = {(p1[0], y) for y in range(min_y, max_y+1)}
+                    
+                    if line_points.issubset(output_points):
+                        self.connections[color] = 'H'
+                        print(f"  Connexion horizontale pour {color}")
+                        return
+                
+                elif p1[1] == p2[1]:  # Vertical
+                    min_x = min(p1[0], p2[0])
+                    max_x = max(p1[0], p2[0])
+                    line_points = {(x, p1[1]) for x in range(min_x, max_x+1)}
+                    
+                    if line_points.issubset(output_points):
+                        self.connections[color] = 'V'
+                        print(f"  Connexion verticale pour {color}")
+                        return
+                
+                elif abs(p1[0] - p2[0]) == abs(p1[1] - p2[1]):  # Diagonale
+                    dx = 1 if p2[0] > p1[0] else -1
+                    dy = 1 if p2[1] > p1[1] else -1
+                    steps = abs(p2[0] - p1[0])
+                    line_points = {(p1[0] + k*dx, p1[1] + k*dy) 
+                                   for k in range(steps+1)}
+                    
+                    if line_points.issubset(output_points):
+                        self.connections[color] = 'D'
+                        print(f"  Connexion diagonale pour {color}")
+                        return
+    
+    def get_rules(self) -> Dict:
+        """Retourne toutes les règles extraites."""
+        return {
+            "color_changes": self.color_changes,
+            "connections": self.connections,
+            "translations": self.translations
+        }
+
+# ============================================
+# PARTIE 4: APPLICATION DES RÈGLES AVEC FORMES
+# ============================================
+
+class GridTransformer:
+    """Applique les règles de transformation à une grille."""
+    
+    def __init__(self, rules: Dict):
+        self.color_changes = rules.get("color_changes", {})
+        self.connections = rules.get("connections", {})
+        self.translations = rules.get("translations", {})
+    
+    def apply_rules(self, input_grid: List[List[int]]) -> List[List[int]]:
+        """
+        Applique les règles dans l'ordre:
+        1. Changements de couleur
+        2. Connexions
+        3. Translations
+        """
+        grid = copy.deepcopy(input_grid)
+        h = len(grid)
+        w = len(grid[0])
+        
+        # Étape 1: Changements de couleur
+        grid = self._apply_color_changes(grid)
+        
+        # Étape 2: Connexions
+        grid = self._apply_connections(grid)
+        
+        # Étape 3: Translations
+        grid = self._apply_translations(grid)
+        
+        return grid
+    
+    def _apply_color_changes(self, grid: List[List[int]]) -> List[List[int]]:
+        h = len(grid)
+        w = len(grid[0])
+        
+        for i in range(h):
+            for j in range(w):
+                if grid[i][j] in self.color_changes:
+                    grid[i][j] = self.color_changes[grid[i][j]]
+        
+        return grid
+    
+    def _apply_connections(self, grid: List[List[int]]) -> List[List[int]]:
+        h = len(grid)
+        w = len(grid[0])
+        
+        for color, conn_type in self.connections.items():
+            # Trouver tous les points de cette couleur
+            points = [(i, j) for i in range(h) for j in range(w) 
+                     if grid[i][j] == color]
+            
+            if len(points) < 2:
+                continue
+            
+            # Pour chaque paire de points
+            for k in range(len(points)):
+                for l in range(k+1, len(points)):
+                    p1 = points[k]
+                    p2 = points[l]
+                    
+                    if conn_type == 'H' and p1[0] == p2[0]:  # Horizontal
+                        self._draw_horizontal_line(grid, p1, p2, color)
+                    
+                    elif conn_type == 'V' and p1[1] == p2[1]:  # Vertical
+                        self._draw_vertical_line(grid, p1, p2, color)
+                    
+                    elif conn_type == 'D':  # Diagonale
+                        dx = p2[0] - p1[0]
+                        dy = p2[1] - p1[1]
+                        if abs(dx) == abs(dy):  # Vraie diagonale
+                            self._draw_diagonal_line(grid, p1, p2, color)
+        
+        return grid
+    
+    def _draw_horizontal_line(self, grid: List[List[int]], 
+                            p1: Tuple[int, int], p2: Tuple[int, int], 
+                            color: int) -> None:
+        """Dessine une ligne horizontale entre p1 et p2."""
+        row = p1[0]
+        start_col = min(p1[1], p2[1])
+        end_col = max(p1[1], p2[1])
+        
+        for col in range(start_col, end_col + 1):
+            if grid[row][col] == 0:  # Remplir seulement les cases vides
+                grid[row][col] = color
+    
+    def _draw_vertical_line(self, grid: List[List[int]], 
+                          p1: Tuple[int, int], p2: Tuple[int, int], 
+                          color: int) -> None:
+        """Dessine une ligne verticale entre p1 et p2."""
+        col = p1[1]
+        start_row = min(p1[0], p2[0])
+        end_row = max(p1[0], p2[0])
+        
+        for row in range(start_row, end_row + 1):
+            if grid[row][col] == 0:  # Remplir seulement les cases vides
+                grid[row][col] = color
+    
+    def _draw_diagonal_line(self, grid: List[List[int]], 
+                          p1: Tuple[int, int], p2: Tuple[int, int], 
+                          color: int) -> None:
+        """Dessine une ligne diagonale entre p1 et p2."""
+        dx = 1 if p2[0] > p1[0] else -1
+        dy = 1 if p2[1] > p1[1] else -1
+        steps = abs(p2[0] - p1[0])
+        
+        for step in range(steps + 1):
+            row = p1[0] + step * dx
+            col = p1[1] + step * dy
+            if grid[row][col] == 0:  # Remplir seulement les cases vides
+                grid[row][col] = color
+    
+    def _apply_translations(self, grid: List[List[int]]) -> List[List[int]]:
+        """Applique les translations avec support pour :
+        1. Traductions multiples (horizontales ET verticales)
+        2. Propagation (pas juste déplacement)
+        3. Pixels qui changent de couleur avant d'être translatés
+        """
+        h = len(grid)
+        w = len(grid[0])
+    
+        # Créer une copie de la grille pour l'analyse
+        working_grid = copy.deepcopy(grid)
+    
+        # Étape 1: Appliquer les changements de couleur D'ABORD
+        # (important pour les pixels qui changent de couleur puis sont translatés)
+        for i in range(h):
+            for j in range(w):
+                color = working_grid[i][j]
+                if color in self.color_changes:
+                    working_grid[i][j] = self.color_changes[color]
+    
+        # Étape 2: Préparer une nouvelle grille pour les résultats finaux
+        final_grid = [[0 for _ in range(w)] for _ in range(h)]
+    
+        # Étape 3: Traiter chaque couleur séparément avec ses propres règles
+        # Regrouper les pixels par couleur FINALE (après changements)
+        pixels_by_final_color = defaultdict(list)
+
+        for i in range(h):
+            for j in range(w):
+                color = working_grid[i][j]
+                if color != 0:
+                    pixels_by_final_color[color].append((i, j))
+    
+        # Étape 4: Pour chaque couleur, appliquer SES translations spécifiques
+        for color, positions in pixels_by_final_color.items():
+            if color not in self.translations:
+                # Pas de translation pour cette couleur : copier directement
+                for i, j in positions:
+                    final_grid[i][j] = color
+                continue
+        
+            # Récupérer la translation pour cette couleur
+            dx, dy = self.translations[color]
+        
+            # Appliquer la translation à chaque pixel
+            for i, j in positions:
+                new_i = i + dy
+                new_j = j + dx
+
+                # Vérifier les limites de la grille
+                if 0 <= new_i < h and 0 <= new_j < w:
+                    # Si la case est vide ou si cette couleur a priorité
+                    if final_grid[new_i][new_j] == 0:
+                        final_grid[new_i][new_j] = color
+                    else:
+                        # Conflit : on garde l'ancienne valeur (ou on pourrait fusionner)
+                        # Pour l'instant, on laisse l'ancienne
+                        pass
+
+        #   Étape 5: Gérer les pixels qui NE DOIVENT PAS bouger
+        # (ceux qui n'ont pas de translation ou dont la translation échoue)
+        for i in range(h):
+            for j in range(w):
+                if working_grid[i][j] != 0 and final_grid[i][j] == 0:
+                    # Ce pixel n'a pas été placé par une translation : le remettre
+                    final_grid[i][j] = working_grid[i][j]
+    
+        return final_grid
+
+# ============================================
+# PARTIE 5: FONCTIONS PRINCIPALES COMPLÈTES
+# ============================================
+
+def load_data_from_json(filepath: str) -> Dict:
+    """Charge les données depuis un fichier JSON."""
+    with open(filepath, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    return data
+
+def save_results_to_json(results: Dict, filepath: str) -> None:
+    """Sauvegarde les résultats dans un fichier JSON."""
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(results, f, indent=2)
+
+def analyze_shapes_in_data(data: Dict):
+    """Analyse toutes les grilles dans les données pour détecter les formes."""
+    detector = GeometryDetector()
+    
+    print("\n" + "="*70)
+    print("ANALYSE DES FORMES DANS LES DONNÉES")
+    print("="*70)
+    
+    # Analyser les exemples d'entraînement
+    if 'train' in data:
+        print("\n🎓 EXEMPLES D'ENTRAÎNEMENT")
+        print("-"*70)
+        
+        for i, example in enumerate(data['train'], 1):
+            print(f"\n📋 Exemple {i} - INPUT:")
+            result = detector.detect_all(example['input'])
+            print(f"   ➜ {result['total_objects']} objets - {result['summary']}")
+            
+            if 'output' in example:
+                print(f"\n📋 Exemple {i} - OUTPUT:")
+                result = detector.detect_all(example['output'])
+                print(f"   ➜ {result['total_objects']} objets - {result['summary']}")
+    
+    # Analyser les exemples de test
+    if 'test' in data:
+        print("\n🧪 EXEMPLES DE TEST")
+        print("-"*70)
+        
+        for i, example in enumerate(data['test'], 1):
+            print(f"\n📋 Test {i} - INPUT:")
+            result = detector.detect_all(example['input'])
+            print(f"   ➜ {result['total_objects']} objets - {result['summary']}")
+
+def main(visualize: bool = True, json_file: str = "grid_data.json", 
+         detect_shapes: bool = True, analyze_all_shapes: bool = False):
+    """
+    Fonction principale qui génère les outputs avec détection de formes.
+    
+    Args:
+        visualize: Si True, affiche les visualisations
+        json_file: Chemin vers le fichier JSON contenant les données
+        detect_shapes: Si True, utilise la détection de formes pour l'extraction des règles
+        analyze_all_shapes: Si True, analyse toutes les formes avant de procéder
+    """
+    # Charger les données
+    print("Chargement des données...")
+    try:
+        data = load_data_from_json(json_file)
+    except FileNotFoundError:
+        print(f"Erreur: Fichier '{json_file}' non trouvé.")
+        return
+    
+    # Analyser toutes les formes si demandé
+    if analyze_all_shapes:
+        analyze_shapes_in_data(data)
+    
+    # Extraire les règles avec détection de formes
+    print("\nExtraction des règles...")
+    extractor = AdvancedGridRuleExtractor(use_shape_detection=detect_shapes)
+    extractor.extract_from_examples(data["train"])
+    rules = extractor.get_rules()
+    
+    print(f"\n=== RÈGLES EXTRACTES ===")
+    print(f"Changements de couleur: {rules['color_changes']}")
+    print(f"Connexions: {rules['connections']}")
+    print(f"Translations: {rules['translations']}")
+    
+    # Visualisation des exemples d'entraînement (optionnel)
+    if visualize and "train" in data:
+        print("\n=== VISUALISATION DES EXEMPLES D'ENTRAÎNEMENT ===")
+        detector = GeometryDetector()
+        
+        for idx, example in enumerate(data["train"]):
+            print(f"\nExemple d'entraînement {idx + 1}:")
+            
+            # Analyser les formes pour l'input
+            shape_info_input = detector.detect_all(example["input"])
+            shape_info_output = detector.detect_all(example["output"])
+            
+            # Créer le texte des règles pour cet exemple
+            rules_text = f"Règles appliquées à cet exemple:\n"
+            
+            # Identifier les règles pertinentes pour cet exemple
+            input_grid = example["input"]
+            colors_present = set()
+            for row in input_grid:
+                colors_present.update(set(row))
+            
+            # Filtrer les règles pour les couleurs présentes
+            for color in colors_present:
+                if color in rules['color_changes']:
+                    rules_text += f"  {color} → {rules['color_changes'][color]}\n"
+                if color in rules['connections']:
+                    conn_type = rules['connections'][color]
+                    type_name = {'H': 'Horizontale', 'V': 'Verticale', 'D': 'Diagonale'}.get(conn_type, conn_type)
+                    rules_text += f"  Connexion {type_name} pour {color}\n"
+                if color in rules['translations']:
+                    dx, dy = rules['translations'][color]
+                    rules_text += f"  Translation ({dx}, {dy}) pour {color}\n"
+            
+            visualize_grids(
+                input_grid=example["input"],
+                output_grid=example["output"],
+                title_left=f"EXEMPLE {idx+1} - INPUT",
+                title_right=f"EXEMPLE {idx+1} - OUTPUT ATTENDU",
+                rules_text=rules_text,
+                shape_info=shape_info_input  # Afficher les formes de l'input
+            )
+    
+    # Appliquer aux grilles de test
+    print(f"\n=== APPLICATION AUX TESTS ===")
+    
+    transformer = GridTransformer(rules)
+    results = []
+    
+    # Chercher les tests (supporte "Test" ou "test")
+    test_key = "Test" if "Test" in data else "test"
+    
+    if test_key in data:
+        for test_idx, test_case in enumerate(data[test_key]):
+            print(f"\n=== TEST {test_idx + 1} ===")
+            
+            input_grid = test_case["input"]
+            
+            # Afficher l'input
+            print("Input (format condensé):")
+            if len(input_grid) <= 8:
+                for row in input_grid:
+                    print("  " + str(row))
+            else:
+                for row in input_grid[:4]:
+                    print("  " + str(row))
+                print("  ...")
+                for row in input_grid[-4:]:
+                    print("  " + str(row))
+            
+            # Analyser les formes de l'input si demandé
+            shape_info = None
+            if detect_shapes:
+                detector = GeometryDetector()
+                shape_info = detector.detect_all(input_grid)
+                print(f"Formes détectées dans l'input: {shape_info['summary']}")
+            
+            # GÉNÉRER L'OUTPUT
+            output_grid = transformer.apply_rules(input_grid)
+            
+            print("\nOutput prédit (format condensé):")
+            if len(output_grid) <= 8:
+                for row in output_grid:
+                    print("  " + str(row))
+            else:
+                for row in output_grid[:4]:
+                    print("  " + str(row))
+                print("  ...")
+                for row in output_grid[-4:]:
+                    print("  " + str(row))
+            
+            results.append({
+                "input": input_grid,
+                "output": output_grid
+            })
+            
+            # Visualisation du test (optionnel)
+            if visualize:
+                # Analyser les formes de l'output si détection activée
+                output_shape_info = None
+                if detect_shapes:
+                    output_shape_info = detector.detect_all(output_grid)
+                
+                visualize_grids(
+                    input_grid=input_grid,
+                    output_grid=output_grid,
+                    title_left=f"TEST {test_idx+1} - INPUT",
+                    title_right=f"TEST {test_idx+1} - OUTPUT PRÉDIT",
+                    rules_text="Règles appliquées automatiquement",
+                    shape_info=shape_info
+                )
+    
+    # Sauvegarder les résultats
+    output_file = "grid_results_with_shapes.json"
+    save_results_to_json({"test_results": results}, output_file)
+    print(f"\n✓ Résultats sauvegardés dans '{output_file}'")
+    print(f"✓ {len(results)} test(s) traités avec succès")
+    
+    return results
+
+# ============================================
+# FONCTION UTILITAIRE POUR TESTS RAPIDES
+# ============================================
+
+def solve_single_test(train_examples: List[Dict], test_input: List[List[int]], 
+                     detect_shapes: bool = True) -> List[List[int]]:
+    """
+    Résout un seul test rapidement sans visualisation.
+    
+    Args:
+        train_examples: Liste d'exemples d'entraînement
+        test_input: Grille d'entrée du test
+        detect_shapes: Si True, utilise la détection de formes
+    
+    Returns:
+        Grille de sortie prédite
+    """
+    # Extraire les règles
+    extractor = AdvancedGridRuleExtractor(use_shape_detection=detect_shapes)
+    extractor.extract_from_examples(train_examples)
+    rules = extractor.get_rules()
+    
+    # Appliquer les règles
+    transformer = GridTransformer(rules)
+    output = transformer.apply_rules(test_input)
+    
+    return output
+
+def batch_process(json_file: str, output_file: str = "grid_results.json", 
+                  detect_shapes: bool = True):
+    """
+    Traite un fichier JSON en batch sans visualisation.
+    Parfait pour l'usage en production.
+    
+    Args:
+        json_file: Fichier d'entrée JSON
+        output_file: Fichier de sortie JSON
+        detect_shapes: Si True, utilise la détection de formes
+    """
+    print(f"Traitement batch de '{json_file}'...")
+    
+    data = load_data_from_json(json_file)
+    
+    # Extraire les règles
+    extractor = AdvancedGridRuleExtractor(use_shape_detection=detect_shapes)
+    extractor.extract_from_examples(data["train"])
+    rules = extractor.get_rules()
+    
+    transformer = GridTransformer(rules)
+    results = []
+    
+    # Chercher les tests
+    test_key = "Test" if "Test" in data else "test"
+    
+    if test_key in data:
+        for test_case in data[test_key]:
+            input_grid = test_case["input"]
+            output_grid = transformer.apply_rules(input_grid)
+            
+            results.append({
+                "input": input_grid,
+                "output": output_grid
+            })
+    
+    save_results_to_json({"test_results": results}, output_file)
+    print(f"✓ Terminé! {len(results)} test(s) sauvegardés dans '{output_file}'")
+
+# ============================================
+# POINT D'ENTRÉE PRINCIPAL
+# ============================================
+
+if __name__ == "__main__":
+    import sys
+    
+    print("=" * 70)
+    print("SYSTÈME DE RÉSOLUTION DE GRILLES ARC AVEC DÉTECTION DE FORMES")
+    print("=" * 70)
+    print("Fonctionnalités:")
+    print("1. Détection fine des formes géométriques")
+    print("2. Extraction des règles avec analyse de formes")
+    print("3. Génération des outputs pour les tests")
+    print("4. Visualisation améliorée avec informations de formes")
+    print("=" * 70)
+    
+    # Mode interactif ou batch?
+    mode = input("\nMode (1=Interactif avec visu, 2=Batch sans visu, 3=Analyse formes): ").strip()
+    
+    if mode == "1":
+        # Mode interactif avec visualisation
+        visualize_input = input("Voulez-vous afficher les visualisations? (oui/non): ").strip().lower()
+        visualize = visualize_input in ["oui", "o", "yes", "y"]
+        
+        shape_input = input("Activer la détection de formes? (oui/non): ").strip().lower()
+        detect_shapes = shape_input in ["oui", "o", "yes", "y"]
+        
+        json_file = input("Nom du fichier JSON (défaut: grid_data.json): ").strip()
+        if not json_file:
+            json_file = "grid_data.json"
+        
+        try:
+            main(visualize=visualize, json_file=json_file, detect_shapes=detect_shapes)
+        except Exception as e:
+            print(f"Erreur: {e}")
+            print("\nAssurez-vous que matplotlib et scipy sont installés:")
+            print("pip install matplotlib scipy")
+            sys.exit(1)
+    
+    elif mode == "2":
+        # Mode batch sans visualisation (pour production)
+        json_file = input("Nom du fichier JSON d'entrée: ").strip()
+        if not json_file:
+            json_file = "grid_data.json"
+        
+        output_file = input("Nom du fichier JSON de sortie (défaut: grid_results.json): ").strip()
+        if not output_file:
+            output_file = "grid_results.json"
+        
+        shape_input = input("Activer la détection de formes? (oui/non): ").strip().lower()
+        detect_shapes = shape_input in ["oui", "o", "yes", "y"]
+        
+        try:
+            batch_process(json_file, output_file, detect_shapes=detect_shapes)
+        except Exception as e:
+            print(f"Erreur: {e}")
+            sys.exit(1)
+    
+    elif mode == "3":
+        # Mode analyse de formes seulement
+        json_file = input("Nom du fichier JSON à analyser: ").strip()
+        if not json_file:
+            json_file = "grid_data.json"
+        
+        try:
+            data = load_data_from_json(json_file)
+            analyze_shapes_in_data(data)
+        except Exception as e:
+            print(f"Erreur: {e}")
+            sys.exit(1)
+    
+    else:
+        print("Mode non reconnu. Utilisez 1, 2 ou 3.")
