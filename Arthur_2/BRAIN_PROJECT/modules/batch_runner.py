@@ -10,6 +10,19 @@ Features:
     - Support for filtering by task name pattern
     - Non-blocking execution (no visualization during batch)
 
+Supported Transformations (v1.11.0):
+    - translate: Move objects by (dx, dy)
+    - rotate: Rotate objects (90, 180, 270 degrees)
+    - reflect: Mirror objects (horizontal/vertical)
+    - scale: Enlarge/shrink objects by factor
+    - symmetry: Create symmetric copies of objects
+    - flood_fill: Fill enclosed regions with color
+    - color_change: Change color of pixels
+    - draw_line: Draw connecting lines
+    - tile: Repeat pattern in grid
+    - add_border: Add border around objects
+    - composite: Combined transformations
+
 Usage:
     from modules.batch_runner import BatchRunner
     
@@ -17,6 +30,11 @@ Usage:
     results = runner.run_batch("data/", pattern="task_*.json")
     runner.print_summary(results)
     runner.save_results(results, "results/")  # Creates timestamped folder
+    
+    # Test specific primitive:
+    results = runner.run_batch("data/", pattern="task_flood_fill_*.json")
+    results = runner.run_batch("data/", pattern="task_symmetry_*.json")
+    results = runner.run_batch("data/", pattern="task_scale_*.json")
 """
 
 import json
@@ -26,6 +44,22 @@ from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+
+
+# All supported transformation types for coverage tracking
+SUPPORTED_TRANSFORMATIONS = [
+    "translation",      # Move objects by (dx, dy)
+    "rotation",         # Rotate objects (90, 180, 270 degrees)
+    "reflection",       # Mirror objects (horizontal/vertical)
+    "scaling",          # Enlarge/shrink objects by factor
+    "symmetry",         # Create symmetric copies of objects
+    "flood_fill",       # Fill enclosed regions with color
+    "color_change",     # Change color of pixels
+    "draw_line",        # Draw connecting lines
+    "tiling",           # Repeat pattern in grid
+    "add_border",       # Add border around objects
+    "composite",        # Combined transformations
+]
 
 
 @dataclass
@@ -151,7 +185,7 @@ class BatchResult:
     directory: str = ""
     
     # === NEW: Enhanced statistics for analysis ===
-    program_version: str = "1.10.0"  # Track version
+    program_version: str = "1.11.0"  # Track version - Added flood_fill, symmetry, scale
     
     # Per-transformation accuracy breakdown
     accuracy_by_transformation: Dict[str, Dict[str, float]] = field(default_factory=dict)
@@ -200,9 +234,26 @@ class BatchResult:
                 "directory": self.directory,
                 "program_version": self.program_version,
             },
+            "transformation_coverage": self._compute_coverage(),
             "task_results": [r.to_dict() for r in self.task_results]
         }
         return result
+    
+    def _compute_coverage(self) -> Dict[str, Any]:
+        """Compute transformation coverage statistics."""
+        detected_types = set(self.transformation_counts.keys())
+        covered = list(detected_types.intersection(set(SUPPORTED_TRANSFORMATIONS)))
+        not_covered = list(set(SUPPORTED_TRANSFORMATIONS) - detected_types)
+        coverage_pct = len(covered) / len(SUPPORTED_TRANSFORMATIONS) * 100 if SUPPORTED_TRANSFORMATIONS else 0
+        
+        return {
+            "total_supported": len(SUPPORTED_TRANSFORMATIONS),
+            "tested_count": len(covered),
+            "coverage_percent": round(coverage_pct, 1),
+            "tested": sorted(covered),
+            "not_tested": sorted(not_covered),
+            "supported_transformations": SUPPORTED_TRANSFORMATIONS
+        }
 
 
 class BatchRunner:
@@ -574,6 +625,18 @@ class BatchRunner:
         print(f"   Fallback usage:   {result.fallback_usage_rate:.1%}")
         print(f"   LLM success rate: {result.llm_success_rate:.1%}")
         
+        # === NEW: Show transformation coverage ===
+        detected_types = set(result.transformation_counts.keys())
+        covered = detected_types.intersection(set(SUPPORTED_TRANSFORMATIONS))
+        not_covered = set(SUPPORTED_TRANSFORMATIONS) - detected_types
+        coverage_pct = len(covered) / len(SUPPORTED_TRANSFORMATIONS) * 100
+        
+        print(f"\n📋 TRANSFORMATION COVERAGE: {len(covered)}/{len(SUPPORTED_TRANSFORMATIONS)} ({coverage_pct:.0f}%)")
+        if covered:
+            print(f"   ✓ Tested: {', '.join(sorted(covered))}")
+        if not_covered:
+            print(f"   ○ Not tested: {', '.join(sorted(not_covered))}")
+        
         # === NEW: Show timing breakdown ===
         if result.avg_llm_time > 0 or result.avg_detection_time > 0:
             print(f"\n⏱️  TIMING BREAKDOWN (avg per task):")
@@ -857,6 +920,19 @@ class BatchRunner:
                 total = stats['count']
                 lines.append(f"  {trans}: {acc:.1%} ({correct}/{total})")
             lines.append("")
+        
+        # Add transformation coverage
+        detected_types = set(result.transformation_counts.keys())
+        covered = detected_types.intersection(set(SUPPORTED_TRANSFORMATIONS))
+        not_covered = set(SUPPORTED_TRANSFORMATIONS) - detected_types
+        coverage_pct = len(covered) / len(SUPPORTED_TRANSFORMATIONS) * 100
+        
+        lines.append(f"TRANSFORMATION COVERAGE: {len(covered)}/{len(SUPPORTED_TRANSFORMATIONS)} ({coverage_pct:.0f}%)")
+        if covered:
+            lines.append(f"  Tested: {', '.join(sorted(covered))}")
+        if not_covered:
+            lines.append(f"  Not tested: {', '.join(sorted(not_covered))}")
+        lines.append("")
         
         lines.extend([
             "FILES:",

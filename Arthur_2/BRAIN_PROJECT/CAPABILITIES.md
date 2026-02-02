@@ -1,7 +1,7 @@
 # BRAIN Project - Capacités du Système
 
-> **Dernière mise à jour :** Janvier 2026  
-> **Version :** 2.3.0 (Unified Model Comparison)
+> **Dernière mise à jour :** Février 2026  
+> **Version :** 2.4.0 (Extended DSL - flood_fill, symmetry, scale)
 
 ---
 
@@ -126,7 +126,9 @@ bordered = detector.detect_bordered_objects(grid)
 | `draw_line` | Tracer une ligne entre 2 points | ✅ |
 | `tiling` | Répétition d'un motif pour remplir une grille plus grande | ✅ |
 | `composite` | Combinaison de transformations (rotate+translate, etc.) | ✅ |
-| `add_border` | Ajouter un contour coloré à un objet solide | ✅ **NEW** |
+| `add_border` | Ajouter un contour coloré à un objet solide | ✅ |
+| `flood_fill` | Remplissage de régions fermées avec une couleur | ✅ **NEW v2.4** |
+| `symmetry` | Création de copies symétriques d'objets | ✅ **NEW v2.4** |
 | `blob_transformation` | Transformation de formes irrégulières | ✅ |
 | `translation_and_color` | Translation + changement de couleur combinés | ✅ |
 
@@ -158,7 +160,9 @@ Le système peut détecter des transformations appliquées à des formes irrégu
 | `draw_line` | `color_filter` ou `point1`, `point2` | Tracer une ligne entre 2 points | ✅ |
 | `tile` | `repetitions_horizontal`, `repetitions_vertical` | Répéter un motif pour créer une grille plus grande | ✅ |
 | `composite` | `transformations` (liste d'actions) | Combiner plusieurs transformations (rotate + translate, etc.) | ✅ |
-| `add_border` | `border_color`, `color_filter` | Ajouter un contour coloré à un objet | ✅ **NEW** |
+| `add_border` | `border_color`, `color_filter` | Ajouter un contour coloré à un objet | ✅ |
+| `flood_fill` | `seed_point`, `fill_color`, `connectivity` | Remplir une région connectée | ✅ **NEW v2.4** |
+| `symmetry` | `axis`, `position`, `color_filter` | Créer une copie symétrique | ✅ **NEW v2.4** |
 
 ### Détails des axes de réflexion
 
@@ -356,9 +360,9 @@ ou
 
 ---
 
-## 📁 Dataset de test (v1.12.0)
+## 📁 Dataset de test (v2.4.0)
 
-Le projet inclut **52 tâches de test** couvrant toutes les transformations supportées, avec une répartition équilibrée pour des analyses statistiques robustes.
+Le projet inclut **64 tâches de test** couvrant toutes les transformations supportées, avec une répartition équilibrée pour des analyses statistiques robustes.
 
 ### Répartition par type de transformation
 
@@ -366,13 +370,17 @@ Le projet inclut **52 tâches de test** couvrant toutes les transformations supp
 |------|--------|----------|
 | **Translation** | 10 | `task_translation_01` à `08`, `task_blob_translation`, `task_l_shape` |
 | **Rotation** | 8 | `task_rotation_01` à `06`, `task_rotation_90`, `task_blob_rotation` |
-| **Reflection** | 7 | `task_reflection_01` à `05`, `task_reflection`, `task_blob_reflection` |
-| **Color change** | 7 | `task_color_change_01` à `05`, `task_color_change`, `task_blob_color_change` |
-| **Draw line** | 5 | `task_draw_line_01` à `04`, `task_draw_line` |
-| **Add border** | 4 | `task_add_border_01` à `03`, `task_add_border` |
-| **Tiling** | 5 | `task_tiling_01` à `03`, `task_pattern_tile`, `task_pattern_tile_3x3` |
-| **Composite** | 3 | `task_composite_01`, `02`, `task_composite_rotate_translate` |
-| **Multi-transform** | 3 | `task_multi_objects`, `task_multi_objects_same_transform`, `task_challenge_multi_transform` |
+| **Reflection** | 7 | `task_reflection_01` à `06`, `task_blob_reflection` |
+| **Color change** | 7 | `task_color_change_01` à `06`, `task_blob_color_change` |
+| **Draw line** | 5 | `task_draw_line_01` à `05` |
+| **Add border** | 4 | `task_add_border_01` à `04` |
+| **Tiling** | 5 | `task_tiling_01` à `03`, `task_pattern_tile_01`, `task_pattern_tile_02` |
+| **Composite** | 4 | `task_composite_01` à `04` |
+| **Flood fill** | 4 | `task_flood_fill_01` à `04` **(NEW v2.4)** |
+| **Symmetry** | 4 | `task_symmetry_01` à `04` **(NEW v2.4)** |
+| **Scale** | 4 | `task_scale_01` à `04` **(NEW v2.4)** |
+| **Blob** | 4 | `task_blob_01` à `04` |
+| **Multi-transform** | 3 | `task_multi_objects_01` à `03` |
 
 ### Variété des tests
 
@@ -401,6 +409,17 @@ python main.py --batch data/ --pattern "task_color_change_*.json"
 ---
 
 ## 📝 Historique des versions
+
+### v2.4.0 (Février 2026) - Extended DSL + New Primitives
+- ✅ **NOUVEAU: Action `flood_fill`** - Remplissage de régions fermées (enclosed regions, background)
+- ✅ **NOUVEAU: Action `symmetry`** - Création de copies symétriques (vertical, horizontal, adjacent)
+- ✅ **NOUVEAU: Action `scale`** - Mise à l'échelle d'objets (object-level scaling)
+- ✅ **Détection automatique** - Les 3 nouvelles transformations sont détectées automatiquement
+- ✅ **Direct fallback** - Exécution directe si confiance >= 0.85 (bypass LLM)
+- ✅ **12 nouvelles tâches de test** - 4 par nouvelle primitive
+- ✅ **DataLoader amélioré** - `load_latest_batch()` pour analyser uniquement le dernier batch
+- ✅ **BatchRunner v1.11.0** - Rapport de couverture des transformations
+- ✅ **64 tâches de test** au total
 
 ### v1.12.0 (Janvier 2026) - IEEE Publication Quality + Extended Dataset
 - ✅ **NOUVEAU: Figures vectorielles PDF** - Sortie compatible LaTeX/Overleaf
@@ -518,6 +537,9 @@ python main.py --batch data/ --pattern "task_color_change_*.json"
 - [x] ~~Support de transformations composées (translation + rotation simultanées)~~ ✅ v1.9.0
 - [x] ~~Module d'analyse de données pour publications~~ ✅ v1.11.0
 - [x] ~~Dataset élargi (~10 tâches par transformation)~~ ✅ v1.12.0
+- [x] ~~Primitive `flood_fill` (remplissage régions fermées)~~ ✅ v2.4.0
+- [x] ~~Primitive `symmetry` (création symétrie)~~ ✅ v2.4.0
+- [x] ~~Primitive `scale` (mise à l'échelle objets)~~ ✅ v2.4.0
 - [ ] Auto-détection du mode (single vs multi-transform)
 - [ ] Détection de structures hiérarchiques (grilles dans grilles)
 - [ ] Support de transformations conditionnelles (si couleur X alors...)
@@ -982,25 +1004,25 @@ python main.py --task data/task.json --self-correct --max-retries 2
 
 ---
 
-## 📊 Résumé des Actions Supportées (v2.0.0)
+## 📊 Résumé des Actions Supportées (v2.4.0)
 
-| Action | TIER | Description |
-|--------|------|-------------|
-| `translate` | - | Translation (dx, dy) |
-| `rotate` | - | Rotation (90°, 180°, 270°) |
-| `reflect` | - | Réflexion (horizontal, vertical, diagonal) |
-| `scale` | - | Mise à l'échelle (facteur) |
-| `color_change` | - | Changement de couleur |
-| `fill` | - | Remplissage simple |
-| `copy` | - | Copie avec offset |
-| `replace_color` | - | Remplacement de couleur |
-| `draw_line` | - | Tracer ligne (Bresenham) |
-| `tile` | - | Pavage/Tiling |
-| `add_border` | - | Ajout de contour |
-| `composite` | - | Transformations combinées |
-| **`symmetry`** | **2** | **Création de symétrie** |
-| **`flood_fill`** | **2** | **Remplissage connecté** |
-| **`conditional_color`** | **2** | **Couleur conditionnelle** |
+| Action | TIER | Description | Status |
+|--------|------|-------------|--------|
+| `translate` | - | Translation (dx, dy) | ✅ |
+| `rotate` | - | Rotation (90°, 180°, 270°) | ✅ |
+| `reflect` | - | Réflexion (horizontal, vertical, diagonal) | ✅ |
+| `scale` | **2** | Mise à l'échelle (facteur) | ✅ **v2.4** |
+| `color_change` | - | Changement de couleur | ✅ |
+| `fill` | - | Remplissage simple | ✅ |
+| `copy` | - | Copie avec offset | ✅ |
+| `replace_color` | - | Remplacement de couleur | ✅ |
+| `draw_line` | - | Tracer ligne (Bresenham) | ✅ |
+| `tile` | - | Pavage/Tiling | ✅ |
+| `add_border` | - | Ajout de contour | ✅ |
+| `composite` | - | Transformations combinées | ✅ |
+| **`symmetry`** | **2** | **Création de symétrie (vertical, horizontal, adjacent)** | ✅ **v2.4** |
+| **`flood_fill`** | **2** | **Remplissage régions fermées** | ✅ **v2.4** |
+| `conditional_color` | 2 | Couleur conditionnelle | ⏳ Planned |
 
 ---
 

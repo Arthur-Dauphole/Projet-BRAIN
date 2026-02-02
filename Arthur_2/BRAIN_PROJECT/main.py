@@ -213,14 +213,15 @@ class BRAINOrchestrator:
         results["detected_transformations"] = detected_transformations
         results["metadata"]["detection_time"] = time.time() - detection_start
         
-        # === CHECK FOR SPECIAL TRANSFORMATIONS (tiling, scaling) ===
+        # === CHECK FOR SPECIAL TRANSFORMATIONS (tiling, scaling, flood_fill, symmetry) ===
         # These transformations are grid-level and should NOT trigger multi-transform mode
         is_grid_level_transform = False
         if detected_transformations:
             for trans_list in detected_transformations:
                 for t in trans_list:
                     t_type = t.transformation_type if hasattr(t, 'transformation_type') else ''
-                    if t_type in ('tiling', 'scaling') and t.confidence >= 0.95:
+                    # flood_fill and symmetry apply globally, not per-color
+                    if t_type in ('tiling', 'scaling', 'flood_fill', 'symmetry') and t.confidence >= 0.95:
                         is_grid_level_transform = True
                         self._log(f"\n  ℹ️ Grid-level transformation detected ({t_type}), skipping per-color analysis")
                         break
@@ -277,6 +278,21 @@ class BRAINOrchestrator:
                     elif t.transformation_type == "add_border" and t.confidence >= 0.95:
                         use_direct_fallback = True
                         self._log(f"\n  ℹ️ Add border transformation detected, using direct execution")
+                        direct_fallback_action = self._build_fallback_action(detected_transformations, task)
+                        break
+                    elif t.transformation_type == "flood_fill" and t.confidence >= 0.95:
+                        use_direct_fallback = True
+                        self._log(f"\n  ℹ️ Flood fill transformation detected, using direct execution")
+                        direct_fallback_action = self._build_fallback_action(detected_transformations, task)
+                        break
+                    elif t.transformation_type == "symmetry" and t.confidence >= 0.95:
+                        use_direct_fallback = True
+                        self._log(f"\n  ℹ️ Symmetry transformation detected, using direct execution")
+                        direct_fallback_action = self._build_fallback_action(detected_transformations, task)
+                        break
+                    elif t.transformation_type == "scaling" and t.confidence >= 0.85:
+                        use_direct_fallback = True
+                        self._log(f"\n  ℹ️ Scaling transformation detected, using direct execution")
                         direct_fallback_action = self._build_fallback_action(detected_transformations, task)
                         break
                 if use_direct_fallback:
@@ -1062,6 +1078,73 @@ Be more careful with:
                                     "transformations": transformations
                                 }
                             }
+                        elif t_type == "flood_fill":
+                            # Flood fill enclosed regions with a color
+                            seed_point = params.get("seed_point", "enclosed_regions")
+                            fill_color = params.get("fill_color", 1)
+                            self._log(f"  Flood fill fallback: seed={seed_point}, fill_color={fill_color}")
+                            return {
+                                "action": "flood_fill",
+                                "params": {
+                                    "seed_point": seed_point,
+                                    "fill_color": int(fill_color)
+                                }
+                            }
+                        elif t_type == "symmetry":
+                            # Symmetry generation - create mirrored copy of object
+                            axis = params.get("axis", "vertical")
+                            position = params.get("position", "adjacent")
+                            # IMPORTANT: Use test input color (color_filter), NOT training color
+                            # params.get("color") is from training examples, but test may have different color
+                            sym_color = color_filter if color_filter else params.get("color")
+                            self._log(f"  Symmetry fallback: axis={axis}, position={position}, color={sym_color}")
+                            action = {
+                                "action": "symmetry",
+                                "params": {
+                                    "axis": axis,
+                                    "position": position
+                                }
+                            }
+                            if sym_color:
+                                action["color_filter"] = int(sym_color)
+                            return action
+                        elif t_type == "scaling":
+                            # Scale objects by a factor
+                            factor = params.get("factor", 2)
+                            
+                            # Check if this is GRID-LEVEL scaling (output size = input size * factor)
+                            # In that case, we should NOT use color_filter
+                            is_grid_level_scale = False
+                            if task and task.train_pairs:
+                                pair = task.train_pairs[0]
+                                in_h, in_w = pair.input_grid.data.shape
+                                out_h, out_w = pair.output_grid.data.shape
+                                expected_h = int(in_h * factor)
+                                expected_w = int(in_w * factor)
+                                if abs(out_h - expected_h) < 2 and abs(out_w - expected_w) < 2:
+                                    is_grid_level_scale = True
+                            
+                            if is_grid_level_scale:
+                                self._log(f"  Scaling fallback (grid-level): factor={factor}")
+                                return {
+                                    "action": "scale",
+                                    "params": {
+                                        "factor": float(factor)
+                                    }
+                                }
+                            else:
+                                # Object-level scaling within same grid
+                                scale_color = color_filter if color_filter else params.get("color")
+                                self._log(f"  Scaling fallback (object): factor={factor}, color={scale_color}")
+                                action = {
+                                    "action": "scale",
+                                    "params": {
+                                        "factor": float(factor)
+                                    }
+                                }
+                                if scale_color:
+                                    action["color_filter"] = int(scale_color)
+                                return action
         
         return None
     

@@ -4,8 +4,8 @@
 
 Un solveur neuro-symbolique pour les puzzles [ARC-AGI](https://arcprize.org/) (Abstraction and Reasoning Corpus).
 
-> **Version:** 2.3.0  
-> **Dernière mise à jour:** Janvier 2026
+> **Version:** 2.4.0  
+> **Dernière mise à jour:** Février 2026
 
 ---
 
@@ -27,7 +27,7 @@ Un solveur neuro-symbolique pour les puzzles [ARC-AGI](https://arcprize.org/) (A
 
 BRAIN combine :
 - **Perception symbolique** : Détection automatique de formes géométriques (carrés, rectangles, lignes, formes en L/T/+, blobs)
-- **Détection de transformations** : Identification automatique des règles (translation, rotation, réflexion, changement de couleur, tiling, etc.)
+- **Détection de transformations** : Identification automatique des règles (translation, rotation, réflexion, scaling, symmetry, flood_fill, changement de couleur, tiling, etc.)
 - **Raisonnement LLM** : Utilisation d'un modèle de langage local (Ollama) pour inférer les règles
 - **Exécution symbolique** : Application des transformations sur les grilles
 - **Évaluation batch** : Exécution et analyse de multiples tâches
@@ -223,7 +223,7 @@ python compare_models.py --viz-only comparison_results/
 ```
 BRAIN_PROJECT/
 │
-├── 📂 data/                              # 53 puzzles ARC au format JSON
+├── 📂 data/                              # 64 puzzles ARC au format JSON
 │   ├── task_translation_*.json           # 8 tâches de translation
 │   ├── task_rotation_*.json              # 7 tâches de rotation
 │   ├── task_reflection_*.json            # 6 tâches de réflexion
@@ -231,9 +231,12 @@ BRAIN_PROJECT/
 │   ├── task_draw_line_*.json             # 5 tâches de tracé de ligne
 │   ├── task_add_border_*.json            # 4 tâches d'ajout de contour
 │   ├── task_tiling_*.json                # 3 tâches de pavage
-│   ├── task_composite_*.json             # 3 tâches de transformations composées
+│   ├── task_composite_*.json             # 4 tâches de transformations composées
+│   ├── task_flood_fill_*.json            # 4 tâches de remplissage (NEW v2.4)
+│   ├── task_symmetry_*.json              # 4 tâches de symétrie (NEW v2.4)
+│   ├── task_scale_*.json                 # 4 tâches de mise à l'échelle (NEW v2.4)
 │   ├── task_blob_*.json                  # 4 tâches sur formes irrégulières
-│   └── task_multi_objects*.json          # 2 tâches multi-objets
+│   └── task_multi_objects*.json          # 3 tâches multi-objets
 │
 ├── 📂 modules/                           # Pipeline principal (12 modules)
 │   ├── __init__.py                       # Exports publics
