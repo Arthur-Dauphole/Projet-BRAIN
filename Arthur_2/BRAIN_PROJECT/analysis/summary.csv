@@ -1,0 +1,26 @@
+Category,Metric,Value
+Overall,Total Tasks,172
+Overall,Mean Accuracy,0.9771
+Overall,Success Rate (100%),0.8198
+Transformation: add_border,Mean Accuracy,1.0000
+Transformation: add_border,Count,13
+Transformation: color_change,Mean Accuracy,1.0000
+Transformation: color_change,Count,7
+Transformation: reflection,Mean Accuracy,0.9728
+Transformation: reflection,Count,26
+Transformation: rotation,Mean Accuracy,0.9679
+Transformation: rotation,Count,19
+Transformation: translation,Mean Accuracy,1.0000
+Transformation: translation,Count,35
+Transformation: composite,Mean Accuracy,0.9358
+Transformation: composite,Count,27
+Transformation: draw_line,Mean Accuracy,1.0000
+Transformation: draw_line,Count,16
+Transformation: tiling,Mean Accuracy,1.0000
+Transformation: tiling,Count,17
+Model: llama3,Mean Accuracy,0.9763
+Model: llama3,Count,68
+Model: mistral,Mean Accuracy,0.9799
+Model: mistral,Count,52
+Model: phi3,Mean Accuracy,0.9753
+Model: phi3,Count,52

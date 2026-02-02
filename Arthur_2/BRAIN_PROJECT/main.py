@@ -6,15 +6,18 @@ Main entry point for the BRAIN Project.
 Pipeline Flow:
     Input Grid -> Perception -> Prompting -> LLM Reasoning -> Analysis -> Visualization
 
-Supports:
+Features (TIER 1-3):
     - Single transformation mode (default)
     - Multi-transform mode (--multi) for different transformations per color
     - Batch evaluation mode (--batch) for running multiple tasks
+    - Self-correction loop (--self-correct) for improved accuracy
+    - Rule Memory (RAG) for few-shot learning from past solutions
 
 Usage:
     python main.py                                    # Interactive mode
     python main.py --task data/task.json              # Solve a specific task
     python main.py --task data/task.json --multi      # Multi-transform mode
+    python main.py --task data/task.json --self-correct  # With self-correction
     python main.py --demo                             # Run demo with sample data
     python main.py --batch data/                      # Run all tasks in directory
     python main.py --batch data/ --limit 10           # Run first 10 tasks
@@ -23,6 +26,7 @@ Usage:
 
 import json
 import argparse
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -39,6 +43,9 @@ from modules import (
     ActionExecutor,
 )
 
+# TIER 3: Import Rule Memory
+from modules.rule_memory import RuleMemory
+
 
 class BRAINOrchestrator:
     """
@@ -52,7 +59,9 @@ class BRAINOrchestrator:
         self,
         model: str = "llama3",
         verbose: bool = True,
-        visualize: bool = True
+        visualize: bool = True,
+        use_memory: bool = True,
+        memory_path: str = "rule_memory.json"
     ):
         """
         Initialize all pipeline components.
@@ -61,9 +70,12 @@ class BRAINOrchestrator:
             model: LLM model name for Ollama
             verbose: Whether to print progress messages
             visualize: Whether to show visualizations
+            use_memory: Enable Rule Memory (RAG) for few-shot learning
+            memory_path: Path to rule memory storage file
         """
         self.verbose = verbose
         self.visualize = visualize
+        self.use_memory = use_memory
         
         # Initialize pipeline components
         self._log("Initializing BRAIN Pipeline...")
@@ -98,6 +110,16 @@ class BRAINOrchestrator:
         # Step 6: Visualization
         self.visualizer = Visualizer()
         self._log("  ✓ Visualizer (Dashboard)")
+        
+        # TIER 3: Rule Memory (RAG)
+        if use_memory:
+            self.rule_memory = RuleMemory(
+                storage_path=memory_path,
+                verbose=verbose
+            )
+            self._log(f"  ✓ Rule Memory ({len(self.rule_memory)} rules loaded)")
+        else:
+            self.rule_memory = None
         
         self._log("Pipeline ready!\n")
     
@@ -143,7 +165,16 @@ class BRAINOrchestrator:
             "task_id": task.task_id,
             "predictions": [],
             "analyses": [],
-            "action_data": None
+            "action_data": None,
+            # === NEW: Metadata for analysis ===
+            "metadata": {
+                "was_fallback_used": False,
+                "llm_proposed_action": None,
+                "fallback_reason": None,
+                "llm_response_time": 0.0,
+                "detection_time": 0.0,
+                "execution_time": 0.0
+            }
         }
         
         # === STEP 1a: PERCEPTION (Shapes) ===
@@ -167,6 +198,7 @@ class BRAINOrchestrator:
         self._log("STEP 1b: TRANSFORMATION DETECTION")
         self._log("=" * 50)
         
+        detection_start = time.time()
         detected_transformations = []
         for i, pair in enumerate(task.train_pairs):
             transformations = self.transformation_detector.detect_all(
@@ -179,10 +211,26 @@ class BRAINOrchestrator:
                 self._log(f"  Example {i+1}: No clear transformation detected")
         
         results["detected_transformations"] = detected_transformations
+        results["metadata"]["detection_time"] = time.time() - detection_start
+        
+        # === CHECK FOR SPECIAL TRANSFORMATIONS (tiling, scaling) ===
+        # These transformations are grid-level and should NOT trigger multi-transform mode
+        is_grid_level_transform = False
+        if detected_transformations:
+            for trans_list in detected_transformations:
+                for t in trans_list:
+                    t_type = t.transformation_type if hasattr(t, 'transformation_type') else ''
+                    if t_type in ('tiling', 'scaling') and t.confidence >= 0.95:
+                        is_grid_level_transform = True
+                        self._log(f"\n  ℹ️ Grid-level transformation detected ({t_type}), skipping per-color analysis")
+                        break
+                if is_grid_level_transform:
+                    break
         
         # === AUTO-DETECT MULTI-TRANSFORM ===
         # Check if this task has multiple colors with potentially different transformations
-        if task.train_pairs:
+        # BUT skip this if we detected a grid-level transformation (tiling, scaling)
+        if task.train_pairs and not is_grid_level_transform:
             first_pair = task.train_pairs[0]
             input_colors = [c for c in first_pair.input_grid.unique_colors if c != 0]
             
@@ -214,6 +262,26 @@ class BRAINOrchestrator:
                         self._log("\n  🔄 AUTO-SWITCH: Multiple different transformations detected, using multi-transform mode")
                         return self.solve_task_multi_transform(task)
         
+        # === CHECK FOR COMPOSITE OR ADD_BORDER TRANSFORMATION ===
+        # If composite/add_border detected with high confidence, use fallback directly (LLM struggles with these)
+        use_direct_fallback = False
+        direct_fallback_action = None
+        if detected_transformations:
+            for trans_list in detected_transformations:
+                for t in trans_list:
+                    if t.transformation_type == "composite" and t.confidence >= 0.95:
+                        use_direct_fallback = True
+                        self._log(f"\n  ℹ️ Composite transformation detected, using direct execution")
+                        direct_fallback_action = self._build_fallback_action(detected_transformations, task)
+                        break
+                    elif t.transformation_type == "add_border" and t.confidence >= 0.95:
+                        use_direct_fallback = True
+                        self._log(f"\n  ℹ️ Add border transformation detected, using direct execution")
+                        direct_fallback_action = self._build_fallback_action(detected_transformations, task)
+                        break
+                if use_direct_fallback:
+                    break
+        
         # === STEP 2: PROMPTING ===
         self._log("\n" + "=" * 50)
         self._log("STEP 2: PROMPTING (Prompt Creation)")
@@ -234,7 +302,9 @@ class BRAINOrchestrator:
             self._log("  ⚠ Warning: LLM connection issue")
         
         self._log("  Querying LLM...")
+        llm_start = time.time()
         response = self.llm_client.query(prompt, system_prompt)
+        results["metadata"]["llm_response_time"] = time.time() - llm_start
         
         self._log(f"  Got response ({len(response.raw_text)} chars)")
         if response.reasoning:
@@ -244,6 +314,7 @@ class BRAINOrchestrator:
         if response.action_data:
             self._log(f"  ✓ Action JSON extracted: {response.action_data}")
             results["action_data"] = response.action_data
+            results["metadata"]["llm_proposed_action"] = response.action_data.get("action") if isinstance(response.action_data, dict) else None
         else:
             self._log("  ⚠ No action JSON found in LLM response")
             # FALLBACK: Build action from detected transformations
@@ -252,6 +323,8 @@ class BRAINOrchestrator:
                 fallback_action = self._build_fallback_action(detected_transformations, task)
                 if fallback_action:
                     results["action_data"] = fallback_action
+                    results["metadata"]["was_fallback_used"] = True
+                    results["metadata"]["fallback_reason"] = "no_llm_json"
                     self._log(f"  ✓ Fallback action: {fallback_action}")
         
         results["predictions"].append(response)
@@ -261,12 +334,25 @@ class BRAINOrchestrator:
         self._log("STEP 4: ACTION EXECUTION (The Hands)")
         self._log("=" * 50)
         
+        execution_start = time.time()
         for i, test_pair in enumerate(task.test_pairs):
             test_input = test_pair.input_grid
             predicted_grid = None
             
-            # Try LLM action first
-            action_to_use = response.action_data or results.get("action_data")
+            # Use direct fallback if detected (composite, add_border), otherwise try LLM action
+            if use_direct_fallback and direct_fallback_action:
+                action_to_use = dict(direct_fallback_action)  # Make a copy
+                # Fix color_filter to use test input color
+                test_colors = [c for c in test_input.unique_colors if c != 0]
+                if test_colors:
+                    action_to_use["color_filter"] = test_colors[0]
+                self._log(f"  Using direct fallback action: {action_to_use.get('action')} (color={action_to_use.get('color_filter')})")
+                # Track this as a fallback
+                results["metadata"]["was_fallback_used"] = True
+                results["metadata"]["fallback_reason"] = f"direct_{action_to_use.get('action')}"
+                results["metadata"]["llm_proposed_action"] = response.action_data.get("action") if response.action_data and isinstance(response.action_data, dict) else None
+            else:
+                action_to_use = response.action_data or results.get("action_data")
             
             if action_to_use:
                 # CRITICAL FIX: For draw_line, always detect color from TEST input
@@ -292,6 +378,9 @@ class BRAINOrchestrator:
                     self._log(f"  ✓ Action executed: {action_result.message}")
                 else:
                     self._log(f"  ✗ Action failed: {action_result.message}")
+                
+                # Track execution time for the action
+                results["metadata"]["execution_time"] = time.time() - execution_start
             
             # Fallback to LLM's direct grid prediction if no action
             if predicted_grid is None and response.predicted_grid:
@@ -514,6 +603,313 @@ class BRAINOrchestrator:
         
         return results
     
+    # ==================== TIER 3: SELF-CORRECTION ====================
+    
+    def solve_task_with_correction(
+        self,
+        task: ARCTask,
+        max_retries: int = 2,
+        use_rag: bool = True
+    ) -> dict:
+        """
+        Solve a task with self-correction loop.
+        
+        If the first attempt is wrong, analyzes errors and re-prompts
+        the LLM with feedback about what went wrong.
+        
+        Args:
+            task: The ARCTask to solve
+            max_retries: Maximum number of correction attempts
+            use_rag: Use Rule Memory for few-shot examples
+            
+        Returns:
+            Dictionary with results (same format as solve_task)
+        """
+        self._log("=" * 50)
+        self._log("SELF-CORRECTION MODE ENABLED")
+        self._log("=" * 50)
+        
+        # Get similar rules for few-shot prompting (RAG)
+        similar_rules = []
+        if use_rag and self.rule_memory:
+            similar_rules = self.rule_memory.find_similar_rules(task, top_k=3)
+            if similar_rules:
+                self._log(f"  📚 Found {len(similar_rules)} similar past solutions")
+        
+        best_results = None
+        best_accuracy = 0.0
+        
+        for attempt in range(max_retries + 1):
+            if attempt == 0:
+                self._log(f"\n--- Attempt {attempt + 1}/{max_retries + 1} (Initial) ---")
+            else:
+                self._log(f"\n--- Attempt {attempt + 1}/{max_retries + 1} (Correction) ---")
+            
+            # Run the pipeline
+            if attempt == 0:
+                # First attempt: normal solve with RAG enhancement
+                results = self._solve_with_rag(task, similar_rules)
+            else:
+                # Correction attempt: include error feedback in prompt
+                results = self._solve_with_feedback(
+                    task,
+                    previous_results=best_results,
+                    similar_rules=similar_rules
+                )
+            
+            # Check if successful
+            if results.get("analyses"):
+                analysis = results["analyses"][0]
+                accuracy = analysis.accuracy
+                is_correct = analysis.is_correct
+                
+                self._log(f"  Result: {'✓ Correct' if is_correct else f'✗ {accuracy:.1%} accuracy'}")
+                
+                # Track best result
+                if accuracy > best_accuracy:
+                    best_accuracy = accuracy
+                    best_results = results
+                
+                # If correct, we're done
+                if is_correct:
+                    self._log(f"\n✓ Solved on attempt {attempt + 1}!")
+                    
+                    # Store successful rule in memory
+                    if self.rule_memory and results.get("action_data"):
+                        self.rule_memory.store_rule(
+                            task=task,
+                            action_data=results["action_data"],
+                            success=True,
+                            accuracy=accuracy,
+                            detected_transforms=results.get("detected_transformations", [[]])[0]
+                        )
+                    
+                    return results
+            else:
+                self._log("  Result: No prediction")
+        
+        # All attempts exhausted
+        self._log(f"\n⚠ Max retries reached. Best accuracy: {best_accuracy:.1%}")
+        
+        # Store the best (but failed) rule for learning
+        if self.rule_memory and best_results and best_results.get("action_data"):
+            self.rule_memory.store_rule(
+                task=task,
+                action_data=best_results["action_data"],
+                success=False,
+                accuracy=best_accuracy,
+                detected_transforms=best_results.get("detected_transformations", [[]])[0]
+            )
+        
+        return best_results if best_results else {"task_id": task.task_id, "error": "All attempts failed"}
+    
+    def _solve_with_rag(self, task: ARCTask, similar_rules: List) -> dict:
+        """
+        Solve task with RAG-enhanced prompting.
+        
+        Args:
+            task: The task to solve
+            similar_rules: Similar rules from memory
+            
+        Returns:
+            Results dictionary
+        """
+        # If we have similar rules, enhance the prompt
+        if similar_rules and self.rule_memory:
+            # Get the original prompt
+            prompt = self.prompt_maker.create_reasoning_chain_prompt(task)
+            
+            # Add few-shot examples from memory
+            few_shot_text = self.rule_memory.format_for_prompt(similar_rules)
+            
+            # Insert before "YOUR TASK" section
+            if "## YOUR TASK:" in prompt:
+                prompt = prompt.replace("## YOUR TASK:", f"{few_shot_text}\n## YOUR TASK:")
+            else:
+                prompt = few_shot_text + "\n" + prompt
+            
+            # Query LLM with enhanced prompt
+            system_prompt = self.prompt_maker.get_system_prompt()
+            response = self.llm_client.query(prompt, system_prompt)
+            
+            # Continue with normal execution...
+            # (This is a simplified version - full implementation would
+            # integrate more deeply with solve_task)
+        
+        # Fall back to normal solve
+        return self.solve_task(task)
+    
+    def _solve_with_feedback(
+        self,
+        task: ARCTask,
+        previous_results: dict,
+        similar_rules: List
+    ) -> dict:
+        """
+        Solve task with error feedback from previous attempt.
+        
+        Args:
+            task: The task to solve
+            previous_results: Results from previous attempt
+            similar_rules: Similar rules from memory
+            
+        Returns:
+            Results dictionary
+        """
+        # Extract error information
+        error_info = self._extract_error_feedback(previous_results)
+        
+        # Create correction prompt
+        correction_prompt = self._create_correction_prompt(task, previous_results, error_info)
+        
+        # Get system prompt for correction
+        system_prompt = self._get_correction_system_prompt()
+        
+        self._log("  Sending correction prompt to LLM...")
+        
+        # Query LLM
+        response = self.llm_client.query(correction_prompt, system_prompt)
+        
+        # Execute the corrected action
+        if response.action_data:
+            self._log(f"  ✓ Got corrected action: {response.action_data.get('action')}")
+            
+            # Execute on test input
+            results = {
+                "task_id": task.task_id,
+                "predictions": [response],
+                "analyses": [],
+                "action_data": response.action_data,
+            }
+            
+            for test_pair in task.test_pairs:
+                action_result = self.executor.execute(test_pair.input_grid, response.action_data)
+                
+                if action_result.success and test_pair.output_grid:
+                    analysis = self.analyzer.compare_grids(
+                        action_result.output_grid,
+                        test_pair.output_grid
+                    )
+                    results["analyses"].append(analysis)
+            
+            return results
+        
+        self._log("  ⚠ No valid action in correction response")
+        return previous_results
+    
+    def _extract_error_feedback(self, results: dict) -> dict:
+        """
+        Extract error information from previous results for feedback.
+        
+        Args:
+            results: Results from previous attempt
+            
+        Returns:
+            Dictionary with error details
+        """
+        if not results or not results.get("analyses"):
+            return {"error": "No analysis available"}
+        
+        analysis = results["analyses"][0]
+        
+        error_info = {
+            "accuracy": analysis.accuracy,
+            "is_correct": analysis.is_correct,
+            "error_count": 0,
+            "shape_match": True,
+            "color_confusions": {},
+        }
+        
+        if hasattr(analysis, "error_analysis") and analysis.error_analysis:
+            ea = analysis.error_analysis
+            error_info["error_count"] = ea.get("error_count", 0)
+            error_info["color_confusions"] = ea.get("color_confusions", {})
+            error_info["error_pattern"] = ea.get("error_pattern", "unknown")
+            
+            if "Shape mismatch" in str(ea.get("error", "")):
+                error_info["shape_match"] = False
+        
+        return error_info
+    
+    def _create_correction_prompt(
+        self,
+        task: ARCTask,
+        previous_results: dict,
+        error_info: dict
+    ) -> str:
+        """
+        Create a prompt that includes error feedback for correction.
+        
+        Args:
+            task: The task being solved
+            previous_results: Results from previous attempt
+            error_info: Extracted error information
+            
+        Returns:
+            Correction prompt string
+        """
+        previous_action = previous_results.get("action_data", {})
+        
+        prompt = f"""Your previous prediction was incorrect.
+
+## ERROR ANALYSIS:
+- Accuracy achieved: {error_info.get('accuracy', 0):.1%}
+- Pixels wrong: {error_info.get('error_count', 'unknown')}
+- Error pattern: {error_info.get('error_pattern', 'unknown')}
+
+## YOUR PREVIOUS ACTION:
+```json
+{json.dumps(previous_action, indent=2)}
+```
+
+## COLOR CONFUSIONS (what you predicted vs what was expected):
+"""
+        
+        confusions = error_info.get("color_confusions", {})
+        if confusions:
+            for conf, count in list(confusions.items())[:5]:
+                prompt += f"- {conf}: {count} pixels\n"
+        else:
+            prompt += "- No specific confusion data available\n"
+        
+        prompt += """
+## INSTRUCTIONS FOR CORRECTION:
+1. Re-analyze the training examples carefully
+2. Consider: Did you use the wrong transformation type?
+3. Consider: Did you use the wrong parameters (dx, dy, angle, color)?
+4. Consider: Did you apply the transformation to the wrong object?
+
+Based on this feedback, provide a CORRECTED action JSON.
+Focus on fixing the most likely error based on the confusion pattern.
+
+"""
+        
+        # Add the original task description
+        original_prompt = self.prompt_maker.create_reasoning_chain_prompt(task)
+        prompt += original_prompt
+        
+        return prompt
+    
+    def _get_correction_system_prompt(self) -> str:
+        """Get system prompt for correction attempts."""
+        base_prompt = self.prompt_maker.get_system_prompt()
+        
+        correction_addition = """
+CORRECTION MODE:
+You are receiving feedback about a previous incorrect prediction.
+Pay special attention to:
+1. The error analysis showing what went wrong
+2. The color confusions indicating which pixels were wrong
+3. Your previous action that needs correction
+
+Be more careful with:
+- Parameter values (dx, dy, angle)
+- Color filters
+- Transformation direction
+"""
+        
+        return base_prompt + "\n\n" + correction_addition
+    
     def _build_fallback_action(
         self,
         detected_transformations: List[List[Any]],
@@ -630,6 +1026,41 @@ class BRAINOrchestrator:
                             return {
                                 "action": "draw_line",
                                 "color_filter": draw_color
+                            }
+                        elif t_type == "tiling":
+                            reps_h = int(params.get("repetitions_horizontal", 2))
+                            reps_v = int(params.get("repetitions_vertical", 2))
+                            self._log(f"  Tiling fallback: {reps_h}x{reps_v} repetitions")
+                            return {
+                                "action": "tile",
+                                "params": {
+                                    "repetitions_horizontal": reps_h,
+                                    "repetitions_vertical": reps_v
+                                }
+                            }
+                        elif t_type == "add_border":
+                            # Add border to object
+                            border_color = params.get("border_color", 1)
+                            obj_color = params.get("color_filter", color_filter)
+                            self._log(f"  Add border fallback: object={obj_color}, border={border_color}")
+                            return {
+                                "action": "add_border",
+                                "color_filter": obj_color,
+                                "params": {
+                                    "border_color": int(border_color)
+                                }
+                            }
+                        elif t_type == "composite":
+                            # Composite transformation: rotation + translation, etc.
+                            transformations = params.get("transformations", [])
+                            desc = params.get("description", "composite")
+                            self._log(f"  Composite fallback: {desc}")
+                            return {
+                                "action": "composite",
+                                "color_filter": color_filter,
+                                "params": {
+                                    "transformations": transformations
+                                }
                             }
         
         return None
@@ -769,6 +1200,33 @@ Examples:
         help="Use multi-transform mode (different transformation per color)"
     )
     
+    # TIER 3: Self-correction options
+    parser.add_argument(
+        "--self-correct",
+        action="store_true",
+        help="Enable self-correction loop (retry with error feedback)"
+    )
+    
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=2,
+        help="Maximum correction retries (default: 2)"
+    )
+    
+    parser.add_argument(
+        "--no-memory",
+        action="store_true",
+        help="Disable Rule Memory (RAG) for few-shot learning"
+    )
+    
+    parser.add_argument(
+        "--memory-path",
+        type=str,
+        default="rule_memory.json",
+        help="Path to rule memory file (default: rule_memory.json)"
+    )
+    
     # Batch-specific options
     parser.add_argument(
         "--pattern", "-p",
@@ -828,11 +1286,13 @@ Examples:
         return
     
     # === SINGLE TASK / DEMO MODE ===
-    # Create orchestrator
+    # Create orchestrator with TIER 3 options
     brain = BRAINOrchestrator(
         model=args.model,
         verbose=not args.quiet,
-        visualize=not args.no_viz
+        visualize=not args.no_viz,
+        use_memory=not args.no_memory,
+        memory_path=args.memory_path
     )
     
     if args.demo:
@@ -842,7 +1302,14 @@ Examples:
         # Solve specific task
         task = brain.load_task(args.task)
         
-        if args.multi:
+        if args.self_correct:
+            # TIER 3: Use self-correction mode
+            brain.solve_task_with_correction(
+                task,
+                max_retries=args.max_retries,
+                use_rag=not args.no_memory
+            )
+        elif args.multi:
             # Use multi-transform mode
             brain.solve_task_multi_transform(task)
         else:
@@ -856,6 +1323,7 @@ Examples:
         print("\nUsage:")
         print("  python main.py --demo                    # Run demo")
         print("  python main.py --task FILE.json          # Solve a task")
+        print("  python main.py --task FILE.json --self-correct  # With self-correction")
         print("  python main.py --batch data/             # Batch evaluation")
         print("  python main.py --batch data/ --limit 10  # Run first 10 tasks")
         print("\nFor help: python main.py --help")

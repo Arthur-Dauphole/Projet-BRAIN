@@ -1,7 +1,7 @@
 # BRAIN Project - Capacités du Système
 
 > **Dernière mise à jour :** Janvier 2026  
-> **Version :** 1.6.0
+> **Version :** 2.3.0 (Unified Model Comparison)
 
 ---
 
@@ -73,6 +73,43 @@ Input Grid → Perception → Prompting → LLM Reasoning → Execution → Anal
 | Symétrie diagonale | Grille symétrique selon diagonale | ✅ |
 | Couleur de fond | Couleur la plus fréquente | ✅ |
 
+### Détection avancée de patterns (v1.7.0)
+
+| Fonctionnalité | Description | Status |
+|----------------|-------------|--------|
+| **Patterns répétitifs** | Détecte si une grille est composée d'un motif qui se répète (tuile/pavage) | ✅ |
+| **Sous-grilles** | Détecte les subdivisions rectangulaires régulières dans une grille | ✅ |
+| **Objets avec contour** | Détecte les formes avec un intérieur d'une couleur et une bordure d'une autre | ✅ |
+
+#### Exemple : Détection de pattern répétitif
+```python
+detector = SymbolDetector()
+pattern_info = detector.detect_repeating_pattern(grid)
+# Retourne: {
+#   "pattern": [[1,2],[2,1]],  # Le motif de base
+#   "tile_height": 2, "tile_width": 2,
+#   "repetitions_h": 4, "repetitions_v": 3,
+#   "coverage": 1.0  # 100% de la grille est couverte
+# }
+```
+
+#### Exemple : Détection de sous-grilles
+```python
+subgrids = detector.detect_subgrids(grid)
+# Retourne une liste de sous-grilles avec leur position et contenu
+```
+
+#### Exemple : Détection d'objets bordés
+```python
+bordered = detector.detect_bordered_objects(grid)
+# Retourne: [{
+#   "inner_color": 1,
+#   "border_color": 2,
+#   "inner_pixels": {...},
+#   "border_pixels": {...}
+# }]
+```
+
 ---
 
 ## 🔄 Module TRANSFORMATION DETECTOR
@@ -87,6 +124,9 @@ Input Grid → Perception → Prompting → LLM Reasoning → Execution → Anal
 | `color_change` | Changement de couleur | ✅ |
 | `scaling` | Agrandissement/réduction | ✅ |
 | `draw_line` | Tracer une ligne entre 2 points | ✅ |
+| `tiling` | Répétition d'un motif pour remplir une grille plus grande | ✅ |
+| `composite` | Combinaison de transformations (rotate+translate, etc.) | ✅ |
+| `add_border` | Ajouter un contour coloré à un objet solide | ✅ **NEW** |
 | `blob_transformation` | Transformation de formes irrégulières | ✅ |
 | `translation_and_color` | Translation + changement de couleur combinés | ✅ |
 
@@ -116,6 +156,9 @@ Le système peut détecter des transformations appliquées à des formes irrégu
 | `reflect` | `axis`, `color_filter` | Réflexion (miroir) | ✅ |
 | `scale` | `factor`, `color_filter` | Agrandir/réduire | ✅ |
 | `draw_line` | `color_filter` ou `point1`, `point2` | Tracer une ligne entre 2 points | ✅ |
+| `tile` | `repetitions_horizontal`, `repetitions_vertical` | Répéter un motif pour créer une grille plus grande | ✅ |
+| `composite` | `transformations` (liste d'actions) | Combiner plusieurs transformations (rotate + translate, etc.) | ✅ |
+| `add_border` | `border_color`, `color_filter` | Ajouter un contour coloré à un objet | ✅ **NEW** |
 
 ### Détails des axes de réflexion
 
@@ -125,6 +168,109 @@ Le système peut détecter des transformations appliquées à des formes irrégu
 | `vertical` | Miroir gauche-droite (fliplr) |
 | `diagonal_main` | Miroir diagonale principale |
 | `diagonal_anti` | Miroir anti-diagonale |
+
+### Détails de l'action add_border (v1.10.0)
+
+L'action `add_border` ajoute un contour coloré à un objet solide, en gardant l'intérieur avec sa couleur originale.
+
+**Principe :**
+- Les pixels de bordure (ayant au moins un voisin hors de l'objet) reçoivent la couleur du contour
+- Les pixels intérieurs gardent la couleur originale
+
+**Exemple JSON :**
+```json
+{
+  "action": "add_border",
+  "color_filter": 2,
+  "params": {
+    "border_color": 1
+  }
+}
+```
+
+**Exemple visuel :**
+```
+Input (3x3 red):    Output:
+2 2 2               1 1 1
+2 2 2      -->      1 2 1
+2 2 2               1 1 1
+```
+
+**Cas supportés :**
+- Carrés de toutes tailles (3x3, 4x4, 5x5, etc.)
+- Rectangles
+- Formes quelconques (blobs)
+
+### Détails de l'action composite (v1.9.0)
+
+L'action `composite` permet de combiner plusieurs transformations en séquence sur un même objet.
+
+**Combinaisons supportées :**
+- Rotation + Translation
+- Réflexion + Translation
+- Rotation + Changement de couleur
+- Translation + Rotation + Changement de couleur
+- etc.
+
+**Exemple JSON :**
+```json
+{
+  "action": "composite",
+  "color_filter": 2,
+  "params": {
+    "transformations": [
+      {"action": "rotate", "params": {"angle": 90}},
+      {"action": "translate", "params": {"dx": 3, "dy": 1}}
+    ]
+  }
+}
+```
+
+**Exemple avec changement de couleur :**
+```json
+{
+  "action": "composite",
+  "color_filter": 2,
+  "params": {
+    "transformations": [
+      {"action": "reflect", "params": {"axis": "vertical"}},
+      {"action": "translate", "params": {"dx": 2, "dy": -1}},
+      {"action": "color_change", "params": {"from_color": 2, "to_color": 5}}
+    ]
+  }
+}
+```
+
+**Ordre d'exécution :** Les transformations sont appliquées dans l'ordre de la liste. Le résultat de chaque transformation est utilisé comme entrée pour la suivante.
+
+### Détails de l'action tile (v1.8.0)
+
+L'action `tile` répète le pattern d'entrée pour créer une grille plus grande. Cette action est automatiquement détectée quand la grille de sortie est un multiple de la grille d'entrée.
+
+**Détection automatique :**
+- Le système détecte les changements de taille de grille **en priorité**
+- Si `output_size = input_size × N`, vérifie si c'est un tiling parfait
+- Calcule automatiquement `repetitions_horizontal` et `repetitions_vertical`
+
+**Exemple JSON :**
+```json
+{
+  "action": "tile",
+  "params": {
+    "repetitions_horizontal": 2,
+    "repetitions_vertical": 2
+  }
+}
+```
+
+**Exemple : Input 2×2 → Output 4×4**
+```
+Input:        Output:
+[1, 2]        [1, 2, 1, 2]
+[2, 1]   →    [2, 1, 2, 1]
+              [1, 2, 1, 2]
+              [2, 1, 2, 1]
+```
 
 ### Détails de l'action draw_line
 
@@ -210,7 +356,95 @@ ou
 
 ---
 
+## 📁 Dataset de test (v1.12.0)
+
+Le projet inclut **52 tâches de test** couvrant toutes les transformations supportées, avec une répartition équilibrée pour des analyses statistiques robustes.
+
+### Répartition par type de transformation
+
+| Type | Nombre | Fichiers |
+|------|--------|----------|
+| **Translation** | 10 | `task_translation_01` à `08`, `task_blob_translation`, `task_l_shape` |
+| **Rotation** | 8 | `task_rotation_01` à `06`, `task_rotation_90`, `task_blob_rotation` |
+| **Reflection** | 7 | `task_reflection_01` à `05`, `task_reflection`, `task_blob_reflection` |
+| **Color change** | 7 | `task_color_change_01` à `05`, `task_color_change`, `task_blob_color_change` |
+| **Draw line** | 5 | `task_draw_line_01` à `04`, `task_draw_line` |
+| **Add border** | 4 | `task_add_border_01` à `03`, `task_add_border` |
+| **Tiling** | 5 | `task_tiling_01` à `03`, `task_pattern_tile`, `task_pattern_tile_3x3` |
+| **Composite** | 3 | `task_composite_01`, `02`, `task_composite_rotate_translate` |
+| **Multi-transform** | 3 | `task_multi_objects`, `task_multi_objects_same_transform`, `task_challenge_multi_transform` |
+
+### Variété des tests
+
+Chaque type de transformation inclut des variations :
+
+- **Formes différentes** : carrés, rectangles, L-shapes, T-shapes, blobs
+- **Couleurs variées** : toutes les couleurs ARC (1-9)
+- **Positions diverses** : coins, centre, bords
+- **Paramètres variés** : dx/dy, angles, axes de réflexion
+- **Tailles de grilles** : 6×6 à 9×9
+
+### Utilisation
+
+```bash
+# Tester une seule tâche
+python main.py --task data/task_translation_01.json
+
+# Batch complet (52 tâches)
+python main.py --batch data/
+
+# Filtrer par type
+python main.py --batch data/ --pattern "task_rotation_*.json"
+python main.py --batch data/ --pattern "task_color_change_*.json"
+```
+
+---
+
 ## 📝 Historique des versions
+
+### v1.12.0 (Janvier 2026) - IEEE Publication Quality + Extended Dataset
+- ✅ **NOUVEAU: Figures vectorielles PDF** - Sortie compatible LaTeX/Overleaf
+- ✅ **Détection automatique de LaTeX** - Fallback gracieux avec DejaVu Serif
+- ✅ **Tailles IEEE standardisées** - Single column (3.5in), double column (7.16in)
+- ✅ **Palette colorblind-friendly** - Wong palette pour accessibilité
+- ✅ **Fonts Computer Modern** - Compatibilité parfaite avec LaTeX
+- ✅ **52 tâches de test** - Dataset élargi pour analyses statistiques
+- ✅ **~10 tâches par transformation** - Répartition équilibrée
+
+### v1.11.0 (Janvier 2026) - Data Analysis Module
+- ✅ **NOUVEAU: Module `data_analysis/`** - Analyse des résultats de batch
+- ✅ **DataLoader** - Charger et agréger les données de plusieurs batchs
+- ✅ **MetricsCalculator** - Calculs statistiques (accuracy par transformation, t-tests, etc.)
+- ✅ **AnalysisVisualizer** - Graphiques pour publications (barplots, boxplots, heatmaps)
+- ✅ **ReportGenerator** - Export LaTeX, CSV, Markdown, JSON
+- ✅ **Script `analyze.py`** - CLI pour analyse rapide
+- ✅ **Données enrichies** - Timing breakdown, LLM vs fallback tracking, complexité
+
+### v1.10.0 (Janvier 2026) - Add Border Action
+- ✅ **NOUVEAU: Action `add_border`** - Ajouter un contour coloré à un objet
+- ✅ **Détection automatique** - Le système détecte quand un objet reçoit un contour
+- ✅ **Support de toutes les formes** - Carrés, rectangles, blobs
+- ✅ Fichier de test: `task_add_border.json`
+
+### v1.9.0 (Janvier 2026) - Composite Transformations
+- ✅ **NOUVEAU: Action `composite`** - Combiner plusieurs transformations en séquence
+- ✅ **Détection automatique** - Le système détecte rotation+translation, réflexion+translation, etc.
+- ✅ **Exécution séquentielle** - Les transformations sont appliquées dans l'ordre
+- ✅ **Support complet** - Rotation, réflexion, translation, changement de couleur
+- ✅ Fichier de test: `task_composite_rotate_translate.json`
+
+### v1.8.0 (Janvier 2026) - Grid Size Change Detection & Tiling
+- ✅ **NOUVEAU: Détection de changement de taille de grille** - Le système priorise les transformations de taille différente
+- ✅ **NOUVEAU: Action `tile`** - Répète un motif pour créer une grille plus grande
+- ✅ **Détection précoce** - Les changements de taille sont vérifiés AVANT les autres transformations
+- ✅ **Support de tiling** - Input 2×2 peut devenir Output 4×4 ou 6×6
+- ✅ **Fallback intelligent** - Le système utilise les répétitions détectées si le LLM échoue
+- ✅ Fichier de test: `task_pattern_tile.json`
+
+### v1.7.0 (Janvier 2026) - Advanced Pattern Detection
+- ✅ **Détection de patterns répétitifs** - `detect_repeating_pattern()` trouve le motif de base
+- ✅ **Détection de sous-grilles** - `detect_subgrids()` trouve les subdivisions régulières
+- ✅ **Détection d'objets bordés** - `detect_bordered_objects()` trouve les formes avec contour différent
 
 ### v1.6.0 (Janvier 2026) - Improved Prompting & Fallback
 - ✅ **Prompt amélioré** - Few-shot examples concrets dans le system prompt
@@ -276,13 +510,17 @@ ou
 
 ### Prochaines fonctionnalités
 
-- [ ] Détection de patterns répétitifs
-- [ ] Détection de sous-grilles
+- [x] ~~Détection de patterns répétitifs~~ ✅ v1.7.0 / v1.8.0
+- [x] ~~Détection de sous-grilles~~ ✅ v1.7.0
 - [x] ~~Mode batch pour évaluer plusieurs tâches~~ ✅ v1.5.0
 - [x] ~~Export des résultats en JSON~~ ✅ v1.5.0
-- [ ] Support de transformations composées (translation + rotation simultanées)
+- [x] ~~Taille de grille variable (tiling)~~ ✅ v1.8.0
+- [x] ~~Support de transformations composées (translation + rotation simultanées)~~ ✅ v1.9.0
+- [x] ~~Module d'analyse de données pour publications~~ ✅ v1.11.0
+- [x] ~~Dataset élargi (~10 tâches par transformation)~~ ✅ v1.12.0
 - [ ] Auto-détection du mode (single vs multi-transform)
-- [ ] Parallélisation des évaluations batch
+- [ ] Détection de structures hiérarchiques (grilles dans grilles)
+- [ ] Support de transformations conditionnelles (si couleur X alors...)
 
 ---
 
@@ -292,7 +530,7 @@ ou
 |------------|-------------|
 | Couleurs différentes entre exemples | En mode standard, si chaque exemple a une couleur différente, utiliser `--multi` |
 | Transformations composées | Une seule transformation par couleur en mode multi |
-| Taille de grille variable | Non supporté actuellement |
+| ~~Taille de grille variable~~ | ✅ **Supporté depuis v1.8.0** (tiling) |
 | Dépendance LLM | Le mode multi nécessite que le LLM retourne le bon format JSON |
 
 ---
@@ -371,3 +609,551 @@ En mode batch, les visualisations sont **automatiquement désactivées pendant l
 - **Statistiques** affichées en bas (n correct, accuracy moyenne)
 
 Pour désactiver l'affichage final : `python main.py --batch data/ --no-viz`
+
+---
+
+## 📊 Module DATA_ANALYSIS (v1.12.0) - IEEE Publication Quality
+
+Module d'analyse de données optimisé pour générer des **figures vectorielles PDF** compatibles avec **LaTeX/Overleaf** et les standards **IEEE**.
+
+### Caractéristiques
+
+- **Sortie vectorielle PDF** par défaut (qualité publication)
+- **Détection automatique de LaTeX** (fallback gracieux si non installé)
+- **Tailles IEEE standardisées** (single column: 3.5in, double column: 7.16in)
+- **Palette colorblind-friendly** (Wong palette)
+- **Fonts Computer Modern** (compatibles LaTeX)
+
+### Structure
+
+```
+data_analysis/
+├── __init__.py
+├── data_loader.py      # Charger et agréger les résultats de batchs
+├── metrics.py          # Calcul de métriques statistiques
+├── visualizer.py       # Graphiques IEEE (matplotlib + LaTeX)
+└── report_generator.py # Export LaTeX/CSV/Markdown
+```
+
+### Utilisation rapide
+
+```bash
+# Analyser tous les batchs (PDF vectoriel par défaut)
+python analyze.py
+
+# Figures IEEE single column (3.5 inches)
+python analyze.py --ieee-size single
+
+# Figures IEEE double column (7.16 inches)
+python analyze.py --ieee-size double
+
+# Formats multiples (PDF + PNG)
+python analyze.py --fig-format pdf,png
+
+# Générer uniquement les tableaux LaTeX
+python analyze.py --format latex
+
+# Mode interactif (afficher les graphiques)
+python analyze.py --interactive
+```
+
+### Utilisation en Python
+
+```python
+from data_analysis import DataLoader, MetricsCalculator, AnalysisVisualizer, ReportGenerator
+
+# 1. Charger les données
+loader = DataLoader()
+df = loader.load_all_batches("results/")
+
+# 2. Calculer les métriques
+calc = MetricsCalculator(df)
+print(calc.accuracy_by_transformation())
+print(calc.llm_vs_fallback_comparison())
+
+# 3. Créer des visualisations IEEE (PDF vectoriel)
+viz = AnalysisVisualizer(df, style="publication")
+
+# Figures avec taille IEEE
+viz.plot_accuracy_by_transformation(
+    ieee_size="double",                    # 7.16 inches width
+    save_path="figures/accuracy",          # Sans extension
+    save_formats=["pdf", "png"]            # Multi-format
+)
+
+# Générer tous les plots d'un coup
+viz.generate_all_plots(
+    output_dir="figures/",
+    formats=["pdf"]
+)
+
+# 4. Générer des rapports
+gen = ReportGenerator(df, calc)
+gen.generate_latex_tables("latex/")
+gen.generate_markdown_report("report.md")
+gen.generate_csv_summary("summary.csv")
+```
+
+### Visualisations disponibles
+
+| Graphique | Description | Taille recommandée |
+|-----------|-------------|-------------------|
+| `plot_accuracy_by_transformation()` | Barplot accuracy par type | double |
+| `plot_model_comparison()` | Comparaison par modèle LLM | single |
+| `plot_accuracy_boxplot()` | Distribution des accuracies | double |
+| `plot_confusion_matrix()` | Détection vs exécution | single |
+| `plot_timing_breakdown()` | Temps (détection, LLM, exécution) | double |
+| `plot_llm_vs_fallback()` | LLM vs fallback | double |
+| `plot_accuracy_by_complexity()` | Scatter accuracy vs complexité | single |
+
+### Tailles IEEE
+
+| Size | Width | Usage |
+|------|-------|-------|
+| `single` | 3.5 in (88.9 mm) | IEEE single column |
+| `double` | 7.16 in (181.9 mm) | IEEE double column |
+| `full` | 7.16 × 9 in | Full page figure |
+
+### Exports disponibles
+
+| Format | Fichier | Usage |
+|--------|---------|-------|
+| **PDF** | `*.pdf` | **Vectoriel pour LaTeX** (recommandé) |
+| PNG | `*.png` | Raster 300 DPI pour prévisualisations |
+| LaTeX | `*.tex` | Tableaux pour articles scientifiques |
+| CSV | `summary.csv`, `full_data.csv` | Analyse Excel/Pandas |
+| Markdown | `report.md` | Documentation |
+| JSON | `summary.json` | API/Intégration |
+
+### Données collectées par tâche (enrichies v1.11.0)
+
+| Champ | Description |
+|-------|-------------|
+| `primary_transformation` | Type principal détecté |
+| `transformation_confidence` | Confiance (0-1) |
+| `was_fallback_used` | Si le fallback a été utilisé |
+| `llm_proposed_action` | Action proposée par le LLM |
+| `timing_detection` | Temps de détection (s) |
+| `timing_llm_response` | Temps de réponse LLM (s) |
+| `timing_action_execution` | Temps d'exécution (s) |
+| `complexity_num_colors` | Nombre de couleurs |
+| `complexity_num_objects` | Nombre d'objets |
+
+---
+
+## 🚀 ROADMAP TIER 1-3 (v2.0.0)
+
+Cette section documente les améliorations implémentées selon la roadmap en 3 niveaux.
+
+### TIER 1 : Robustesse & Engineering
+
+#### 1.1 Structured Logging (`modules/logger.py`)
+
+Système de logging structuré pour le suivi du pipeline.
+
+```python
+from modules import BRAINLogger, LogLevel
+
+logger = BRAINLogger(verbose=True, log_file="brain.log")
+
+# Log a step
+logger.step(LogLevel.DETECTION, "Found 3 objects", count=3)
+
+# Timed step (automatic duration tracking)
+with logger.timed_step(LogLevel.LLM, "Querying model"):
+    response = llm.query(prompt)
+
+# Get metrics
+logger.print_metrics_summary()
+```
+
+| Feature | Description |
+|---------|-------------|
+| `LogLevel` | Composants: PIPELINE, PERCEPTION, DETECTION, PROMPTING, LLM, EXECUTION, ANALYSIS |
+| Timing automatique | Contexte `timed_step` mesure la durée |
+| Performance Metrics | Collecte LLM calls, temps par composant |
+| Multi-output | Console (couleurs), fichier, JSON |
+
+#### 1.2 Defensive Error Handling (`modules/executor.py`)
+
+Gestion d'erreurs robuste dans l'exécuteur.
+
+| Helper | Description |
+|--------|-------------|
+| `_safe_int()` | Conversion int sécurisée (gère strings, floats, mots) |
+| `_safe_float()` | Conversion float sécurisée |
+| `_safe_color()` | Conversion couleur (noms → nombres) |
+| `_validate_grid()` | Validation de grille (NaN, dtype, empty) |
+| `_get_params()` | Extraction sécurisée des params |
+
+```python
+# Avant (fragile)
+dx = int(params.get("dx", 0))  # Crash si dx="three"
+
+# Après (robuste)
+dx = self._safe_int(params.get("dx", 0), default=0, name="dx")
+# ⚠ Warning: Invalid dx='three', using default=0
+```
+
+#### 1.3 Resilient JSON Parsing (`modules/llm_client.py`)
+
+Parsing JSON multi-stratégie pour gérer les erreurs LLM.
+
+| Stratégie | Description |
+|-----------|-------------|
+| 1. Code block | `\`\`\`json {...} \`\`\`` |
+| 2. Generic block | `\`\`\` {...} \`\`\`` |
+| 3. Standalone | `{"action": ...}` dans le texte |
+| 4. Fuzzy extraction | Reconstruction à partir de fragments |
+
+**Fuzzy extraction gère :**
+- Trailing commas
+- Single quotes → double quotes
+- Unquoted keys
+- Comments in JSON
+
+---
+
+### TIER 2 : DSL Étendu (Nouvelles Actions)
+
+Trois nouvelles primitives géométriques.
+
+#### 2.1 Symmetry (`symmetry`)
+
+Création de copies symétriques d'objets.
+
+```json
+{
+  "action": "symmetry",
+  "params": {
+    "axis": "vertical",
+    "position": "adjacent",
+    "keep_original": true
+  },
+  "color_filter": 2
+}
+```
+
+| Paramètre | Options | Description |
+|-----------|---------|-------------|
+| `axis` | horizontal, vertical, both, diagonal | Axe de symétrie |
+| `position` | adjacent, opposite, {offset_x, offset_y} | Placement de la copie |
+| `keep_original` | true/false | Conserver l'original |
+
+#### 2.2 Flood Fill (`flood_fill`)
+
+Remplissage de régions connectées (paint bucket).
+
+```json
+{
+  "action": "flood_fill",
+  "params": {
+    "seed_point": {"row": 5, "col": 5},
+    "fill_color": 3,
+    "connectivity": 4
+  }
+}
+```
+
+| Paramètre | Options | Description |
+|-----------|---------|-------------|
+| `seed_point` | dict, "enclosed_regions", "background" | Point de départ |
+| `fill_color` | 0-9 | Couleur de remplissage |
+| `connectivity` | 4, 8 | Connectivité (4 ou 8 voisins) |
+| `boundary_colors` | [int] | Couleurs formant barrière |
+
+#### 2.3 Conditional Color (`conditional_color`)
+
+Changements de couleur basés sur des conditions spatiales.
+
+```json
+{
+  "action": "conditional_color",
+  "params": {
+    "rules": [
+      {"condition": "is_edge", "from_color": 2, "to_color": 1},
+      {"condition": "has_neighbor_color_0", "to_color": 3}
+    ]
+  }
+}
+```
+
+| Condition | Description |
+|-----------|-------------|
+| `has_neighbor_color_X` | A un voisin de couleur X |
+| `no_neighbor_color_X` | N'a pas de voisin de couleur X |
+| `is_corner` | Pixel au coin de la grille |
+| `is_edge` | Pixel sur le bord de la grille |
+| `neighbor_count_ge_N` | ≥ N voisins non-fond |
+| `neighbor_count_le_N` | ≤ N voisins non-fond |
+| `is_isolated` | Aucun voisin non-fond |
+
+---
+
+### TIER 3 : Features Neuro-Symboliques Avancées
+
+#### 3.1 Rule Memory / RAG (`modules/rule_memory.py`)
+
+Système de mémoire pour l'apprentissage few-shot.
+
+```python
+from modules import RuleMemory
+
+memory = RuleMemory("rule_memory.json")
+
+# Stocker une règle réussie
+memory.store_rule(
+    task=task,
+    action_data={"action": "translate", "params": {"dx": 2}},
+    success=True,
+    accuracy=1.0
+)
+
+# Trouver des règles similaires
+similar = memory.find_similar_rules(new_task, top_k=3)
+
+# Formater pour prompt few-shot
+few_shot_text = memory.format_for_prompt(similar)
+```
+
+| Feature | Description |
+|---------|-------------|
+| `TaskSignature` | Extraction de features (shape, colors, transforms) |
+| Similarity search | Matching par features (sans embeddings) |
+| Persistence | Sauvegarde JSON automatique |
+| Few-shot formatting | Génère texte pour prompt LLM |
+
+**Task Signature Features:**
+- Grid shapes (input/output)
+- Colors (input, output, added, removed)
+- Object counts and types
+- Detected transformations
+
+#### 3.2 Self-Correction Loop
+
+Boucle d'auto-correction avec feedback d'erreur.
+
+```bash
+python main.py --task data/task.json --self-correct --max-retries 2
+```
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────────┐
+│           SELF-CORRECTION LOOP              │
+├─────────────────────────────────────────────┤
+│                                             │
+│  1. Initial Attempt                         │
+│     ├── Query LLM (with RAG examples)       │
+│     ├── Execute action                      │
+│     └── Analyze result                      │
+│                                             │
+│  2. If incorrect:                           │
+│     ├── Extract error feedback              │
+│     ├── Create correction prompt            │
+│     │   - Accuracy achieved                 │
+│     │   - Pixel errors                      │
+│     │   - Color confusions                  │
+│     └── Re-query LLM                        │
+│                                             │
+│  3. Repeat (max_retries times)              │
+│                                             │
+│  4. Store result in Rule Memory             │
+│                                             │
+└─────────────────────────────────────────────┘
+```
+
+**Correction Prompt includes:**
+- Previous action that failed
+- Accuracy achieved
+- Error count and pattern
+- Color confusion matrix
+- Suggestions for correction
+
+#### 3.3 Nouvelles Options CLI
+
+| Option | Description |
+|--------|-------------|
+| `--self-correct` | Activer la boucle d'auto-correction |
+| `--max-retries N` | Nombre max de tentatives (défaut: 2) |
+| `--no-memory` | Désactiver Rule Memory (RAG) |
+| `--memory-path FILE` | Chemin du fichier mémoire |
+
+---
+
+## 📊 Résumé des Actions Supportées (v2.0.0)
+
+| Action | TIER | Description |
+|--------|------|-------------|
+| `translate` | - | Translation (dx, dy) |
+| `rotate` | - | Rotation (90°, 180°, 270°) |
+| `reflect` | - | Réflexion (horizontal, vertical, diagonal) |
+| `scale` | - | Mise à l'échelle (facteur) |
+| `color_change` | - | Changement de couleur |
+| `fill` | - | Remplissage simple |
+| `copy` | - | Copie avec offset |
+| `replace_color` | - | Remplacement de couleur |
+| `draw_line` | - | Tracer ligne (Bresenham) |
+| `tile` | - | Pavage/Tiling |
+| `add_border` | - | Ajout de contour |
+| `composite` | - | Transformations combinées |
+| **`symmetry`** | **2** | **Création de symétrie** |
+| **`flood_fill`** | **2** | **Remplissage connecté** |
+| **`conditional_color`** | **2** | **Couleur conditionnelle** |
+
+---
+
+## 🧪 Tests et Validation
+
+Pour tester les nouvelles fonctionnalités:
+
+```bash
+# Test TIER 1 - Logging
+python -c "from modules import BRAINLogger, LogLevel; l=BRAINLogger(); l.step(LogLevel.PIPELINE, 'Test')"
+
+# Test TIER 2 - New actions
+python main.py --task data/mock_task.json
+
+# Test TIER 3 - Self-correction
+python main.py --task data/mock_task.json --self-correct --max-retries 2
+
+# Test TIER 3 - Rule Memory
+python -c "from modules import RuleMemory; m=RuleMemory(); print(m.get_statistics())"
+```
+
+---
+
+## 🔄 Module MODEL COMPARATOR (v2.3.0)
+
+Outil pour comparer les performances de différents modèles LLM.
+
+### Architecture unifiée (v2.3.0)
+
+**Important :** `compare_models.py` utilise maintenant `main.py --batch` (via `BatchRunner`) pour chaque modèle, garantissant des résultats **100% cohérents** avec le pipeline principal.
+
+```
+compare_models.py
+     │
+     ├── Model 1: BatchRunner(model="llama3")  → results/llama3/
+     ├── Model 2: BatchRunner(model="mistral") → results/mistral/
+     └── Model N: BatchRunner(model="...")     → results/.../
+                    │
+                    └── Même code que main.py --batch
+```
+
+### Modèles recommandés
+
+| Modèle | Description | Taille | Installation |
+|--------|-------------|--------|--------------|
+| `llama3` | Meta Llama 3 8B - Bon généraliste | 4.7 GB | `ollama pull llama3` |
+| `mistral` | Mistral 7B - Excellent raisonnement, rapide | 4.1 GB | `ollama pull mistral` |
+| `phi3` | Microsoft Phi-3 Mini - Petit mais capable | 2.2 GB | `ollama pull phi3` |
+| `gemma2` | Google Gemma 2 9B - Bon raisonnement | 5.4 GB | `ollama pull gemma2` |
+| `codellama` | Meta Code Llama - Optimisé code/logique | 3.8 GB | `ollama pull codellama` |
+| `qwen2` | Alibaba Qwen 2 7B - Multilingue, bonne logique | 4.4 GB | `ollama pull qwen2` |
+| `llama3.1` | Meta Llama 3.1 8B - Dernière version | 4.7 GB | `ollama pull llama3.1` |
+| `deepseek-coder` | DeepSeek Coder 6.7B - Spécialisé code | 3.8 GB | `ollama pull deepseek-coder` |
+
+### Utilisation CLI
+
+```bash
+# Lister les modèles recommandés
+python compare_models.py --list-models
+
+# Comparer 2 modèles sur 5 tâches
+python compare_models.py --models llama3 mistral --limit 5
+
+# Comparaison complète avec visualisations
+python compare_models.py --models llama3 mistral phi3 --visualize
+
+# Comparaison sur toutes les tâches
+python compare_models.py --models llama3 mistral --output comparison_full/
+
+# Générer uniquement les visualisations (depuis résultats existants)
+python compare_models.py --viz-only comparison_results/
+```
+
+### Ce qui se passe en interne
+
+Pour chaque modèle, `compare_models.py` :
+1. Crée un `BatchRunner` avec ce modèle
+2. Exécute `runner.run_batch()` (identique à `main.py --batch`)
+3. Sauvegarde les résultats dans `output_dir/model_name/`
+4. Agrège les résultats pour la comparaison
+
+### Rapports générés
+
+| Fichier | Format | Contenu |
+|---------|--------|---------|
+| `comparison.json` | JSON | Résultats complets avec détails |
+| `model_summary.csv` | CSV | Résumé par modèle (accuracy, temps, etc.) |
+| `detailed_results.csv` | CSV | Résultats par tâche et modèle |
+| `comparison_report.md` | Markdown | Rapport formaté pour lecture |
+
+### Métriques collectées
+
+| Métrique | Description |
+|----------|-------------|
+| `accuracy` | Précision moyenne (0-1) |
+| `correct_count` | Nombre de tâches résolues |
+| `avg_response_time` | Temps de réponse moyen (ms) |
+| `fallback_rate` | % d'utilisation du fallback |
+
+### Visualisations de comparaison (v2.2.0)
+
+7 types de graphiques générés automatiquement en PNG et PDF :
+
+| Graphique | Description |
+|-----------|-------------|
+| `accuracy_comparison` | Barplot accuracy par modèle |
+| `time_comparison` | Barplot temps de réponse par modèle |
+| `accuracy_vs_time` | Scatter plot accuracy vs temps (trade-off) |
+| `accuracy_boxplot` | Distribution des accuracies par modèle |
+| `per_task_comparison` | Barplot groupé accuracy par tâche |
+| `fallback_comparison` | Taux d'utilisation du fallback |
+| `summary_dashboard` | Dashboard 2x2 avec toutes les métriques |
+
+#### Commandes de visualisation
+
+```bash
+# Générer visualisations depuis résultats existants
+python compare_models.py --viz-only comparison_results/
+
+# Nouvelle comparaison AVEC visualisations
+python compare_models.py --models llama3 mistral --limit 10 --visualize
+
+# Comparaison complète avec graphiques
+python compare_models.py -m llama3 mistral -v -o comparison_full/
+```
+
+#### Utilisation en Python
+
+```python
+from modules.model_comparator import ModelComparisonVisualizer
+
+# Depuis résultats existants
+viz = ModelComparisonVisualizer(results_path="comparison_results/comparison.json")
+
+# Ou depuis un objet ModelComparisonResult
+viz = ModelComparisonVisualizer(comparison=results)
+
+# Générer un graphique spécifique
+viz.plot_accuracy_comparison(save_path="accuracy.png", show=True)
+viz.plot_summary_dashboard(save_path="dashboard.pdf")
+
+# Générer tous les graphiques
+viz.save_all_plots("output/figures/", formats=['png', 'pdf'])
+```
+
+### Installation rapide (3 modèles)
+
+```bash
+# Installer les modèles
+ollama pull llama3
+ollama pull mistral  
+ollama pull phi3
+
+# Lancer la comparaison
+python compare_models.py -m llama3 mistral phi3 -l 10
+```

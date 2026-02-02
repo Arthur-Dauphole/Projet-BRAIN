@@ -1,0 +1,58 @@
+{
+  "generated_at": "2026-01-30T11:13:52.334573",
+  "total_tasks": 68,
+  "overall": {
+    "accuracy_mean": 0.9763051470588235,
+    "accuracy_std": 0.062170447680048,
+    "success_rate": 0.8235294117647058
+  },
+  "by_transformation": {
+    "add_border": {
+      "count": 5,
+      "accuracy_mean": 1.0,
+      "success_rate": 1.0
+    },
+    "color_change": {
+      "count": 3,
+      "accuracy_mean": 1.0,
+      "success_rate": 1.0
+    },
+    "reflection": {
+      "count": 10,
+      "accuracy_mean": 0.9541666666666666,
+      "success_rate": 0.8
+    },
+    "rotation": {
+      "count": 7,
+      "accuracy_mean": 0.9709821428571429,
+      "success_rate": 0.7142857142857143
+    },
+    "translation": {
+      "count": 13,
+      "accuracy_mean": 1.0,
+      "success_rate": 1.0
+    },
+    "composite": {
+      "count": 11,
+      "accuracy_mean": 0.9436553030303031,
+      "success_rate": 0.45454545454545453
+    },
+    "draw_line": {
+      "count": 6,
+      "accuracy_mean": 1.0,
+      "success_rate": 1.0
+    },
+    "tiling": {
+      "count": 7,
+      "accuracy_mean": 1.0,
+      "success_rate": 1.0
+    }
+  },
+  "by_model": {
+    "llama3": {
+      "count": 68,
+      "accuracy_mean": 0.9763051470588235,
+      "success_rate": 0.8235294117647058
+    }
+  }
+}

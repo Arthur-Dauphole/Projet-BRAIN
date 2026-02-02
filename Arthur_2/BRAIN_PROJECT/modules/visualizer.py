@@ -97,7 +97,7 @@ class Visualizer:
         
         # Create figure if no axes provided
         if ax is None:
-            fig, ax = plt.subplots(figsize=(6, 6))
+            fig, ax = plt.subplots(figsize=(6, 6), layout='constrained')
         
         # Plot the grid
         im = ax.imshow(
@@ -138,13 +138,12 @@ class Visualizer:
         """
         _ensure_matplotlib()
         
-        fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+        fig, axes = plt.subplots(1, 2, figsize=(10, 5), layout='constrained')
         
         self.show_grid(input_grid, "Input", ax=axes[0])
         self.show_grid(output_grid, "Output", ax=axes[1])
         
         fig.suptitle(title, fontsize=14)
-        plt.tight_layout()
         plt.show()
     
     def show_comparison(
@@ -165,7 +164,7 @@ class Visualizer:
         """
         _ensure_matplotlib()
         
-        fig, axes = plt.subplots(1, 4, figsize=(16, 4))
+        fig, axes = plt.subplots(1, 4, figsize=(16, 4), layout='constrained')
         
         self.show_grid(input_grid, "Input", ax=axes[0])
         self.show_grid(predicted_grid, "Predicted", ax=axes[1])
@@ -175,7 +174,6 @@ class Visualizer:
         self._show_diff(predicted_grid, expected_grid, ax=axes[3])
         
         fig.suptitle(title, fontsize=14)
-        plt.tight_layout()
         plt.show()
     
     def _show_diff(self, predicted, expected, ax):
@@ -226,7 +224,7 @@ class Visualizer:
         n_test = len(task.test_pairs) if show_test else 0
         n_total = n_train + n_test
         
-        fig, axes = plt.subplots(n_total, 2, figsize=(8, 3 * n_total))
+        fig, axes = plt.subplots(n_total, 2, figsize=(8, 3 * n_total), layout='constrained')
         
         if n_total == 1:
             axes = [axes]
@@ -250,7 +248,6 @@ class Visualizer:
                     axes[idx][1].set_title("Test Output (Unknown)")
         
         fig.suptitle(f"Task: {task.task_id}", fontsize=14)
-        plt.tight_layout()
         plt.show()
     
     def show_analysis_dashboard(
@@ -268,7 +265,7 @@ class Visualizer:
         _ensure_matplotlib()
         
         n_cols = 4 if input_grid else 3
-        fig, axes = plt.subplots(1, n_cols, figsize=(4 * n_cols, 4))
+        fig, axes = plt.subplots(1, n_cols, figsize=(4 * n_cols, 4), layout='constrained')
         
         idx = 0
         
@@ -310,7 +307,6 @@ class Visualizer:
         color = "green" if analysis_result.is_correct else "red"
         fig.suptitle(status, fontsize=16, color=color)
         
-        plt.tight_layout()
         plt.show()
     
     def save_figure(self, filename: str, dpi: int = None):
@@ -329,7 +325,7 @@ class Visualizer:
         """Display the ARC color palette legend."""
         _ensure_matplotlib()
         
-        fig, ax = plt.subplots(figsize=(10, 1))
+        fig, ax = plt.subplots(figsize=(10, 1), layout='constrained')
         
         for i, color in enumerate(ARC_COLORS):
             ax.add_patch(plt.Rectangle((i, 0), 1, 1, facecolor=color))
@@ -342,7 +338,6 @@ class Visualizer:
         ax.set_yticks([])
         ax.set_title("ARC Color Palette")
         
-        plt.tight_layout()
         plt.show()
     
     def create_batch_summary(
@@ -399,7 +394,7 @@ class Visualizer:
             fig_width = 3 * tasks_per_row
             fig_height = 3.5 * n_rows
         
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height))
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(fig_width, fig_height), layout='constrained')
         
         # Ensure axes is always 2D
         if n_rows == 1 and n_cols == 1:
@@ -467,11 +462,9 @@ class Visualizer:
             fontweight='bold'
         )
         
-        plt.tight_layout()
-        
         # Save if path provided
         if save_path:
-            plt.savefig(save_path, dpi=150, bbox_inches='tight', facecolor='white')
+            plt.savefig(save_path, dpi=300, bbox_inches='tight', facecolor='white')
             print(f"📊 Batch summary saved to: {save_path}")
         
         # Show if requested
@@ -509,7 +502,7 @@ class Visualizer:
         """
         _ensure_matplotlib()
         
-        fig, axes = plt.subplots(1, 4, figsize=(14, 4))
+        fig, axes = plt.subplots(1, 4, figsize=(14, 4), layout='constrained')
         
         # Input
         self.show_grid(input_grid, "Input", ax=axes[0])
@@ -537,10 +530,8 @@ class Visualizer:
         color = "green" if is_correct else "red"
         fig.suptitle(f"{task_id}: {status}", fontsize=14, color=color, fontweight='bold')
         
-        plt.tight_layout()
-        
         if save_path:
-            plt.savefig(save_path, dpi=150, bbox_inches='tight', facecolor='white')
+            plt.savefig(save_path, dpi=300, bbox_inches='tight', facecolor='white')
         
         plt.close(fig)
         
@@ -708,5 +699,4 @@ class Visualizer:
         # Window title
         fig.canvas.manager.set_window_title(title)
         
-        plt.tight_layout()
         plt.show()

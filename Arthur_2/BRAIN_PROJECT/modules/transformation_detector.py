@@ -71,6 +71,30 @@ class TransformationDetector:
         # Try to detect various transformations
         # Order matters! 
         
+        # PRIORITY -1: Check for SIZE CHANGE first
+        # If grids have different sizes, only certain transformations are possible
+        in_h, in_w = input_grid.data.shape
+        out_h, out_w = output_grid.data.shape
+        size_changed = (in_h != out_h) or (in_w != out_w)
+        
+        if size_changed:
+            # Output is larger - check for tiling first
+            if out_h >= in_h and out_w >= in_w:
+                tiling = self.detect_tiling(input_grid, output_grid)
+                if tiling and tiling.confidence >= 0.95:
+                    return [tiling]  # Clear tiling pattern
+            
+            # Output is smaller or different dimensions - check scaling
+            scaling = self.detect_scaling(input_grid, output_grid)
+            if scaling:
+                return [scaling]
+            
+            # If no clear size-change transformation found, return empty
+            # (most transformations require same-size grids)
+            return []
+        
+        # === SAME SIZE GRIDS - check all transformations ===
+        
         # PRIORITY 0: Check draw_line FIRST (very specific: 2 points → line)
         # If detected with 100% confidence, return immediately
         draw_line = self.detect_draw_line(input_grid, output_grid)
@@ -109,7 +133,12 @@ class TransformationDetector:
         if color_change:
             results.append(color_change)
         
-        # PRIORITY 5: Scaling
+        # PRIORITY 4.5: Add border (object gets a colored contour)
+        add_border = self.detect_add_border(input_grid, output_grid)
+        if add_border and add_border.confidence >= 0.95:
+            return [add_border]  # Return immediately - this is a clear add_border task
+        
+        # PRIORITY 5: Scaling (for same-size grids where object scales)
         scaling = self.detect_scaling(input_grid, output_grid)
         if scaling:
             results.append(scaling)
@@ -123,6 +152,14 @@ class TransformationDetector:
             blob_transform = self.detect_blob_transformation(input_grid, output_grid)
             if blob_transform:
                 results.append(blob_transform)
+        
+        # COMPOSITE DETECTION: If no high-confidence result, try composite transformations
+        if not results or (results and results[0].confidence < 0.95):
+            composite = self.detect_composite_transformation(input_grid, output_grid)
+            if composite and composite.confidence > 0.9:
+                # If composite is better than any simple transformation, add it
+                if not results or composite.confidence > results[0].confidence:
+                    results.insert(0, composite)
         
         # Sort by confidence
         results.sort(key=lambda x: x.confidence, reverse=True)
@@ -264,12 +301,30 @@ class TransformationDetector:
                     if in_obj.color == out_obj.color:
                         obj_rotation = self._detect_object_rotation(in_obj, out_obj)
                         if obj_rotation:
-                            return TransformationResult(
-                                transformation_type="rotation",
-                                confidence=1.0,  # High confidence for object rotation
-                                parameters={"angle": obj_rotation, "per_object": True, "color": in_obj.color},
-                                objects_matched=[(in_obj, out_obj)]
-                            )
+                            # Check if position also changed (would indicate composite transform)
+                            in_center = ((in_obj.bounding_box[0] + in_obj.bounding_box[2]) / 2,
+                                        (in_obj.bounding_box[1] + in_obj.bounding_box[3]) / 2)
+                            out_center = ((out_obj.bounding_box[0] + out_obj.bounding_box[2]) / 2,
+                                         (out_obj.bounding_box[1] + out_obj.bounding_box[3]) / 2)
+                            
+                            # If centers moved significantly, it's likely composite (rotation + translation)
+                            center_moved = abs(in_center[0] - out_center[0]) > 0.5 or abs(in_center[1] - out_center[1]) > 0.5
+                            
+                            if center_moved:
+                                # Lower confidence - might be composite transformation
+                                return TransformationResult(
+                                    transformation_type="rotation",
+                                    confidence=0.7,  # Lower confidence since position changed
+                                    parameters={"angle": obj_rotation, "per_object": True, "color": in_obj.color, "position_changed": True},
+                                    objects_matched=[(in_obj, out_obj)]
+                                )
+                            else:
+                                return TransformationResult(
+                                    transformation_type="rotation",
+                                    confidence=1.0,  # High confidence for pure rotation
+                                    parameters={"angle": obj_rotation, "per_object": True, "color": in_obj.color},
+                                    objects_matched=[(in_obj, out_obj)]
+                                )
         
         # Check object-level rotation (ignoring color - for different colored examples)
         # This checks if the shape structure rotates regardless of color
@@ -496,6 +551,70 @@ class TransformationDetector:
                 confidence=0.9,
                 parameters={"factor": round(avg_scale, 2)},
                 objects_matched=matched_pairs
+            )
+        
+        return None
+    
+    def detect_tiling(self, input_grid: Grid, output_grid: Grid) -> Optional[TransformationResult]:
+        """
+        Detect if the output is a tiled repetition of the input pattern.
+        
+        This checks if:
+        1. The output is larger than the input
+        2. The input pattern tiles perfectly to create the output
+        
+        Returns:
+            TransformationResult with tiling parameters if detected
+        """
+        in_data = input_grid.data
+        out_data = output_grid.data
+        
+        in_h, in_w = in_data.shape
+        out_h, out_w = out_data.shape
+        
+        # Output should be larger than or equal to input
+        if out_h < in_h or out_w < in_w:
+            return None
+        
+        # Check if output dimensions are multiples of input dimensions
+        if out_h % in_h != 0 or out_w % in_w != 0:
+            return None
+        
+        reps_v = out_h // in_h  # Vertical repetitions
+        reps_h = out_w // in_w  # Horizontal repetitions
+        
+        # Must have at least some tiling (not just 1x1)
+        if reps_v == 1 and reps_h == 1:
+            return None
+        
+        # Check if input tiles perfectly to create output
+        match_count = 0
+        total_tiles = reps_v * reps_h
+        
+        for row_idx in range(reps_v):
+            for col_idx in range(reps_h):
+                row_start = row_idx * in_h
+                col_start = col_idx * in_w
+                
+                region = out_data[row_start:row_start + in_h, 
+                                 col_start:col_start + in_w]
+                
+                if np.array_equal(region, in_data):
+                    match_count += 1
+        
+        coverage = match_count / total_tiles
+        
+        if coverage >= 0.95:  # At least 95% match
+            return TransformationResult(
+                transformation_type="tiling",
+                confidence=1.0 if coverage == 1.0 else 0.9,
+                parameters={
+                    "repetitions_horizontal": reps_h,
+                    "repetitions_vertical": reps_v,
+                    "tile_width": in_w,
+                    "tile_height": in_h,
+                    "coverage": coverage
+                }
             )
         
         return None
@@ -1078,6 +1197,101 @@ class TransformationDetector:
                 return obj
         return None
     
+    def detect_add_border(
+        self, 
+        input_grid: Grid, 
+        output_grid: Grid
+    ) -> Optional[TransformationResult]:
+        """
+        Detect if a border/contour has been added to an object.
+        
+        This detects the transformation where:
+        - Input: solid object of color A
+        - Output: same shape but border is color B, interior is color A
+        
+        Example:
+            Input (all red):    Output:
+            2 2 2               1 1 1
+            2 2 2      -->      1 2 1
+            2 2 2               1 1 1
+        """
+        in_data = input_grid.data
+        out_data = output_grid.data
+        
+        # Must be same size
+        if in_data.shape != out_data.shape:
+            return None
+        
+        # Find colors in input (excluding background)
+        in_colors = set(np.unique(in_data)) - {0}
+        out_colors = set(np.unique(out_data)) - {0}
+        
+        # For add_border: input has 1 color, output has 2 colors
+        if len(in_colors) != 1 or len(out_colors) != 2:
+            return None
+        
+        original_color = list(in_colors)[0]
+        
+        # The output should contain the original color + a new border color
+        if original_color not in out_colors:
+            return None
+        
+        border_color = list(out_colors - {original_color})[0]
+        
+        # Get input pixels
+        input_pixels = set(zip(*np.where(in_data == original_color)))
+        
+        if not input_pixels:
+            return None
+        
+        # Calculate expected border pixels (pixels with at least one non-object neighbor)
+        expected_border = set()
+        expected_interior = set()
+        
+        for r, c in input_pixels:
+            is_border = False
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = r + dr, c + dc
+                if (nr, nc) not in input_pixels:
+                    is_border = True
+                    break
+            if is_border:
+                expected_border.add((r, c))
+            else:
+                expected_interior.add((r, c))
+        
+        # Check if output matches expected pattern
+        output_border_pixels = set(zip(*np.where(out_data == border_color)))
+        output_interior_pixels = set(zip(*np.where(out_data == original_color)))
+        
+        # Verify: border pixels should be colored with border_color
+        # Interior pixels should keep original_color
+        if output_border_pixels == expected_border and output_interior_pixels == expected_interior:
+            return TransformationResult(
+                transformation_type="add_border",
+                confidence=1.0,
+                parameters={
+                    "color_filter": int(original_color),
+                    "border_color": int(border_color)
+                }
+            )
+        
+        # Partial match - lower confidence
+        border_match = len(output_border_pixels & expected_border) / max(1, len(expected_border))
+        interior_match = len(output_interior_pixels & expected_interior) / max(1, len(expected_interior))
+        
+        if border_match > 0.8 and interior_match > 0.8:
+            return TransformationResult(
+                transformation_type="add_border",
+                confidence=(border_match + interior_match) / 2,
+                parameters={
+                    "color_filter": int(original_color),
+                    "border_color": int(border_color)
+                }
+            )
+        
+        return None
+    
     def describe_per_color_transformations(self, per_color: Dict[int, TransformationResult]) -> str:
         """
         Generate human-readable description of per-color transformations.
@@ -1113,3 +1327,173 @@ class TransformationDetector:
             descriptions.append(desc)
         
         return "\n".join(descriptions)
+    
+    def detect_composite_transformation(
+        self, 
+        input_grid: Grid, 
+        output_grid: Grid
+    ) -> Optional[TransformationResult]:
+        """
+        Detect composite (combined) transformations.
+        
+        This tries common combinations when no single transformation matches:
+        - Translation + Rotation
+        - Translation + Reflection
+        - Translation + Color change
+        - Rotation + Color change
+        - Translation + Rotation + Color change
+        
+        Returns the best matching composite transformation.
+        """
+        if input_grid.data.shape != output_grid.data.shape:
+            return None
+        
+        in_data = input_grid.data
+        out_data = output_grid.data
+        
+        # Find the main color (non-zero)
+        in_colors = set(np.unique(in_data)) - {0}
+        out_colors = set(np.unique(out_data)) - {0}
+        
+        if not in_colors:
+            return None
+        
+        main_color = list(in_colors)[0]
+        
+        # Get object pixels in input
+        in_pixels = set(zip(*np.where(in_data == main_color)))
+        
+        # Check if color changed
+        color_changed = False
+        new_color = main_color
+        if in_colors != out_colors and len(out_colors) == 1:
+            new_color = list(out_colors)[0]
+            color_changed = True
+        
+        out_pixels = set(zip(*np.where(out_data == new_color)))
+        
+        if not in_pixels or not out_pixels:
+            return None
+        
+        # Calculate bounding boxes
+        in_rows, in_cols = zip(*in_pixels)
+        in_bbox = (min(in_rows), min(in_cols), max(in_rows), max(in_cols))
+        
+        out_rows, out_cols = zip(*out_pixels)
+        out_bbox = (min(out_rows), min(out_cols), max(out_rows), max(out_cols))
+        
+        # Extract shape from input
+        in_h = in_bbox[2] - in_bbox[0] + 1
+        in_w = in_bbox[3] - in_bbox[1] + 1
+        in_shape = np.zeros((in_h, in_w), dtype=np.int8)
+        for r, c in in_pixels:
+            in_shape[r - in_bbox[0], c - in_bbox[1]] = 1
+        
+        # Try different composite transformations
+        best_result = None
+        best_confidence = 0
+        
+        # List of transformations to try
+        rotations = [
+            (90, lambda s: np.rot90(s, k=3)),   # 90° clockwise
+            (180, lambda s: np.rot90(s, k=2)),  # 180°
+            (270, lambda s: np.rot90(s, k=1))   # 270° clockwise
+        ]
+        
+        reflections = [
+            ("horizontal", lambda s: np.flipud(s)),
+            ("vertical", lambda s: np.fliplr(s)),
+            ("diagonal_main", lambda s: np.transpose(s))
+        ]
+        
+        # Try TRANSLATE + ROTATE combinations
+        for angle, rotate_fn in rotations:
+            transformed = rotate_fn(in_shape)
+            th, tw = transformed.shape
+            
+            # Find all possible translations
+            for out_r in range(output_grid.height - th + 1):
+                for out_c in range(output_grid.width - tw + 1):
+                    # Generate expected pixels
+                    expected_pixels = set()
+                    for r in range(th):
+                        for c in range(tw):
+                            if transformed[r, c] == 1:
+                                expected_pixels.add((out_r + r, out_c + c))
+                    
+                    if expected_pixels == out_pixels:
+                        # Calculate translation
+                        dx = out_c - in_bbox[1]
+                        dy = out_r - in_bbox[0]
+                        
+                        # Build composite parameters
+                        transformations = [
+                            {"action": "rotate", "params": {"angle": angle}},
+                            {"action": "translate", "params": {"dx": dx, "dy": dy}}
+                        ]
+                        
+                        if color_changed:
+                            transformations.append({
+                                "action": "color_change", 
+                                "params": {"from_color": main_color, "to_color": new_color}
+                            })
+                        
+                        confidence = 1.0
+                        params = {
+                            "transformations": transformations,
+                            "description": f"rotate {angle}° + translate ({dx}, {dy})" + 
+                                          (f" + color {main_color}→{new_color}" if color_changed else "")
+                        }
+                        
+                        if confidence > best_confidence:
+                            best_confidence = confidence
+                            best_result = TransformationResult(
+                                transformation_type="composite",
+                                confidence=confidence,
+                                parameters=params
+                            )
+        
+        # Try TRANSLATE + REFLECT combinations
+        for axis, reflect_fn in reflections:
+            transformed = reflect_fn(in_shape)
+            th, tw = transformed.shape
+            
+            for out_r in range(output_grid.height - th + 1):
+                for out_c in range(output_grid.width - tw + 1):
+                    expected_pixels = set()
+                    for r in range(th):
+                        for c in range(tw):
+                            if transformed[r, c] == 1:
+                                expected_pixels.add((out_r + r, out_c + c))
+                    
+                    if expected_pixels == out_pixels:
+                        dx = out_c - in_bbox[1]
+                        dy = out_r - in_bbox[0]
+                        
+                        transformations = [
+                            {"action": "reflect", "params": {"axis": axis}},
+                            {"action": "translate", "params": {"dx": dx, "dy": dy}}
+                        ]
+                        
+                        if color_changed:
+                            transformations.append({
+                                "action": "color_change",
+                                "params": {"from_color": main_color, "to_color": new_color}
+                            })
+                        
+                        confidence = 1.0
+                        params = {
+                            "transformations": transformations,
+                            "description": f"reflect {axis} + translate ({dx}, {dy})" +
+                                          (f" + color {main_color}→{new_color}" if color_changed else "")
+                        }
+                        
+                        if confidence > best_confidence:
+                            best_confidence = confidence
+                            best_result = TransformationResult(
+                                transformation_type="composite",
+                                confidence=confidence,
+                                parameters=params
+                            )
+        
+        return best_result

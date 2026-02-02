@@ -1,0 +1,11 @@
+task_id,success,is_correct,accuracy,execution_time,transformations,action_used,grid_size,train_examples,test_examples,primary_transformation,transformation_confidence,was_fallback_used,llm_proposed_action,fallback_reason,llm_time,detection_time,action_time,num_colors,num_objects,mode,error
+task_add_border,True,True,1.0000,14.33,add_border|add_border|add_border,color_change,7x8,3,1,add_border,1.0000,True,color_change,direct_add_border,14.310,0.001,0.001,1,0,single,
+task_add_border_01,True,True,1.0000,6.28,add_border|add_border,color_change,8x8,2,1,add_border,1.0000,True,color_change,direct_add_border,6.269,0.001,0.000,1,0,single,
+task_add_border_02,True,True,1.0000,6.75,add_border|add_border,color_change,9x9,2,1,add_border,1.0000,True,color_change,direct_add_border,6.738,0.001,0.000,1,0,single,
+task_add_border_03,True,True,1.0000,6.27,add_border|add_border,color_change,8x8,2,1,add_border,1.0000,True,color_change,direct_add_border,6.262,0.000,0.000,1,0,single,
+task_blob_color_change,True,True,1.0000,6.11,color_change|color_change,color_change,8x8,2,1,color_change,1.0000,False,color_change,,6.100,0.001,0.000,1,0,single,
+task_blob_reflection,True,True,1.0000,5.79,reflection|rotation|reflection|rotation,reflect,8x8,2,1,reflection,1.0000,False,reflect,,5.779,0.000,0.001,1,0,single,
+task_blob_rotation,True,True,1.0000,6.65,rotation|rotation,rotate,8x8,2,1,rotation,1.0000,False,rotate,,6.642,0.001,0.001,1,0,single,
+task_blob_translation,True,True,1.0000,7.57,translation|translation,translate,10x10,2,1,translation,1.0000,False,translate,,7.562,0.001,0.001,1,0,single,
+task_challenge_multi_transform,True,True,1.0000,18.59,,,10x12,2,1,,0.0000,False,,,0.000,0.000,0.000,3,0,single,
+task_color_change,True,False,0.9375,10.08,composite|color_change|rotation|composite|color_change|rotation,color_change,8x8,2,1,composite,1.0000,True,color_change,direct_composite,10.070,0.001,0.001,1,0,single,

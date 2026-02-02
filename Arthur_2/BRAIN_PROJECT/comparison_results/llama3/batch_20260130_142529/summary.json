@@ -1,0 +1,2273 @@
+{
+  "summary": {
+    "total_tasks": 52,
+    "successful_tasks": 52,
+    "correct_tasks": 44,
+    "failed_tasks": 0,
+    "success_rate": "100.0%",
+    "correctness_rate": "84.6%",
+    "overall_accuracy": "98.3%",
+    "accuracy_when_successful": "98.3%"
+  },
+  "timing": {
+    "total_time_seconds": 325.85,
+    "avg_time_per_task_seconds": 6.27,
+    "avg_llm_time_seconds": 5.394,
+    "avg_detection_time_seconds": 0.001,
+    "avg_action_execution_seconds": 0.001
+  },
+  "transformation_stats": {
+    "add_border": 9,
+    "color_change": 14,
+    "reflection": 18,
+    "rotation": 45,
+    "translation": 21,
+    "composite": 15,
+    "draw_line": 11,
+    "tiling": 10
+  },
+  "action_stats": {
+    "color_change": 11,
+    "reflect": 8,
+    "rotate": 6,
+    "translate": 14,
+    "draw_line": 5,
+    "tile": 5
+  },
+  "accuracy_by_transformation": {
+    "add_border": {
+      "count": 4,
+      "correct": 4,
+      "accuracy": 1.0,
+      "success_rate": 1.0
+    },
+    "color_change": {
+      "count": 2,
+      "correct": 2,
+      "accuracy": 1.0,
+      "success_rate": 1.0
+    },
+    "reflection": {
+      "count": 8,
+      "correct": 7,
+      "accuracy": 0.984375,
+      "success_rate": 0.875
+    },
+    "rotation": {
+      "count": 6,
+      "correct": 4,
+      "accuracy": 0.9661458333333334,
+      "success_rate": 0.6666666666666666
+    },
+    "translation": {
+      "count": 11,
+      "correct": 11,
+      "accuracy": 1.0,
+      "success_rate": 1.0
+    },
+    "composite": {
+      "count": 8,
+      "correct": 3,
+      "accuracy": 0.9303385416666667,
+      "success_rate": 0.375
+    },
+    "draw_line": {
+      "count": 5,
+      "correct": 5,
+      "accuracy": 1.0,
+      "success_rate": 1.0
+    },
+    "tiling": {
+      "count": 5,
+      "correct": 5,
+      "accuracy": 1.0,
+      "success_rate": 1.0
+    }
+  },
+  "llm_vs_fallback": {
+    "llm_success_rate": "92.5%",
+    "fallback_usage_rate": "23.1%"
+  },
+  "metadata": {
+    "run_timestamp": "2026-01-30T14:25:29.872735",
+    "run_folder": "batch_20260130_142529",
+    "model_used": "llama3",
+    "pattern_used": "task_*.json",
+    "directory": "data",
+    "program_version": "1.10.0"
+  },
+  "task_results": [
+    {
+      "task_id": "task_add_border",
+      "task_file": "data/task_add_border.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 8.263975143432617,
+      "detected_transformations": [
+        "add_border",
+        "add_border",
+        "add_border"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 3,
+      "num_test_examples": 1,
+      "grid_size": "7x8",
+      "primary_transformation": "add_border",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color_filter": 2,
+        "border_color": 1
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": "direct_add_border",
+      "timing": {
+        "total": 8.264,
+        "llm_response": 8.06,
+        "detection": 0.0,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_add_border_01",
+      "task_file": "data/task_add_border_01.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 5.162899971008301,
+      "detected_transformations": [
+        "add_border",
+        "add_border"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "add_border",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color_filter": 3,
+        "border_color": 1
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": "direct_add_border",
+      "timing": {
+        "total": 5.163,
+        "llm_response": 5.155,
+        "detection": 0.0,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_add_border_02",
+      "task_file": "data/task_add_border_02.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 5.563328981399536,
+      "detected_transformations": [
+        "add_border",
+        "add_border"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "9x9",
+      "primary_transformation": "add_border",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color_filter": 1,
+        "border_color": 4
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": "direct_add_border",
+      "timing": {
+        "total": 5.563,
+        "llm_response": 5.554,
+        "detection": 0.001,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_add_border_03",
+      "task_file": "data/task_add_border_03.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 5.1258440017700195,
+      "detected_transformations": [
+        "add_border",
+        "add_border"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "add_border",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color_filter": 6,
+        "border_color": 2
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": "direct_add_border",
+      "timing": {
+        "total": 5.126,
+        "llm_response": 5.114,
+        "detection": 0.001,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_blob_color_change",
+      "task_file": "data/task_blob_color_change.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 5.153587818145752,
+      "detected_transformations": [
+        "color_change",
+        "color_change"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "color_change",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color_map": {
+          "0": 0,
+          "2": 1
+        },
+        "changes": {
+          "2": 1
+        }
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": null,
+      "timing": {
+        "total": 5.154,
+        "llm_response": 5.144,
+        "detection": 0.001,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_blob_reflection",
+      "task_file": "data/task_blob_reflection.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.9644012451171875,
+      "detected_transformations": [
+        "reflection",
+        "rotation",
+        "reflection",
+        "rotation"
+      ],
+      "action_used": "reflect",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "reflection",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "axis": "vertical",
+        "per_object": true,
+        "color": 2
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "reflect",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.964,
+        "llm_response": 4.956,
+        "detection": 0.0,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_blob_rotation",
+      "task_file": "data/task_blob_rotation.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.9438347816467285,
+      "detected_transformations": [
+        "rotation",
+        "rotation"
+      ],
+      "action_used": "rotate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "rotation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "angle": 90,
+        "per_object": true,
+        "color": 2
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "rotate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.944,
+        "llm_response": 4.937,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_blob_translation",
+      "task_file": "data/task_blob_translation.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 6.419924974441528,
+      "detected_transformations": [
+        "translation",
+        "translation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "10x10",
+      "primary_transformation": "translation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "dx": 2,
+        "dy": 1
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "translate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 6.42,
+        "llm_response": 6.408,
+        "detection": 0.001,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_challenge_multi_transform",
+      "task_file": "data/task_challenge_multi_transform.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 35.11243486404419,
+      "detected_transformations": [],
+      "action_used": null,
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "10x12",
+      "primary_transformation": null,
+      "transformation_confidence": 0.0,
+      "transformation_params": {},
+      "was_fallback_used": false,
+      "llm_proposed_action": null,
+      "fallback_reason": null,
+      "timing": {
+        "total": 35.112,
+        "llm_response": 0.0,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 3,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_color_change",
+      "task_file": "data/task_color_change.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.9375,
+      "execution_time": 7.902890920639038,
+      "detected_transformations": [
+        "composite",
+        "color_change",
+        "rotation",
+        "composite",
+        "color_change",
+        "rotation"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "composite",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "transformations": [
+          {
+            "action": "rotate",
+            "params": {
+              "angle": 90
+            }
+          },
+          {
+            "action": "translate",
+            "params": {
+              "dx": 0,
+              "dy": 0
+            }
+          },
+          {
+            "action": "color_change",
+            "params": {
+              "from_color": 2,
+              "to_color": 1
+            }
+          }
+        ],
+        "description": "rotate 90\u00b0 + translate (0, 0) + color 2\u21921"
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": "direct_composite",
+      "timing": {
+        "total": 7.903,
+        "llm_response": 7.889,
+        "detection": 0.003,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_color_change_01",
+      "task_file": "data/task_color_change_01.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.9375,
+      "execution_time": 5.006105184555054,
+      "detected_transformations": [
+        "composite",
+        "color_change",
+        "rotation",
+        "composite",
+        "color_change",
+        "rotation"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "composite",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "transformations": [
+          {
+            "action": "rotate",
+            "params": {
+              "angle": 90
+            }
+          },
+          {
+            "action": "translate",
+            "params": {
+              "dx": 0,
+              "dy": 0
+            }
+          },
+          {
+            "action": "color_change",
+            "params": {
+              "from_color": 2,
+              "to_color": 1
+            }
+          }
+        ],
+        "description": "rotate 90\u00b0 + translate (0, 0) + color 2\u21921"
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": "direct_composite",
+      "timing": {
+        "total": 5.006,
+        "llm_response": 4.997,
+        "detection": 0.001,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_color_change_02",
+      "task_file": "data/task_color_change_02.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 5.011082887649536,
+      "detected_transformations": [
+        "color_change",
+        "color_change"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "color_change",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color_map": {
+          "0": 0,
+          "1": 3
+        },
+        "changes": {
+          "1": 3
+        }
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": null,
+      "timing": {
+        "total": 5.011,
+        "llm_response": 5.001,
+        "detection": 0.001,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_color_change_03",
+      "task_file": "data/task_color_change_03.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.8333333333333334,
+      "execution_time": 3.807509183883667,
+      "detected_transformations": [
+        "composite",
+        "color_change",
+        "rotation",
+        "composite",
+        "color_change",
+        "rotation"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "6x6",
+      "primary_transformation": "composite",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "transformations": [
+          {
+            "action": "rotate",
+            "params": {
+              "angle": 180
+            }
+          },
+          {
+            "action": "translate",
+            "params": {
+              "dx": 0,
+              "dy": 0
+            }
+          },
+          {
+            "action": "color_change",
+            "params": {
+              "from_color": 4,
+              "to_color": 6
+            }
+          }
+        ],
+        "description": "rotate 180\u00b0 + translate (0, 0) + color 4\u21926"
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": "direct_composite",
+      "timing": {
+        "total": 3.808,
+        "llm_response": 3.793,
+        "detection": 0.002,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_color_change_04",
+      "task_file": "data/task_color_change_04.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.921875,
+      "execution_time": 5.010635137557983,
+      "detected_transformations": [
+        "composite",
+        "color_change",
+        "rotation",
+        "composite",
+        "color_change",
+        "rotation"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "composite",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "transformations": [
+          {
+            "action": "rotate",
+            "params": {
+              "angle": 90
+            }
+          },
+          {
+            "action": "translate",
+            "params": {
+              "dx": 0,
+              "dy": 0
+            }
+          },
+          {
+            "action": "color_change",
+            "params": {
+              "from_color": 7,
+              "to_color": 8
+            }
+          }
+        ],
+        "description": "rotate 90\u00b0 + translate (0, 0) + color 7\u21928"
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": "direct_composite",
+      "timing": {
+        "total": 5.011,
+        "llm_response": 5.0,
+        "detection": 0.003,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_color_change_05",
+      "task_file": "data/task_color_change_05.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.8125,
+      "execution_time": 4.996768951416016,
+      "detected_transformations": [
+        "composite",
+        "color_change",
+        "rotation",
+        "composite",
+        "color_change",
+        "rotation"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "composite",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "transformations": [
+          {
+            "action": "rotate",
+            "params": {
+              "angle": 90
+            }
+          },
+          {
+            "action": "translate",
+            "params": {
+              "dx": 0,
+              "dy": 0
+            }
+          },
+          {
+            "action": "color_change",
+            "params": {
+              "from_color": 5,
+              "to_color": 9
+            }
+          }
+        ],
+        "description": "rotate 90\u00b0 + translate (0, 0) + color 5\u21929"
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": "direct_composite",
+      "timing": {
+        "total": 4.997,
+        "llm_response": 4.991,
+        "detection": 0.001,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_composite_01",
+      "task_file": "data/task_composite_01.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.917216062545776,
+      "detected_transformations": [
+        "composite",
+        "rotation",
+        "composite",
+        "rotation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "composite",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "transformations": [
+          {
+            "action": "rotate",
+            "params": {
+              "angle": 90
+            }
+          },
+          {
+            "action": "translate",
+            "params": {
+              "dx": 2,
+              "dy": 0
+            }
+          }
+        ],
+        "description": "rotate 90\u00b0 + translate (2, 0)"
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "translate",
+      "fallback_reason": "direct_composite",
+      "timing": {
+        "total": 4.917,
+        "llm_response": 4.906,
+        "detection": 0.002,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_composite_02",
+      "task_file": "data/task_composite_02.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.90610408782959,
+      "detected_transformations": [
+        "translation",
+        "translation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "translation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "dx": 0,
+        "dy": 1
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "translate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.906,
+        "llm_response": 4.902,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_composite_rotate_translate",
+      "task_file": "data/task_composite_rotate_translate.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.259243726730347,
+      "detected_transformations": [
+        "composite",
+        "rotation",
+        "composite",
+        "rotation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "7x7",
+      "primary_transformation": "composite",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "transformations": [
+          {
+            "action": "rotate",
+            "params": {
+              "angle": 90
+            }
+          },
+          {
+            "action": "translate",
+            "params": {
+              "dx": 3,
+              "dy": 1
+            }
+          }
+        ],
+        "description": "rotate 90\u00b0 + translate (3, 1)"
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "translate",
+      "fallback_reason": "direct_composite",
+      "timing": {
+        "total": 4.259,
+        "llm_response": 4.248,
+        "detection": 0.002,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_draw_line",
+      "task_file": "data/task_draw_line.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 9.120090007781982,
+      "detected_transformations": [
+        "draw_line",
+        "draw_line",
+        "draw_line"
+      ],
+      "action_used": "draw_line",
+      "error_message": null,
+      "num_train_examples": 3,
+      "num_test_examples": 1,
+      "grid_size": "10x10",
+      "primary_transformation": "draw_line",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color": 2,
+        "point1": {
+          "row": 2,
+          "col": 1
+        },
+        "point2": {
+          "row": 2,
+          "col": 7
+        },
+        "line_type": "horizontal"
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "draw_line",
+      "fallback_reason": null,
+      "timing": {
+        "total": 9.12,
+        "llm_response": 9.114,
+        "detection": 0.0,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_draw_line_01",
+      "task_file": "data/task_draw_line_01.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.9777610301971436,
+      "detected_transformations": [
+        "draw_line",
+        "draw_line"
+      ],
+      "action_used": "draw_line",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "draw_line",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color": 2,
+        "point1": {
+          "row": 1,
+          "col": 1
+        },
+        "point2": {
+          "row": 1,
+          "col": 5
+        },
+        "line_type": "horizontal"
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "draw_line",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.978,
+        "llm_response": 4.971,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_draw_line_02",
+      "task_file": "data/task_draw_line_02.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.981083154678345,
+      "detected_transformations": [
+        "draw_line",
+        "draw_line"
+      ],
+      "action_used": "draw_line",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "draw_line",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color": 1,
+        "point1": {
+          "row": 1,
+          "col": 2
+        },
+        "point2": {
+          "row": 5,
+          "col": 2
+        },
+        "line_type": "vertical"
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "draw_line",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.981,
+        "llm_response": 4.971,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_draw_line_03",
+      "task_file": "data/task_draw_line_03.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 5.534949064254761,
+      "detected_transformations": [
+        "draw_line",
+        "draw_line"
+      ],
+      "action_used": "draw_line",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "draw_line",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color": 3,
+        "point1": {
+          "row": 1,
+          "col": 1
+        },
+        "point2": {
+          "row": 4,
+          "col": 4
+        },
+        "line_type": "diagonal"
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "draw_line",
+      "fallback_reason": null,
+      "timing": {
+        "total": 5.535,
+        "llm_response": 5.532,
+        "detection": 0.0,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_draw_line_04",
+      "task_file": "data/task_draw_line_04.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 5.5275959968566895,
+      "detected_transformations": [
+        "draw_line",
+        "draw_line"
+      ],
+      "action_used": "draw_line",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "draw_line",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color": 4,
+        "point1": {
+          "row": 1,
+          "col": 4
+        },
+        "point2": {
+          "row": 4,
+          "col": 1
+        },
+        "line_type": "diagonal"
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "draw_line",
+      "fallback_reason": null,
+      "timing": {
+        "total": 5.528,
+        "llm_response": 5.52,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_l_shape",
+      "task_file": "data/task_l_shape.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 6.508765935897827,
+      "detected_transformations": [
+        "translation",
+        "translation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "10x10",
+      "primary_transformation": "translation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "dx": 2,
+        "dy": 2
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "translate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 6.509,
+        "llm_response": 6.502,
+        "detection": 0.0,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_multi_objects",
+      "task_file": "data/task_multi_objects.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 9.829267263412476,
+      "detected_transformations": [],
+      "action_used": null,
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": null,
+      "transformation_confidence": 0.0,
+      "transformation_params": {},
+      "was_fallback_used": false,
+      "llm_proposed_action": null,
+      "fallback_reason": null,
+      "timing": {
+        "total": 9.829,
+        "llm_response": 0.0,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 2,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_multi_objects_same_transform",
+      "task_file": "data/task_multi_objects_same_transform.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 15.929586172103882,
+      "detected_transformations": [],
+      "action_used": null,
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "10x10",
+      "primary_transformation": null,
+      "transformation_confidence": 0.0,
+      "transformation_params": {},
+      "was_fallback_used": false,
+      "llm_proposed_action": null,
+      "fallback_reason": null,
+      "timing": {
+        "total": 15.93,
+        "llm_response": 0.0,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 2,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_pattern_tile",
+      "task_file": "data/task_pattern_tile.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 8.093399047851562,
+      "detected_transformations": [
+        "tiling",
+        "tiling"
+      ],
+      "action_used": "tile",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "2x2",
+      "primary_transformation": "tiling",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "repetitions_horizontal": 2,
+        "repetitions_vertical": 2,
+        "tile_width": 2,
+        "tile_height": 2,
+        "coverage": 1.0
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "tile",
+      "fallback_reason": null,
+      "timing": {
+        "total": 8.093,
+        "llm_response": 8.083,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_pattern_tile_3x3",
+      "task_file": "data/task_pattern_tile_3x3.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 9.06041407585144,
+      "detected_transformations": [
+        "tiling",
+        "tiling"
+      ],
+      "action_used": "tile",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "3x3",
+      "primary_transformation": "tiling",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "repetitions_horizontal": 3,
+        "repetitions_vertical": 3,
+        "tile_width": 3,
+        "tile_height": 3,
+        "coverage": 1.0
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "tile",
+      "fallback_reason": null,
+      "timing": {
+        "total": 9.06,
+        "llm_response": 9.055,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 2,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_reflection",
+      "task_file": "data/task_reflection.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 3.70458722114563,
+      "detected_transformations": [
+        "reflection",
+        "reflection"
+      ],
+      "action_used": "reflect",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "6x6",
+      "primary_transformation": "reflection",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "axis": "horizontal",
+        "grid_level": true
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "reflect",
+      "fallback_reason": null,
+      "timing": {
+        "total": 3.705,
+        "llm_response": 3.698,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_reflection_01",
+      "task_file": "data/task_reflection_01.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.9395530223846436,
+      "detected_transformations": [
+        "reflection",
+        "reflection"
+      ],
+      "action_used": "reflect",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "reflection",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "axis": "vertical",
+        "per_object": true,
+        "color": 2
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "reflect",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.94,
+        "llm_response": 4.933,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_reflection_02",
+      "task_file": "data/task_reflection_02.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 5.058405160903931,
+      "detected_transformations": [
+        "reflection",
+        "rotation",
+        "reflection"
+      ],
+      "action_used": "reflect",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "reflection",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "axis": "horizontal",
+        "per_object": true,
+        "color": 1
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "reflect",
+      "fallback_reason": null,
+      "timing": {
+        "total": 5.058,
+        "llm_response": 5.047,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_reflection_03",
+      "task_file": "data/task_reflection_03.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.935091972351074,
+      "detected_transformations": [
+        "reflection",
+        "rotation",
+        "reflection",
+        "rotation"
+      ],
+      "action_used": "reflect",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "reflection",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "axis": "vertical",
+        "per_object": true,
+        "color": 3
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "reflect",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.935,
+        "llm_response": 4.928,
+        "detection": 0.0,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_reflection_04",
+      "task_file": "data/task_reflection_04.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.934970140457153,
+      "detected_transformations": [
+        "reflection",
+        "reflection"
+      ],
+      "action_used": "reflect",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "reflection",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "axis": "vertical",
+        "per_object": true,
+        "color": 4
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "reflect",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.935,
+        "llm_response": 4.927,
+        "detection": 0.0,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_reflection_05",
+      "task_file": "data/task_reflection_05.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.937274932861328,
+      "detected_transformations": [
+        "rotation",
+        "reflection"
+      ],
+      "action_used": "reflect",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "rotation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "angle": 180,
+        "per_object": true,
+        "color": 7
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "reflect",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.937,
+        "llm_response": 4.927,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_rotation_01",
+      "task_file": "data/task_rotation_01.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.890625,
+      "execution_time": 4.941481828689575,
+      "detected_transformations": [
+        "rotation",
+        "rotation"
+      ],
+      "action_used": "rotate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "rotation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "angle": 90,
+        "per_object": true,
+        "color": 2
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "rotate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.941,
+        "llm_response": 4.934,
+        "detection": 0.0,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_rotation_02",
+      "task_file": "data/task_rotation_02.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.9073169231414795,
+      "detected_transformations": [
+        "rotation",
+        "reflection",
+        "rotation"
+      ],
+      "action_used": "rotate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "rotation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "angle": 90,
+        "per_object": true,
+        "color": 1
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "rotate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.907,
+        "llm_response": 4.898,
+        "detection": 0.001,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_rotation_03",
+      "task_file": "data/task_rotation_03.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.90625,
+      "execution_time": 5.292073965072632,
+      "detected_transformations": [
+        "rotation",
+        "rotation"
+      ],
+      "action_used": "rotate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "rotation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "angle": 90,
+        "per_object": true,
+        "color": 3
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "rotate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 5.292,
+        "llm_response": 5.28,
+        "detection": 0.001,
+        "action_execution": 0.003
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_rotation_04",
+      "task_file": "data/task_rotation_04.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.875,
+      "execution_time": 4.941068887710571,
+      "detected_transformations": [
+        "reflection",
+        "rotation",
+        "rotation"
+      ],
+      "action_used": "rotate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "reflection",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "axis": "diagonal_main"
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "rotate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.941,
+        "llm_response": 4.932,
+        "detection": 0.001,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_rotation_05",
+      "task_file": "data/task_rotation_05.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.920216798782349,
+      "detected_transformations": [
+        "reflection",
+        "rotation",
+        "reflection",
+        "rotation"
+      ],
+      "action_used": "reflect",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "reflection",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "axis": "diagonal_main"
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "reflect",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.92,
+        "llm_response": 4.912,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_rotation_06",
+      "task_file": "data/task_rotation_06.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.939407110214233,
+      "detected_transformations": [
+        "rotation",
+        "rotation"
+      ],
+      "action_used": "rotate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "rotation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "angle": 90,
+        "per_object": true,
+        "color": 9
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "rotate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.939,
+        "llm_response": 4.927,
+        "detection": 0.001,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_rotation_90",
+      "task_file": "data/task_rotation_90.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.25254225730896,
+      "detected_transformations": [
+        "composite",
+        "rotation",
+        "rotation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "7x7",
+      "primary_transformation": "composite",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "transformations": [
+          {
+            "action": "rotate",
+            "params": {
+              "angle": 270
+            }
+          },
+          {
+            "action": "translate",
+            "params": {
+              "dx": -1,
+              "dy": 0
+            }
+          }
+        ],
+        "description": "rotate 270\u00b0 + translate (-1, 0)"
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "translate",
+      "fallback_reason": "direct_composite",
+      "timing": {
+        "total": 4.253,
+        "llm_response": 4.24,
+        "detection": 0.001,
+        "action_execution": 0.003
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_tiling_01",
+      "task_file": "data/task_tiling_01.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 6.592500925064087,
+      "detected_transformations": [
+        "tiling",
+        "tiling"
+      ],
+      "action_used": "tile",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "2x2",
+      "primary_transformation": "tiling",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "repetitions_horizontal": 2,
+        "repetitions_vertical": 2,
+        "tile_width": 2,
+        "tile_height": 2,
+        "coverage": 1.0
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "tile",
+      "fallback_reason": null,
+      "timing": {
+        "total": 6.593,
+        "llm_response": 6.584,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 2,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_tiling_02",
+      "task_file": "data/task_tiling_02.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 5.630549907684326,
+      "detected_transformations": [
+        "tiling",
+        "tiling"
+      ],
+      "action_used": "tile",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "3x3",
+      "primary_transformation": "tiling",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "repetitions_horizontal": 2,
+        "repetitions_vertical": 2,
+        "tile_width": 3,
+        "tile_height": 3,
+        "coverage": 1.0
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "tile",
+      "fallback_reason": null,
+      "timing": {
+        "total": 5.631,
+        "llm_response": 5.623,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_tiling_03",
+      "task_file": "data/task_tiling_03.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 6.730670213699341,
+      "detected_transformations": [
+        "tiling",
+        "tiling"
+      ],
+      "action_used": "tile",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "2x3",
+      "primary_transformation": "tiling",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "repetitions_horizontal": 2,
+        "repetitions_vertical": 2,
+        "tile_width": 3,
+        "tile_height": 2,
+        "coverage": 1.0
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "tile",
+      "fallback_reason": null,
+      "timing": {
+        "total": 6.731,
+        "llm_response": 6.721,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_translation_01",
+      "task_file": "data/task_translation_01.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.894603967666626,
+      "detected_transformations": [
+        "translation",
+        "rotation",
+        "translation",
+        "rotation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "translation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "dx": 2,
+        "dy": 0
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "translate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.895,
+        "llm_response": 4.889,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_translation_02",
+      "task_file": "data/task_translation_02.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.905272006988525,
+      "detected_transformations": [
+        "translation",
+        "rotation",
+        "reflection"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "translation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "dx": 0,
+        "dy": 3
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "translate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.905,
+        "llm_response": 4.898,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_translation_03",
+      "task_file": "data/task_translation_03.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.907198905944824,
+      "detected_transformations": [
+        "translation",
+        "rotation",
+        "translation",
+        "rotation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "translation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "dx": -1,
+        "dy": -2
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "translate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.907,
+        "llm_response": 4.901,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_translation_04",
+      "task_file": "data/task_translation_04.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.9951019287109375,
+      "detected_transformations": [
+        "translation",
+        "translation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "translation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "dx": 2,
+        "dy": 1
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "translate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.995,
+        "llm_response": 4.981,
+        "detection": 0.001,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_translation_05",
+      "task_file": "data/task_translation_05.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 3.921556234359741,
+      "detected_transformations": [
+        "translation",
+        "rotation",
+        "translation",
+        "rotation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "6x6",
+      "primary_transformation": "translation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "dx": 0,
+        "dy": 4
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "translate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 3.922,
+        "llm_response": 3.913,
+        "detection": 0.001,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_translation_06",
+      "task_file": "data/task_translation_06.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 5.013560056686401,
+      "detected_transformations": [
+        "translation",
+        "translation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "translation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "dx": -3,
+        "dy": 0
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "translate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 5.014,
+        "llm_response": 5.004,
+        "detection": 0.001,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_translation_07",
+      "task_file": "data/task_translation_07.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 5.020794153213501,
+      "detected_transformations": [
+        "translation",
+        "translation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "translation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "dx": 0,
+        "dy": -2
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "translate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 5.021,
+        "llm_response": 5.013,
+        "detection": 0.0,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_translation_08",
+      "task_file": "data/task_translation_08.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 4.426231145858765,
+      "detected_transformations": [
+        "translation",
+        "rotation",
+        "translation",
+        "rotation"
+      ],
+      "action_used": "translate",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "7x7",
+      "primary_transformation": "translation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "dx": 1,
+        "dy": 1
+      },
+      "was_fallback_used": false,
+      "llm_proposed_action": "translate",
+      "fallback_reason": null,
+      "timing": {
+        "total": 4.426,
+        "llm_response": 4.388,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    }
+  ]
+}

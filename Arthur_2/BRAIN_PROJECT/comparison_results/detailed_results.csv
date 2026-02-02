@@ -1,0 +1,2 @@
+model,task_id,accuracy,is_correct,response_time_ms,fallback_used,error
+llama3,task_add_border,1.0000,True,1.7,True,
