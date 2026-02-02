@@ -1,39 +1,37 @@
 # BRAIN Project - Analysis Report
 
-**Generated:** 2026-02-02 10:25:05
+**Generated:** 2026-02-02 10:36:57
 
 ## Overview
 
-- **Total tasks analyzed:** 236
-- **Overall accuracy:** 97.8%
-- **Success rate (100%):** 83.1%
+- **Total tasks analyzed:** 64
+- **Overall accuracy:** 98.1%
+- **Success rate (100%):** 85.9%
 
 ## Performance by Model
 
 | Model | Mean Accuracy | Std | N |
 |-------|---------------|-----|---|
-| llama3 | 97.9% | 0.059 | 132 |
-| mistral | 98.0% | 0.048 | 52 |
-| phi3 | 97.5% | 0.057 | 52 |
+| llama3 | 98.1% | 0.057 | 64 |
 
 ## Performance by Transformation
 
 | Transformation | Mean Accuracy | Success Rate | N |
 |----------------|---------------|--------------|---|
-| add_border | 100.0% | 100.0% | 17 |
-| color_change | 100.0% | 100.0% | 9 |
-| draw_line | 100.0% | 100.0% | 21 |
+| add_border | 100.0% | 100.0% | 4 |
+| color_change | 100.0% | 100.0% | 2 |
+| draw_line | 100.0% | 100.0% | 5 |
 | flood_fill | 100.0% | 100.0% | 4 |
 | scaling | 100.0% | 100.0% | 4 |
 | symmetry | 100.0% | 100.0% | 4 |
-| tiling | 100.0% | 100.0% | 22 |
-| translation | 100.0% | 100.0% | 46 |
-| rotation | 96.8% | 68.0% | 25 |
-| reflection | 96.6% | 82.4% | 34 |
-| composite | 93.5% | 40.0% | 35 |
+| tiling | 100.0% | 100.0% | 5 |
+| translation | 100.0% | 100.0% | 11 |
+| rotation | 96.6% | 66.7% | 6 |
+| reflection | 94.3% | 75.0% | 8 |
+| composite | 93.0% | 37.5% | 8 |
 
 ## LLM vs Fallback
 
-- **Fallback usage rate:** 28.0%
+- **Fallback usage rate:** 37.5%
 - **LLM-only accuracy:** 98.3%
-- **With fallback accuracy:** 96.5%
+- **With fallback accuracy:** 97.7%

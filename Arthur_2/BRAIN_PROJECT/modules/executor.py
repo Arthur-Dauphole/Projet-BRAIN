@@ -1673,13 +1673,44 @@ class ActionExecutor:
         # Check if this is a rotate+translate combination (most common)
         action_types = [t.get("action") for t in transformations]
         
+        # Check for color_change in transformations (to apply after geometric transforms)
+        color_change_from = None
+        color_change_to = None
+        for t in transformations:
+            if t.get("action") == "color_change":
+                color_change_from = t.get("params", {}).get("from_color")
+                color_change_to = t.get("params", {}).get("to_color")
+                break
+        
         if "rotate" in action_types and "translate" in action_types:
             # Use object-centric approach for rotate+translate
-            return self._composite_rotate_translate(grid, transformations, color_filter)
+            result = self._composite_rotate_translate(grid, transformations, color_filter)
+            # Apply color change if needed
+            if result.success and color_change_to is not None:
+                result = self._apply_color_change_to_result(result, color_filter, color_change_to)
+            return result
         
         if "reflect" in action_types and "translate" in action_types:
             # Use object-centric approach for reflect+translate
-            return self._composite_reflect_translate(grid, transformations, color_filter)
+            result = self._composite_reflect_translate(grid, transformations, color_filter)
+            # Apply color change if needed
+            if result.success and color_change_to is not None:
+                result = self._apply_color_change_to_result(result, color_filter, color_change_to)
+            return result
+        
+        # Handle rotate only (without translate)
+        if "rotate" in action_types and "translate" not in action_types:
+            result = self._composite_rotate_only(grid, transformations, color_filter)
+            if result.success and color_change_to is not None:
+                result = self._apply_color_change_to_result(result, color_filter, color_change_to)
+            return result
+        
+        # Handle reflect only (without translate)
+        if "reflect" in action_types and "translate" not in action_types:
+            result = self._composite_reflect_only(grid, transformations, color_filter)
+            if result.success and color_change_to is not None:
+                result = self._apply_color_change_to_result(result, color_filter, color_change_to)
+            return result
         
         # Fallback: sequential execution for other combinations
         current_grid = grid
@@ -1908,6 +1939,77 @@ class ActionExecutor:
             output_grid=Grid(data=result),
             message=f"Composite: reflect {axis} + translate ({dx}, {dy})"
         )
+    
+    def _apply_color_change_to_result(
+        self, 
+        result: ActionResult, 
+        from_color: int, 
+        to_color: int
+    ) -> ActionResult:
+        """Apply color change to a result grid."""
+        if not result.success or result.output_grid is None:
+            return result
+        
+        data = result.output_grid.data.copy()
+        data[data == from_color] = to_color
+        
+        return ActionResult(
+            success=True,
+            output_grid=Grid(data=data),
+            message=f"{result.message} + color {from_color}→{to_color}"
+        )
+    
+    def _composite_rotate_only(
+        self, 
+        grid: Grid, 
+        transformations: list, 
+        color_filter: int
+    ) -> ActionResult:
+        """Handle rotation without translation using object-centric approach."""
+        # Find rotation angle
+        angle = 0
+        for t in transformations:
+            if t.get("action") == "rotate":
+                angle = int(t.get("params", {}).get("angle", 0))
+                break
+        
+        if self.verbose:
+            print(f"  Composite rotate only: {angle}° (color={color_filter})")
+        
+        # Create single-action request
+        action_data = {
+            "action": "rotate",
+            "params": {"angle": angle},
+            "color_filter": color_filter
+        }
+        
+        return self._action_rotate(grid, action_data)
+    
+    def _composite_reflect_only(
+        self, 
+        grid: Grid, 
+        transformations: list, 
+        color_filter: int
+    ) -> ActionResult:
+        """Handle reflection without translation using object-centric approach."""
+        # Find reflection axis
+        axis = "horizontal"
+        for t in transformations:
+            if t.get("action") == "reflect":
+                axis = t.get("params", {}).get("axis", "horizontal")
+                break
+        
+        if self.verbose:
+            print(f"  Composite reflect only: {axis} (color={color_filter})")
+        
+        # Create single-action request
+        action_data = {
+            "action": "reflect",
+            "params": {"axis": axis},
+            "color_filter": color_filter
+        }
+        
+        return self._action_reflect(grid, action_data)
     
     # ==================== MULTI-TRANSFORM SUPPORT ====================
     

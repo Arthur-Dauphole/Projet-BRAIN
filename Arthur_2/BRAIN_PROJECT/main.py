@@ -295,6 +295,16 @@ class BRAINOrchestrator:
                         self._log(f"\n  ℹ️ Scaling transformation detected, using direct execution")
                         direct_fallback_action = self._build_fallback_action(detected_transformations, task)
                         break
+                    elif t.transformation_type == "rotation" and t.confidence >= 0.85:
+                        use_direct_fallback = True
+                        self._log(f"\n  ℹ️ Rotation transformation detected (conf={t.confidence:.2f}), using direct execution")
+                        direct_fallback_action = self._build_fallback_action(detected_transformations, task)
+                        break
+                    elif t.transformation_type == "reflection" and t.confidence >= 0.90:
+                        use_direct_fallback = True
+                        self._log(f"\n  ℹ️ Reflection transformation detected (conf={t.confidence:.2f}), using direct execution")
+                        direct_fallback_action = self._build_fallback_action(detected_transformations, task)
+                        break
                 if use_direct_fallback:
                     break
         
@@ -978,40 +988,87 @@ Be more careful with:
                         elif t_type == "rotation":
                             angle = params.get("angle", 90)
                             is_grid_level = params.get("grid_level", False)
+                            per_object = params.get("per_object", False)
+                            position_changed = params.get("position_changed", False)
+                            
+                            # Auto-detect grid-level rotation based on grid dimensions
+                            # If input/output have different dimensions that match rotation, it's grid-level
+                            if task and task.train_pairs and not per_object:
+                                pair = task.train_pairs[0]
+                                in_shape = pair.input_grid.data.shape
+                                out_shape = pair.output_grid.data.shape
+                                # For 90/270 rotation, dimensions swap
+                                if angle in [90, 270]:
+                                    expected_shape = (in_shape[1], in_shape[0])
+                                    if out_shape == expected_shape:
+                                        is_grid_level = True
+                                elif angle == 180 and in_shape == out_shape:
+                                    # 180 rotation keeps dimensions - check if entire grid rotates
+                                    import numpy as np
+                                    rotated = np.rot90(pair.input_grid.data, k=2)
+                                    if np.array_equal(rotated, pair.output_grid.data):
+                                        is_grid_level = True
+                            
+                            # If position changed, this might be rotation + translation (composite)
+                            # Let composite detector handle it instead
+                            if position_changed and not is_grid_level:
+                                self._log(f"  Rotation with position change - may need composite handling")
                             
                             if is_grid_level:
                                 # Grid-level rotation
+                                self._log(f"  Rotation fallback (grid-level): angle={angle}")
                                 return {
                                     "action": "rotate",
                                     "params": {"angle": angle, "grid_level": True}
                                 }
                             else:
                                 # Object-level rotation
+                                rot_color = color_filter if color_filter else params.get("color")
+                                self._log(f"  Rotation fallback (object): angle={angle}, color={rot_color}")
                                 action = {
                                     "action": "rotate",
                                     "params": {"angle": angle}
                                 }
-                                if color_filter:
-                                    action["color_filter"] = color_filter
+                                if rot_color:
+                                    action["color_filter"] = int(rot_color)
                                 return action
                         elif t_type == "reflection":
                             axis = params.get("axis", "horizontal")
-                            # Check if this is grid-level or object-level reflection
+                            per_object = params.get("per_object", False)
                             is_grid_level = params.get("grid_level", False)
                             
-                            if is_grid_level or color_filter is None:
+                            # Auto-detect grid-level reflection
+                            if task and task.train_pairs and not per_object:
+                                import numpy as np
+                                pair = task.train_pairs[0]
+                                in_data = pair.input_grid.data
+                                out_data = pair.output_grid.data
+                                
+                                # Check if entire grid is reflected
+                                if in_data.shape == out_data.shape:
+                                    if axis == "horizontal" and np.array_equal(np.flipud(in_data), out_data):
+                                        is_grid_level = True
+                                    elif axis == "vertical" and np.array_equal(np.fliplr(in_data), out_data):
+                                        is_grid_level = True
+                            
+                            if is_grid_level:
                                 # Grid-level reflection
+                                self._log(f"  Reflection fallback (grid-level): axis={axis}")
                                 return {
                                     "action": "reflect",
                                     "params": {"axis": axis, "grid_level": True}
                                 }
                             else:
                                 # Object-level reflection
-                                return {
+                                ref_color = color_filter if color_filter else params.get("color")
+                                self._log(f"  Reflection fallback (object): axis={axis}, color={ref_color}")
+                                action = {
                                     "action": "reflect",
-                                    "params": {"axis": axis},
-                                    "color_filter": color_filter
+                                    "params": {"axis": axis}
                                 }
+                                if ref_color:
+                                    action["color_filter"] = int(ref_color)
+                                return action
                         elif t_type == "color_change":
                             return {
                                 "action": "color_change",
@@ -1070,14 +1127,42 @@ Be more careful with:
                             # Composite transformation: rotation + translation, etc.
                             transformations = params.get("transformations", [])
                             desc = params.get("description", "composite")
+                            
+                            # Validate and clean up transformations
+                            cleaned_transforms = []
+                            for t in transformations:
+                                if isinstance(t, dict) and "action" in t:
+                                    # Ensure params is a dict
+                                    t_params = t.get("params", {})
+                                    if not isinstance(t_params, dict):
+                                        t_params = {}
+                                    
+                                    cleaned_t = {
+                                        "action": t["action"],
+                                        "params": t_params
+                                    }
+                                    cleaned_transforms.append(cleaned_t)
+                            
+                            # Get color from test input if available
+                            comp_color = color_filter
+                            if comp_color is None and task and task.test_pairs:
+                                test_colors = [c for c in task.test_pairs[0].input_grid.unique_colors if c != 0]
+                                if test_colors:
+                                    comp_color = test_colors[0]
+                            
                             self._log(f"  Composite fallback: {desc}")
-                            return {
+                            self._log(f"    Transforms: {[t['action'] for t in cleaned_transforms]}")
+                            self._log(f"    Color: {comp_color}")
+                            
+                            action = {
                                 "action": "composite",
-                                "color_filter": color_filter,
                                 "params": {
-                                    "transformations": transformations
+                                    "transformations": cleaned_transforms
                                 }
                             }
+                            if comp_color:
+                                action["color_filter"] = int(comp_color)
+                            return action
                         elif t_type == "flood_fill":
                             # Flood fill enclosed regions with a color
                             seed_point = params.get("seed_point", "enclosed_regions")
