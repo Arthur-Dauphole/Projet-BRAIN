@@ -1,15 +1,15 @@
 # Model Comparison Report
 
-**Date:** 2026-01-30T14:45:06.735827
-**Tasks evaluated:** 52
+**Date:** 2026-02-02T15:57:36.209686
+**Tasks evaluated:** 140
 **Models compared:** llama3, mistral, phi3
 
 ## Summary
 
 | Model | Accuracy | Correct | Avg Time | Fallback Rate |
 |-------|----------|---------|----------|---------------|
-| llama3 🏆 | 98.3% | 44/52 | 6266ms | 23.1% |
-| mistral | 97.6% | 41/52 | 7454ms | 23.1% |
-| phi3 | 90.0% | 39/52 | 7408ms | 23.1% |
+| mistral 🏆 | 97.5% | 103/140 | 13225ms | 62.1% |
+| llama3 | 97.3% | 107/140 | 5087ms | 62.1% |
+| phi3 | 96.1% | 102/140 | 11311ms | 83.6% |
 
-**Best model:** llama3
+**Best model:** mistral

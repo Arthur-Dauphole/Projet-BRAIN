@@ -592,8 +592,12 @@ class ModelComparator:
                 comparison.model_avg_response_times[model] = np.mean([r.response_time_ms for r in model_results])
                 comparison.model_fallback_rates[model] = sum(1 for r in model_results if r.fallback_used) / len(model_results)
         
-        # Find best model
-        if comparison.model_accuracies:
+        # Find best model based on correct task count (not accuracy)
+        # This prioritizes models that solve more tasks completely correctly
+        if comparison.model_correct_counts:
+            comparison.best_model = max(comparison.model_correct_counts.items(), key=lambda x: x[1])[0]
+        elif comparison.model_accuracies:
+            # Fallback to accuracy if no correct counts
             comparison.best_model = max(comparison.model_accuracies.items(), key=lambda x: x[1])[0]
         
         return comparison
@@ -605,13 +609,13 @@ class ModelComparator:
         print(f"{'='*60}\n")
         
         # Table header
-        print(f"{'Model':<18} {'Accuracy':>10} {'Correct':>10} {'Avg Time':>12} {'Fallback':>10}")
+        print(f"{'Model':<18} {'Correct':>10} {'Accuracy':>10} {'Avg Time':>12} {'Fallback':>10}")
         print("-" * 62)
         
-        # Sort by accuracy
+        # Sort by correct task count (primary) then by accuracy (secondary)
         sorted_models = sorted(
             self.models,
-            key=lambda m: comparison.model_accuracies.get(m, 0),
+            key=lambda m: (comparison.model_correct_counts.get(m, 0), comparison.model_accuracies.get(m, 0)),
             reverse=True
         )
         
@@ -622,9 +626,11 @@ class ModelComparator:
             fb_rate = comparison.model_fallback_rates.get(model, 0)
             
             marker = "🏆" if model == comparison.best_model else "  "
-            print(f"{marker}{model:<16} {acc:>9.1%} {correct:>10}/{comparison.tasks_evaluated} {time_ms:>10.0f}ms {fb_rate:>9.1%}")
+            print(f"{marker}{model:<16} {correct:>10}/{comparison.tasks_evaluated} {acc:>9.1%} {time_ms:>10.0f}ms {fb_rate:>9.1%}")
         
-        print(f"\n🏆 Best model: {comparison.best_model} ({comparison.model_accuracies.get(comparison.best_model, 0):.1%} accuracy)")
+        best_correct = comparison.model_correct_counts.get(comparison.best_model, 0)
+        best_pct = (best_correct / comparison.tasks_evaluated * 100) if comparison.tasks_evaluated > 0 else 0
+        print(f"\n🏆 Best model: {comparison.best_model} ({best_correct}/{comparison.tasks_evaluated} correct tasks = {best_pct:.1f}%)")
     
     def generate_report(
         self,
@@ -649,16 +655,20 @@ class ModelComparator:
         with open(json_path, "w") as f:
             json.dump(comparison.to_dict(), f, indent=2, default=str)
         
-        # Save CSV summary
+        # Save CSV summary (sorted by correct count)
         csv_path = output_path / "model_summary.csv"
         with open(csv_path, "w") as f:
-            f.write("model,accuracy,correct,total,avg_time_ms,fallback_rate\n")
-            for model in comparison.models:
+            f.write("model,correct,total,correct_pct,accuracy,avg_time_ms,fallback_rate\n")
+            sorted_models = sorted(comparison.models, 
+                                   key=lambda m: comparison.model_correct_counts.get(m, 0), 
+                                   reverse=True)
+            for model in sorted_models:
                 acc = comparison.model_accuracies.get(model, 0)
                 correct = comparison.model_correct_counts.get(model, 0)
+                correct_pct = (correct / comparison.tasks_evaluated * 100) if comparison.tasks_evaluated > 0 else 0
                 time_ms = comparison.model_avg_response_times.get(model, 0)
                 fb = comparison.model_fallback_rates.get(model, 0)
-                f.write(f"{model},{acc:.4f},{correct},{comparison.tasks_evaluated},{time_ms:.1f},{fb:.4f}\n")
+                f.write(f"{model},{correct},{comparison.tasks_evaluated},{correct_pct:.2f},{acc:.4f},{time_ms:.1f},{fb:.4f}\n")
         
         # Save detailed results CSV
         detail_csv = output_path / "detailed_results.csv"
@@ -676,18 +686,23 @@ class ModelComparator:
             f.write(f"**Models compared:** {', '.join(comparison.models)}\n\n")
             
             f.write("## Summary\n\n")
-            f.write("| Model | Accuracy | Correct | Avg Time | Fallback Rate |\n")
-            f.write("|-------|----------|---------|----------|---------------|\n")
+            f.write("| Model | Correct | Accuracy | Avg Time | Fallback Rate |\n")
+            f.write("|-------|---------|----------|----------|---------------|\n")
             
-            for model in sorted(comparison.models, key=lambda m: comparison.model_accuracies.get(m, 0), reverse=True):
+            # Sort by correct count (primary), then accuracy (secondary)
+            for model in sorted(comparison.models, 
+                               key=lambda m: (comparison.model_correct_counts.get(m, 0), comparison.model_accuracies.get(m, 0)), 
+                               reverse=True):
                 acc = comparison.model_accuracies.get(model, 0)
                 correct = comparison.model_correct_counts.get(model, 0)
                 time_ms = comparison.model_avg_response_times.get(model, 0)
                 fb = comparison.model_fallback_rates.get(model, 0)
                 best = " 🏆" if model == comparison.best_model else ""
-                f.write(f"| {model}{best} | {acc:.1%} | {correct}/{comparison.tasks_evaluated} | {time_ms:.0f}ms | {fb:.1%} |\n")
+                f.write(f"| {model}{best} | {correct}/{comparison.tasks_evaluated} | {acc:.1%} | {time_ms:.0f}ms | {fb:.1%} |\n")
             
-            f.write(f"\n**Best model:** {comparison.best_model}\n")
+            best_correct = comparison.model_correct_counts.get(comparison.best_model, 0)
+            best_pct = (best_correct / comparison.tasks_evaluated * 100) if comparison.tasks_evaluated > 0 else 0
+            f.write(f"\n**Best model:** {comparison.best_model} ({best_correct}/{comparison.tasks_evaluated} = {best_pct:.1f}% correct tasks)\n")
         
         if self.verbose:
             print(f"\n📊 Reports saved to: {output_path}")
