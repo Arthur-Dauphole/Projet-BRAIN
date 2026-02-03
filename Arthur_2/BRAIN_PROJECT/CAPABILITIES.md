@@ -1,7 +1,7 @@
 # BRAIN Project - Capacités du Système
 
 > **Dernière mise à jour :** Février 2026  
-> **Version :** 2.4.0 (Extended DSL - flood_fill, symmetry, scale)
+> **Version :** 2.5.0 (140 tasks, benchmark 3 modèles, fallbacks améliorés)
 
 ---
 
@@ -360,9 +360,9 @@ ou
 
 ---
 
-## 📁 Dataset de test (v2.4.0)
+## 📁 Dataset de test (v2.5.0)
 
-Le projet inclut **64 tâches de test** couvrant toutes les transformations supportées, avec une répartition équilibrée pour des analyses statistiques robustes.
+Le projet inclut **140 tâches de test** (10 par type de transformation) couvrant toutes les transformations supportées, avec une répartition équilibrée pour des analyses statistiques robustes.
 
 ### Répartition par type de transformation
 
@@ -409,6 +409,15 @@ python main.py --batch data/ --pattern "task_color_change_*.json"
 ---
 
 ## 📝 Historique des versions
+
+### v2.5.0 (Février 2026) - Dataset 140 tâches + Benchmark 3 modèles
+- ✅ **Dataset élargi** - 140 tâches (10 par type de transformation)
+- ✅ **Benchmark complet** - Comparaison llama3, mistral, phi3 sur 140 tâches
+- ✅ **Mistral recommandé** - 100/140 correct (71.4%), ~2x plus rapide que llama3
+- ✅ **Fallbacks améliorés** - Direct fallback pour rotation/reflection (bypass LLM)
+- ✅ **Composite executor** - Support color_change dans transformations composées
+- ✅ **Auto-détection grid-level** - Rotation/reflection grid vs object-level
+- ✅ **Script `generate_figures.py`** - Génération simplifiée des visualisations
 
 ### v2.4.0 (Février 2026) - Extended DSL + New Primitives
 - ✅ **NOUVEAU: Action `flood_fill`** - Remplissage de régions fermées (enclosed regions, background)
@@ -540,6 +549,9 @@ python main.py --batch data/ --pattern "task_color_change_*.json"
 - [x] ~~Primitive `flood_fill` (remplissage régions fermées)~~ ✅ v2.4.0
 - [x] ~~Primitive `symmetry` (création symétrie)~~ ✅ v2.4.0
 - [x] ~~Primitive `scale` (mise à l'échelle objets)~~ ✅ v2.4.0
+- [x] ~~Dataset 140 tâches (10 par transformation)~~ ✅ v2.5.0
+- [x] ~~Benchmark 3 modèles (llama3, mistral, phi3)~~ ✅ v2.5.0
+- [x] ~~Fallbacks améliorés (rotation, reflection)~~ ✅ v2.5.0
 - [ ] Auto-détection du mode (single vs multi-transform)
 - [ ] Détection de structures hiérarchiques (grilles dans grilles)
 - [ ] Support de transformations conditionnelles (si couleur X alors...)
@@ -1004,7 +1016,7 @@ python main.py --task data/task.json --self-correct --max-retries 2
 
 ---
 
-## 📊 Résumé des Actions Supportées (v2.4.0)
+## 📊 Résumé des Actions Supportées (v2.5.0)
 
 | Action | TIER | Description | Status |
 |--------|------|-------------|--------|
@@ -1068,14 +1080,24 @@ compare_models.py
 
 | Modèle | Description | Taille | Installation |
 |--------|-------------|--------|--------------|
+| `mistral` | **🏆 RECOMMANDÉ** - Meilleur score et plus rapide | 4.1 GB | `ollama pull mistral` |
 | `llama3` | Meta Llama 3 8B - Bon généraliste | 4.7 GB | `ollama pull llama3` |
-| `mistral` | Mistral 7B - Excellent raisonnement, rapide | 4.1 GB | `ollama pull mistral` |
 | `phi3` | Microsoft Phi-3 Mini - Petit mais capable | 2.2 GB | `ollama pull phi3` |
 | `gemma2` | Google Gemma 2 9B - Bon raisonnement | 5.4 GB | `ollama pull gemma2` |
 | `codellama` | Meta Code Llama - Optimisé code/logique | 3.8 GB | `ollama pull codellama` |
 | `qwen2` | Alibaba Qwen 2 7B - Multilingue, bonne logique | 4.4 GB | `ollama pull qwen2` |
 | `llama3.1` | Meta Llama 3.1 8B - Dernière version | 4.7 GB | `ollama pull llama3.1` |
 | `deepseek-coder` | DeepSeek Coder 6.7B - Spécialisé code | 3.8 GB | `ollama pull deepseek-coder` |
+
+### Benchmark officiel (v2.5.0 - 140 tâches)
+
+| Modèle | Tâches Correctes | Accuracy | Temps Moyen | Fallback |
+|--------|------------------|----------|-------------|----------|
+| 🏆 **mistral** | **100/140 (71.4%)** | **97.0%** | **6.9s** | 13.6% |
+| llama3 | 98/140 (70.0%) | 94.8% | 11.4s | 13.6% |
+| phi3 | 91/140 (65.0%) | 93.1% | 9.3s | 15.0% |
+
+**Conclusion :** Mistral offre le meilleur compromis performance/vitesse. Il est ~2x plus rapide que llama3 tout en ayant un meilleur taux de réussite.
 
 ### Utilisation CLI
 
