@@ -666,11 +666,12 @@ class ActionExecutor:
     
     def _action_rotate(self, grid: Grid, action_data: dict) -> ActionResult:
         """
-        Rotate the grid or specific objects around their centroid.
+        Rotate the grid or specific objects.
         
         Parameters:
             params.angle: int - Rotation angle (90, 180, 270)
             params.grid_level: bool - If True, rotate entire grid (no color_filter auto-detection)
+            params.anchor: str - Positioning strategy: "centroid" (default), "topleft", "topright"
             color_filter: int (optional) - Only rotate pixels of this color
                          If not provided and grid_level=False, will auto-detect the non-background color
         
@@ -681,6 +682,7 @@ class ActionExecutor:
         angle = self._safe_int(params.get("angle", 90), default=90, name="angle")
         color_filter = self._safe_color(action_data.get("color_filter"), name="color_filter")
         grid_level = bool(params.get("grid_level", False))
+        anchor = params.get("anchor", "centroid")  # centroid, topleft, topright
         
         if angle not in [90, 180, 270]:
             return ActionResult(
@@ -700,7 +702,7 @@ class ActionExecutor:
                     print(f"  Auto-detected color_filter: {color_filter}")
         
         if self.verbose:
-            print(f"  Executing ROTATE: angle={angle}, color_filter={color_filter}")
+            print(f"  Executing ROTATE: angle={angle}, color_filter={color_filter}, anchor={anchor}")
         
         k = angle // 90  # Number of 90-degree rotations
         
@@ -709,7 +711,7 @@ class ActionExecutor:
             rotated = np.rot90(grid.data, k=k)
             result = np.array(rotated, dtype=np.int64)
         else:
-            # Rotate only specific color using centroid-based rotation
+            # Rotate only specific color
             color_filter = int(color_filter)
             height, width = grid.data.shape
             
@@ -721,17 +723,58 @@ class ActionExecutor:
                     message=f"No pixels found with color {color_filter}"
                 )
             
-            # Calculate centroid (center of mass)
-            centroid_r = np.mean(rows)
-            centroid_c = np.mean(cols)
-            
-            # Get bounding box for reference
+            # Get bounding box
             min_r, max_r = rows.min(), rows.max()
             min_c, max_c = cols.min(), cols.max()
+            obj_height = max_r - min_r + 1
+            obj_width = max_c - min_c + 1
+            
+            # Create object array (normalized to origin)
+            obj_data = np.zeros((obj_height, obj_width), dtype=np.int64)
+            for r, c in zip(rows, cols):
+                obj_data[r - min_r, c - min_c] = color_filter
+            
+            # Rotate the object array using numpy
+            rotated_obj = np.rot90(obj_data, k=k)
+            new_height, new_width = rotated_obj.shape
             
             if self.verbose:
-                print(f"    Centroid: ({centroid_r:.1f}, {centroid_c:.1f})")
-                print(f"    Bounding box: ({min_r}, {min_c}) to ({max_r}, {max_c})")
+                print(f"    Original bbox: ({min_r}, {min_c}) size {obj_height}x{obj_width}")
+                print(f"    Rotated size: {new_height}x{new_width}")
+            
+            # Determine placement position based on anchor strategy
+            if anchor == "topleft":
+                # Keep top-left corner of bounding box fixed
+                place_r, place_c = min_r, min_c
+            elif anchor == "topright":
+                # Keep top-right corner fixed (useful for some rotations)
+                place_r = min_r
+                place_c = max_c - new_width + 1
+            elif anchor == "center":
+                # Keep center of bounding box fixed
+                old_center_r = (min_r + max_r) / 2
+                old_center_c = (min_c + max_c) / 2
+                place_r = int(round(old_center_r - new_height / 2))
+                place_c = int(round(old_center_c - new_width / 2))
+            else:  # centroid (default) - keep centroid fixed
+                centroid_r = np.mean(rows)
+                centroid_c = np.mean(cols)
+                
+                # Find where centroid would be in rotated object
+                rotated_positions = np.where(rotated_obj != 0)
+                if len(rotated_positions[0]) > 0:
+                    new_centroid_r = np.mean(rotated_positions[0])
+                    new_centroid_c = np.mean(rotated_positions[1])
+                else:
+                    new_centroid_r = new_height / 2
+                    new_centroid_c = new_width / 2
+                
+                # Place so centroid stays at same position
+                place_r = int(round(centroid_r - new_centroid_r))
+                place_c = int(round(centroid_c - new_centroid_c))
+            
+            if self.verbose:
+                print(f"    Placing at: ({place_r}, {place_c}) with anchor={anchor}")
             
             # Create result grid
             result = grid.data.copy()
@@ -740,50 +783,24 @@ class ActionExecutor:
             # Clear original position
             result[grid.data == color_filter] = 0
             
-            # Rotate each pixel around the centroid
-            rotated_pixels = []
-            for r, c in zip(rows, cols):
-                # Translate to centroid origin
-                rel_r = r - centroid_r
-                rel_c = c - centroid_c
-                
-                # Apply rotation
-                if angle == 90:
-                    # 90° clockwise: (r, c) -> (c, -r)
-                    new_rel_r = rel_c
-                    new_rel_c = -rel_r
-                elif angle == 180:
-                    # 180°: (r, c) -> (-r, -c)
-                    new_rel_r = -rel_r
-                    new_rel_c = -rel_c
-                elif angle == 270:
-                    # 270° clockwise (90° counter-clockwise): (r, c) -> (-c, r)
-                    new_rel_r = -rel_c
-                    new_rel_c = rel_r
-                else:
-                    new_rel_r, new_rel_c = rel_r, rel_c
-                
-                # Translate back from centroid
-                new_r = round(new_rel_r + centroid_r)
-                new_c = round(new_rel_c + centroid_c)
-                
-                rotated_pixels.append((new_r, new_c))
-            
-            # Place rotated pixels
+            # Place rotated object
             pixels_placed = 0
-            for new_r, new_c in rotated_pixels:
-                if 0 <= new_r < height and 0 <= new_c < width:
-                    result[new_r, new_c] = color_filter
-                    pixels_placed += 1
+            for r in range(new_height):
+                for c in range(new_width):
+                    if rotated_obj[r, c] != 0:
+                        nr, nc = place_r + r, place_c + c
+                        if 0 <= nr < height and 0 <= nc < width:
+                            result[nr, nc] = rotated_obj[r, c]
+                            pixels_placed += 1
             
             if self.verbose:
-                print(f"    Placed {pixels_placed}/{len(rotated_pixels)} rotated pixels")
+                print(f"    Placed {pixels_placed} rotated pixels")
         
         return ActionResult(
             success=True,
             output_grid=Grid(data=result),
-            message=f"Rotated by {angle}° around centroid",
-            details={"angle": angle, "color_filter": color_filter}
+            message=f"Rotated by {angle}° with anchor={anchor}",
+            details={"angle": angle, "color_filter": color_filter, "anchor": anchor}
         )
     
     def _action_reflect(self, grid: Grid, action_data: dict) -> ActionResult:

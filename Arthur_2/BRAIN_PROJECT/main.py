@@ -1298,7 +1298,8 @@ Be more careful with:
         """
         Try multiple rotation configurations and return the one that works.
         
-        Tries all angles (90, 180, 270) and both grid-level and object-level.
+        Tries all angles (90, 180, 270), both grid-level and object-level,
+        and different anchor strategies (centroid, topleft, center).
         """
         import numpy as np
         
@@ -1318,31 +1319,37 @@ Be more careful with:
             if a not in angles_to_try:
                 angles_to_try.append(a)
         
+        # Anchor strategies to try
+        anchors_to_try = ["topleft", "centroid", "center", "topright"]
+        
         configs_to_try = []
         
-        # Try grid-level first
+        # Try grid-level first (most reliable for full grid rotations)
         for angle in angles_to_try:
             configs_to_try.append({
                 "action": "rotate",
                 "params": {"angle": angle, "grid_level": True}
             })
         
-        # Then object-level with color
+        # Then object-level with different anchor strategies
         if color_filter:
-            for angle in angles_to_try:
-                configs_to_try.append({
-                    "action": "rotate",
-                    "params": {"angle": angle},
-                    "color_filter": int(color_filter)
-                })
+            # Try each anchor strategy for each angle
+            for anchor in anchors_to_try:
+                for angle in angles_to_try:
+                    configs_to_try.append({
+                        "action": "rotate",
+                        "params": {"angle": angle, "anchor": anchor},
+                        "color_filter": int(color_filter)
+                    })
         
         # Test each configuration
         for config in configs_to_try:
             if self._validate_action_on_training(config, task):
-                self._log(f"  ✓ Found working rotation: angle={config['params'].get('angle')}, grid_level={config['params'].get('grid_level', False)}")
+                anchor = config.get("params", {}).get("anchor", "grid_level" if config.get("params", {}).get("grid_level") else "default")
+                self._log(f"  ✓ Found working rotation: angle={config['params'].get('angle')}, anchor={anchor}")
                 return config
         
-        # If nothing works, return detected params as fallback
+        # If nothing works, return None (will use original fallback)
         return None
     
     def _find_best_reflection_action(
