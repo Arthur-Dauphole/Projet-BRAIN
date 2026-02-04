@@ -298,6 +298,19 @@ class RuleMemory:
         Returns:
             The stored rule
         """
+        # Check for duplicate - don't store if same task with same or lower accuracy
+        existing = self._find_existing_rule(task.task_id)
+        if existing:
+            if accuracy <= existing.accuracy:
+                if self.verbose:
+                    print(f"  ⊘ Skipping duplicate: {task.task_id} (existing: {existing.accuracy:.1%})")
+                return existing
+            else:
+                # Replace with better version
+                self.rules.remove(existing)
+                if self.verbose:
+                    print(f"  ↑ Updating rule: {task.task_id} ({existing.accuracy:.1%} -> {accuracy:.1%})")
+        
         # Compute signature
         if detected_transforms:
             signature = self.compute_signature_with_transforms(task, detected_transforms)
@@ -326,6 +339,13 @@ class RuleMemory:
             self._save()
         
         return rule
+    
+    def _find_existing_rule(self, task_id: str) -> Optional[StoredRule]:
+        """Find an existing rule for a task."""
+        for rule in self.rules:
+            if rule.task_id == task_id:
+                return rule
+        return None
     
     def find_similar_rules(
         self,
@@ -393,8 +413,12 @@ class RuleMemory:
         max_score += 3.0
         if sig1.input_shape == sig2.input_shape:
             score += 1.5
+        elif self._shapes_similar(sig1.input_shape, sig2.input_shape):
+            score += 0.75  # Partial credit for similar shapes
         if sig1.output_shape == sig2.output_shape:
             score += 1.5
+        elif self._shapes_similar(sig1.output_shape, sig2.output_shape):
+            score += 0.75
         
         # Size change match (important)
         max_score += 2.0
@@ -408,13 +432,12 @@ class RuleMemory:
         if sig1.num_colors_output == sig2.num_colors_output:
             score += 0.5
         
-        # Color overlap (Jaccard similarity)
+        # Color pattern match (colors added/removed)
         max_score += 1.0
-        colors1 = set(sig1.input_colors) | set(sig1.output_colors)
-        colors2 = set(sig2.input_colors) | set(sig2.output_colors)
-        if colors1 and colors2:
-            jaccard = len(colors1 & colors2) / len(colors1 | colors2)
-            score += jaccard
+        if sig1.colors_added == sig2.colors_added:
+            score += 0.5
+        if sig1.colors_removed == sig2.colors_removed:
+            score += 0.5
         
         # Object count similarity
         max_score += 1.0
@@ -422,16 +445,33 @@ class RuleMemory:
             obj_diff = abs(sig1.num_objects_input - sig2.num_objects_input)
             score += max(0, 1.0 - obj_diff * 0.2)
         
-        # Transformation type match (high weight if available)
+        # Object type match
+        max_score += 1.0
+        if sig1.object_types_input and sig2.object_types_input:
+            common_types = set(sig1.object_types_input) & set(sig2.object_types_input)
+            all_types = set(sig1.object_types_input) | set(sig2.object_types_input)
+            if all_types:
+                score += len(common_types) / len(all_types)
+        
+        # Transformation type match (highest weight - most important for RAG)
         if sig1.detected_transforms and sig2.detected_transforms:
-            max_score += 2.0
+            max_score += 3.0
             common_transforms = set(sig1.detected_transforms) & set(sig2.detected_transforms)
             all_transforms = set(sig1.detected_transforms) | set(sig2.detected_transforms)
             if all_transforms:
-                score += 2.0 * len(common_transforms) / len(all_transforms)
+                # Exact match bonus
+                if sig1.detected_transforms == sig2.detected_transforms:
+                    score += 3.0
+                else:
+                    score += 2.0 * len(common_transforms) / len(all_transforms)
         
         # Normalize to 0-1
         return score / max_score if max_score > 0 else 0.0
+    
+    def _shapes_similar(self, shape1: Tuple[int, int], shape2: Tuple[int, int], tolerance: int = 2) -> bool:
+        """Check if two shapes are similar within tolerance."""
+        return (abs(shape1[0] - shape2[0]) <= tolerance and 
+                abs(shape1[1] - shape2[1]) <= tolerance)
     
     def get_rules_by_transform(self, transform_type: str) -> List[StoredRule]:
         """

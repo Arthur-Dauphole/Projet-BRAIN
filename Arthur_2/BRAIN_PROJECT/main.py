@@ -173,9 +173,20 @@ class BRAINOrchestrator:
                 "fallback_reason": None,
                 "llm_response_time": 0.0,
                 "detection_time": 0.0,
-                "execution_time": 0.0
+                "execution_time": 0.0,
+                "similar_rules_used": 0
             }
         }
+        
+        # === STEP 0: RULE MEMORY - Find similar past solutions ===
+        similar_rules = []
+        if self.rule_memory:
+            similar_rules = self.rule_memory.find_similar_rules(task, top_k=3, min_accuracy=0.9, success_only=True)
+            if similar_rules:
+                self._log(f"\n📚 RULE MEMORY: Found {len(similar_rules)} similar past solutions")
+                for i, rule in enumerate(similar_rules):
+                    self._log(f"   {i+1}. {rule.task_id} ({rule.accuracy:.0%}) -> {rule.action_data.get('action', '?')}")
+                results["metadata"]["similar_rules_used"] = len(similar_rules)
         
         # === STEP 1a: PERCEPTION (Shapes) ===
         self._log("=" * 50)
@@ -316,6 +327,17 @@ class BRAINOrchestrator:
         prompt = self.prompt_maker.create_reasoning_chain_prompt(task)
         system_prompt = self.prompt_maker.get_system_prompt()
         
+        # === RULE MEMORY: Add similar past solutions to prompt ===
+        if similar_rules and self.rule_memory:
+            few_shot_text = self.rule_memory.format_for_prompt(similar_rules)
+            if few_shot_text:
+                # Insert before "## YOUR TASK:" section
+                if "## YOUR TASK:" in prompt:
+                    prompt = prompt.replace("## YOUR TASK:", f"{few_shot_text}\n## YOUR TASK:")
+                else:
+                    prompt = prompt + "\n" + few_shot_text
+                self._log(f"  📚 Added {len(similar_rules)} similar solutions to prompt")
+        
         self._log(f"  Created prompt ({len(prompt)} chars)")
         
         # === STEP 3: LLM REASONING ===
@@ -454,7 +476,25 @@ class BRAINOrchestrator:
         if results["analyses"]:
             correct = sum(1 for a in results["analyses"] if a.is_correct)
             total = len(results["analyses"])
-            self._log(f"  Results: {correct}/{total} correct")
+            avg_accuracy = sum(a.accuracy for a in results["analyses"]) / total if total > 0 else 0
+            self._log(f"  Results: {correct}/{total} correct ({avg_accuracy:.1%})")
+            
+            # === RULE MEMORY: Store result for future learning ===
+            if self.rule_memory and results.get("action_data"):
+                is_success = correct == total and avg_accuracy >= 0.99
+                self.rule_memory.store_rule(
+                    task=task,
+                    action_data=results["action_data"],
+                    success=is_success,
+                    accuracy=avg_accuracy,
+                    detected_transforms=detected_transformations[0] if detected_transformations else None,
+                    metadata={
+                        "was_fallback": results["metadata"].get("was_fallback_used", False),
+                        "llm_action": results["metadata"].get("llm_proposed_action")
+                    }
+                )
+                status = "✓" if is_success else "○"
+                self._log(f"  💾 {status} Rule stored in memory ({len(self.rule_memory)} total)")
         
         return results
     
