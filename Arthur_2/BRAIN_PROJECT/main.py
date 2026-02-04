@@ -1790,7 +1790,9 @@ Examples:
             model=args.model,
             verbose=not args.quiet,
             visualize=False,  # ALWAYS False during batch - no popups!
-            multi_mode=args.multi
+            multi_mode=args.multi,
+            use_memory=True,  # Enable rule memory for learning
+            memory_path=args.memory_path
         )
         
         result = runner.run_batch(

@@ -272,7 +272,9 @@ class BatchRunner:
         model: str = "llama3",
         verbose: bool = True,
         visualize: bool = False,  # Default off for batch
-        multi_mode: bool = False
+        multi_mode: bool = False,
+        use_memory: bool = True,  # Enable rule memory by default
+        memory_path: str = "rule_memory.json"
     ):
         """
         Initialize the batch runner.
@@ -282,11 +284,15 @@ class BatchRunner:
             verbose: Print progress messages
             visualize: Show visualizations (usually False for batch)
             multi_mode: Use multi-transform mode
+            use_memory: Enable rule memory for learning from past solutions
+            memory_path: Path to rule memory JSON file
         """
         self.model = model
         self.verbose = verbose
         self.visualize = visualize
         self.multi_mode = multi_mode
+        self.use_memory = use_memory
+        self.memory_path = memory_path
         
         # Lazy import to avoid circular imports
         self._orchestrator = None
@@ -304,7 +310,9 @@ class BatchRunner:
             self._orchestrator = BRAINOrchestrator(
                 model=self.model,
                 verbose=False,  # Keep quiet during batch - only show progress
-                visualize=self.visualize
+                visualize=self.visualize,
+                use_memory=self.use_memory,
+                memory_path=self.memory_path
             )
         return self._orchestrator
     
