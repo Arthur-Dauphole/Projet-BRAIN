@@ -4,7 +4,7 @@
 
 Un solveur neuro-symbolique pour les puzzles [ARC-AGI](https://arcprize.org/) (Abstraction and Reasoning Corpus).
 
-> **Version:** 2.5.0  
+> **Version:** 2.6.0  
 > **Dernière mise à jour:** Février 2026
 
 ---
@@ -29,6 +29,7 @@ BRAIN combine :
 - **Perception symbolique** : Détection automatique de formes géométriques (carrés, rectangles, lignes, formes en L/T/+, blobs)
 - **Détection de transformations** : Identification automatique des règles (translation, rotation, réflexion, scaling, symmetry, flood_fill, changement de couleur, tiling, etc.)
 - **Raisonnement LLM** : Utilisation d'un modèle de langage local (Ollama) pour inférer les règles
+- **Rule Memory (RAG)** : Apprentissage des solutions réussies pour améliorer les prédictions futures
 - **Exécution symbolique** : Application des transformations sur les grilles
 - **Évaluation batch** : Exécution et analyse de multiples tâches
 - **Comparaison de modèles** : Benchmark de différents LLMs sur les mêmes tâches
@@ -36,7 +37,7 @@ BRAIN combine :
 ### Pipeline
 
 ```
-Input Grid → Perception → Transformation Detection → Prompting → LLM → Execution → Analysis → Visualization
+Input Grid → Rule Memory → Perception → Transformation Detection → Prompting → LLM → Execution → Analysis → Storage
 ```
 
 ---
@@ -225,6 +226,48 @@ python compare_models.py --viz-only comparison_results/
 - `time_comparison.png` - Temps de réponse moyen
 - `accuracy_vs_time.png` - Trade-off accuracy/temps
 - `summary_dashboard.png` - Dashboard complet
+
+---
+
+## Rule Memory (RAG)
+
+Le système apprend des solutions réussies et les réutilise pour améliorer les prédictions futures.
+
+### Fonctionnement
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Nouvelle tâche → Recherche de règles similaires (top 3)  │
+│ 2. Ajout des exemples au prompt (few-shot learning)         │
+│ 3. LLM + Exécution + Analyse                                │
+│ 4. Stockage du résultat dans rule_memory.json               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Utilisation
+
+```bash
+# Le rule memory est activé par défaut
+python main.py --batch data/
+
+# Vérifier le contenu de la mémoire
+python -c "from modules.rule_memory import RuleMemory; m=RuleMemory('rule_memory.json'); print(m.get_statistics())"
+
+# Désactiver le rule memory (si besoin)
+# Modifier use_memory=False dans le code
+```
+
+### Fichiers générés
+
+- `rule_memory.json` - Base de connaissances avec toutes les règles apprises
+- Contient : signatures des tâches, actions exécutées, accuracy, métadonnées
+
+### Amélioration des performances
+
+À chaque exécution, le système :
+1. Trouve les tâches similaires dans sa mémoire
+2. Utilise leurs solutions comme exemples (few-shot)
+3. Stocke les nouveaux résultats pour apprentissage futur
 
 ---
 

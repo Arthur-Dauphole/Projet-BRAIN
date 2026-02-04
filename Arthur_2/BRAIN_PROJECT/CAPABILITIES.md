@@ -1,7 +1,7 @@
 # BRAIN Project - Capacités du Système
 
 > **Dernière mise à jour :** Février 2026  
-> **Version :** 2.5.0 (140 tasks, benchmark 3 modèles, fallbacks améliorés)
+> **Version :** 2.6.0 (Rule Memory RAG, Rotation améliorée, Brute-force validation)
 
 ---
 
@@ -357,10 +357,77 @@ ou
 |--------|--------|
 | `llama3` | ✅ Fonctionne |
 | `llama3.2` | ✅ Fonctionne |
+| `mistral` | ✅ **Recommandé** |
+| `phi3` | ✅ Fonctionne |
+| `gemma2` | ✅ Fonctionne |
 
 ---
 
-## 📁 Dataset de test (v2.5.0)
+## 📚 Module RULE MEMORY (RAG) - v2.6.0
+
+### Description
+
+Système d'apprentissage qui stocke les solutions réussies et les réutilise pour améliorer les prédictions futures via few-shot learning.
+
+### Fonctionnalités
+
+| Fonctionnalité | Description | Status |
+|----------------|-------------|--------|
+| Stockage des règles | Sauvegarde automatique des solutions dans `rule_memory.json` | ✅ |
+| Extraction de signature | Caractéristiques extraites : forme, couleurs, objets, transformations | ✅ |
+| Recherche par similarité | Trouve les tâches similaires (top-k) basé sur signature | ✅ |
+| Few-shot prompting | Ajoute les solutions passées au prompt LLM | ✅ |
+| Déduplication | Évite les doublons, garde la meilleure version | ✅ |
+| Persistance JSON | Stockage longue durée dans fichier JSON | ✅ |
+
+### Critères de similarité
+
+| Critère | Poids | Description |
+|---------|-------|-------------|
+| Forme input/output | Élevé | Dimensions des grilles |
+| Changement de taille | Élevé | Input → Output plus grand/petit/identique |
+| Nombre de couleurs | Moyen | Couleurs input vs output |
+| Pattern de couleurs | Moyen | Couleurs ajoutées/supprimées |
+| Types d'objets | Moyen | Formes détectées (blob, rectangle, etc.) |
+| Transformations | **Très élevé** | Type de transformation détecté |
+
+### Pipeline d'utilisation
+
+```
+Nouvelle tâche
+     ↓
+1. Extraction de signature
+     ↓
+2. Recherche de règles similaires (top 3, accuracy ≥ 90%)
+     ↓
+3. Ajout des exemples au prompt (few-shot)
+     ↓
+4. LLM + Exécution + Analyse
+     ↓
+5. Stockage du résultat (succès ou échec)
+```
+
+### Utilisation Python
+
+```python
+from modules.rule_memory import RuleMemory
+
+# Créer/charger la mémoire
+memory = RuleMemory("rule_memory.json", verbose=True)
+
+# Statistiques
+print(memory.get_statistics())
+
+# Trouver des règles similaires
+similar = memory.find_similar_rules(task, top_k=3, min_accuracy=0.9)
+
+# Formater pour le prompt
+few_shot_text = memory.format_for_prompt(similar)
+```
+
+---
+
+## 📁 Dataset de test (v2.6.0)
 
 Le projet inclut **140 tâches de test** (10 par type de transformation) couvrant toutes les transformations supportées, avec une répartition équilibrée pour des analyses statistiques robustes.
 
@@ -409,6 +476,15 @@ python main.py --batch data/ --pattern "task_color_change_*.json"
 ---
 
 ## 📝 Historique des versions
+
+### v2.6.0 (Février 2026) - Rule Memory RAG + Rotation améliorée
+- ✅ **Rule Memory intégré** - Stockage automatique des solutions réussies dans `rule_memory.json`
+- ✅ **Few-shot learning (RAG)** - Utilise les solutions similaires passées pour améliorer les prédictions
+- ✅ **Rotation multi-anchor** - Stratégies d'ancrage (topleft, centroid, center, topright)
+- ✅ **Brute-force validation** - Essai de multiples configurations pour rotation/reflection/symmetry/composite
+- ✅ **Déduplication des règles** - Évite les doublons, garde la meilleure version
+- ✅ **Similarité améliorée** - Matching des patterns, types d'objets, transformations détectées
+- ✅ **Fix bug `__len__`** - Correction de l'évaluation booléenne de RuleMemory vide
 
 ### v2.5.0 (Février 2026) - Dataset 140 tâches + Benchmark 3 modèles
 - ✅ **Dataset élargi** - 140 tâches (10 par type de transformation)
@@ -552,9 +628,13 @@ python main.py --batch data/ --pattern "task_color_change_*.json"
 - [x] ~~Dataset 140 tâches (10 par transformation)~~ ✅ v2.5.0
 - [x] ~~Benchmark 3 modèles (llama3, mistral, phi3)~~ ✅ v2.5.0
 - [x] ~~Fallbacks améliorés (rotation, reflection)~~ ✅ v2.5.0
+- [x] ~~Rule Memory (RAG) - stockage et réutilisation des solutions~~ ✅ v2.6.0
+- [x] ~~Rotation multi-anchor (topleft, centroid, center)~~ ✅ v2.6.0
+- [x] ~~Brute-force validation (rotation, reflection, symmetry, composite)~~ ✅ v2.6.0
 - [ ] Auto-détection du mode (single vs multi-transform)
 - [ ] Détection de structures hiérarchiques (grilles dans grilles)
 - [ ] Support de transformations conditionnelles (si couleur X alors...)
+- [ ] Self-correction avancée (feedback loop avec analyse d'erreurs)
 
 ---
 
@@ -1016,7 +1096,7 @@ python main.py --task data/task.json --self-correct --max-retries 2
 
 ---
 
-## 📊 Résumé des Actions Supportées (v2.5.0)
+## 📊 Résumé des Actions Supportées (v2.6.0)
 
 | Action | TIER | Description | Status |
 |--------|------|-------------|--------|

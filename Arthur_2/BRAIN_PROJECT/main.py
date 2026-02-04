@@ -180,7 +180,7 @@ class BRAINOrchestrator:
         
         # === STEP 0: RULE MEMORY - Find similar past solutions ===
         similar_rules = []
-        if self.rule_memory:
+        if self.rule_memory is not None:
             similar_rules = self.rule_memory.find_similar_rules(task, top_k=3, min_accuracy=0.9, success_only=True)
             if similar_rules:
                 self._log(f"\n📚 RULE MEMORY: Found {len(similar_rules)} similar past solutions")
@@ -328,7 +328,7 @@ class BRAINOrchestrator:
         system_prompt = self.prompt_maker.get_system_prompt()
         
         # === RULE MEMORY: Add similar past solutions to prompt ===
-        if similar_rules and self.rule_memory:
+        if similar_rules and self.rule_memory is not None:
             few_shot_text = self.rule_memory.format_for_prompt(similar_rules)
             if few_shot_text:
                 # Insert before "## YOUR TASK:" section
@@ -480,7 +480,7 @@ class BRAINOrchestrator:
             self._log(f"  Results: {correct}/{total} correct ({avg_accuracy:.1%})")
             
             # === RULE MEMORY: Store result for future learning ===
-            if self.rule_memory and results.get("action_data"):
+            if self.rule_memory is not None and results.get("action_data"):
                 is_success = correct == total and avg_accuracy >= 0.99
                 self.rule_memory.store_rule(
                     task=task,
@@ -697,7 +697,7 @@ class BRAINOrchestrator:
         
         # Get similar rules for few-shot prompting (RAG)
         similar_rules = []
-        if use_rag and self.rule_memory:
+        if use_rag and self.rule_memory is not None:
             similar_rules = self.rule_memory.find_similar_rules(task, top_k=3)
             if similar_rules:
                 self._log(f"  📚 Found {len(similar_rules)} similar past solutions")
@@ -741,7 +741,7 @@ class BRAINOrchestrator:
                     self._log(f"\n✓ Solved on attempt {attempt + 1}!")
                     
                     # Store successful rule in memory
-                    if self.rule_memory and results.get("action_data"):
+                    if self.rule_memory is not None and results.get("action_data"):
                         self.rule_memory.store_rule(
                             task=task,
                             action_data=results["action_data"],
@@ -758,7 +758,7 @@ class BRAINOrchestrator:
         self._log(f"\n⚠ Max retries reached. Best accuracy: {best_accuracy:.1%}")
         
         # Store the best (but failed) rule for learning
-        if self.rule_memory and best_results and best_results.get("action_data"):
+        if self.rule_memory is not None and best_results and best_results.get("action_data"):
             self.rule_memory.store_rule(
                 task=task,
                 action_data=best_results["action_data"],
@@ -781,7 +781,7 @@ class BRAINOrchestrator:
             Results dictionary
         """
         # If we have similar rules, enhance the prompt
-        if similar_rules and self.rule_memory:
+        if similar_rules and self.rule_memory is not None:
             # Get the original prompt
             prompt = self.prompt_maker.create_reasoning_chain_prompt(task)
             
