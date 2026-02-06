@@ -85,6 +85,48 @@ class DataLoader:
         
         return df
     
+    def load_latest_batch(
+        self, 
+        results_dir: str = "results/",
+        pattern: str = "batch_*"
+    ) -> pd.DataFrame:
+        """
+        Charge uniquement le batch le plus récent.
+        
+        Args:
+            results_dir: Répertoire contenant les dossiers de batch
+            pattern: Pattern glob pour les dossiers de batch
+            
+        Returns:
+            DataFrame avec les résultats du dernier batch uniquement
+        """
+        results_path = Path(results_dir)
+        
+        if not results_path.exists():
+            raise FileNotFoundError(f"Results directory not found: {results_dir}")
+        
+        # Trouver tous les dossiers de batch et les trier par nom (qui contient le timestamp)
+        batch_folders = sorted(results_path.glob(pattern))
+        
+        if not batch_folders:
+            print(f"No batch folders found matching '{pattern}' in {results_dir}")
+            return pd.DataFrame()
+        
+        # Prendre le dernier (le plus récent par ordre alphabétique du timestamp)
+        latest_folder = batch_folders[-1]
+        
+        print(f"Found {len(batch_folders)} batch folders")
+        print(f"📌 Loading LATEST batch only: {latest_folder.name}")
+        
+        try:
+            df = self.load_batch(str(latest_folder))
+            df = self._convert_types(df)
+            print(f"✓ Loaded {len(df)} task results from {latest_folder.name}")
+            return df
+        except Exception as e:
+            print(f"✗ Failed to load {latest_folder.name}: {e}")
+            return pd.DataFrame()
+    
     def load_all_batches(
         self, 
         results_dir: str = "results/",

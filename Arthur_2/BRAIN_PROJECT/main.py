@@ -173,9 +173,20 @@ class BRAINOrchestrator:
                 "fallback_reason": None,
                 "llm_response_time": 0.0,
                 "detection_time": 0.0,
-                "execution_time": 0.0
+                "execution_time": 0.0,
+                "similar_rules_used": 0
             }
         }
+        
+        # === STEP 0: RULE MEMORY - Find similar past solutions ===
+        similar_rules = []
+        if self.rule_memory is not None:
+            similar_rules = self.rule_memory.find_similar_rules(task, top_k=3, min_accuracy=0.9, success_only=True)
+            if similar_rules:
+                self._log(f"\n📚 RULE MEMORY: Found {len(similar_rules)} similar past solutions")
+                for i, rule in enumerate(similar_rules):
+                    self._log(f"   {i+1}. {rule.task_id} ({rule.accuracy:.0%}) -> {rule.action_data.get('action', '?')}")
+                results["metadata"]["similar_rules_used"] = len(similar_rules)
         
         # === STEP 1a: PERCEPTION (Shapes) ===
         self._log("=" * 50)
@@ -213,14 +224,15 @@ class BRAINOrchestrator:
         results["detected_transformations"] = detected_transformations
         results["metadata"]["detection_time"] = time.time() - detection_start
         
-        # === CHECK FOR SPECIAL TRANSFORMATIONS (tiling, scaling) ===
+        # === CHECK FOR SPECIAL TRANSFORMATIONS (tiling, scaling, flood_fill, symmetry) ===
         # These transformations are grid-level and should NOT trigger multi-transform mode
         is_grid_level_transform = False
         if detected_transformations:
             for trans_list in detected_transformations:
                 for t in trans_list:
                     t_type = t.transformation_type if hasattr(t, 'transformation_type') else ''
-                    if t_type in ('tiling', 'scaling') and t.confidence >= 0.95:
+                    # flood_fill and symmetry apply globally, not per-color
+                    if t_type in ('tiling', 'scaling', 'flood_fill', 'symmetry') and t.confidence >= 0.95:
                         is_grid_level_transform = True
                         self._log(f"\n  ℹ️ Grid-level transformation detected ({t_type}), skipping per-color analysis")
                         break
@@ -279,6 +291,31 @@ class BRAINOrchestrator:
                         self._log(f"\n  ℹ️ Add border transformation detected, using direct execution")
                         direct_fallback_action = self._build_fallback_action(detected_transformations, task)
                         break
+                    elif t.transformation_type == "flood_fill" and t.confidence >= 0.95:
+                        use_direct_fallback = True
+                        self._log(f"\n  ℹ️ Flood fill transformation detected, using direct execution")
+                        direct_fallback_action = self._build_fallback_action(detected_transformations, task)
+                        break
+                    elif t.transformation_type == "symmetry" and t.confidence >= 0.95:
+                        use_direct_fallback = True
+                        self._log(f"\n  ℹ️ Symmetry transformation detected, using direct execution")
+                        direct_fallback_action = self._build_fallback_action(detected_transformations, task)
+                        break
+                    elif t.transformation_type == "scaling" and t.confidence >= 0.85:
+                        use_direct_fallback = True
+                        self._log(f"\n  ℹ️ Scaling transformation detected, using direct execution")
+                        direct_fallback_action = self._build_fallback_action(detected_transformations, task)
+                        break
+                    elif t.transformation_type == "rotation" and t.confidence >= 0.85:
+                        use_direct_fallback = True
+                        self._log(f"\n  ℹ️ Rotation transformation detected (conf={t.confidence:.2f}), using direct execution")
+                        direct_fallback_action = self._build_fallback_action(detected_transformations, task)
+                        break
+                    elif t.transformation_type == "reflection" and t.confidence >= 0.90:
+                        use_direct_fallback = True
+                        self._log(f"\n  ℹ️ Reflection transformation detected (conf={t.confidence:.2f}), using direct execution")
+                        direct_fallback_action = self._build_fallback_action(detected_transformations, task)
+                        break
                 if use_direct_fallback:
                     break
         
@@ -289,6 +326,17 @@ class BRAINOrchestrator:
         
         prompt = self.prompt_maker.create_reasoning_chain_prompt(task)
         system_prompt = self.prompt_maker.get_system_prompt()
+        
+        # === RULE MEMORY: Add similar past solutions to prompt ===
+        if similar_rules and self.rule_memory is not None:
+            few_shot_text = self.rule_memory.format_for_prompt(similar_rules)
+            if few_shot_text:
+                # Insert before "## YOUR TASK:" section
+                if "## YOUR TASK:" in prompt:
+                    prompt = prompt.replace("## YOUR TASK:", f"{few_shot_text}\n## YOUR TASK:")
+                else:
+                    prompt = prompt + "\n" + few_shot_text
+                self._log(f"  📚 Added {len(similar_rules)} similar solutions to prompt")
         
         self._log(f"  Created prompt ({len(prompt)} chars)")
         
@@ -428,7 +476,25 @@ class BRAINOrchestrator:
         if results["analyses"]:
             correct = sum(1 for a in results["analyses"] if a.is_correct)
             total = len(results["analyses"])
-            self._log(f"  Results: {correct}/{total} correct")
+            avg_accuracy = sum(a.accuracy for a in results["analyses"]) / total if total > 0 else 0
+            self._log(f"  Results: {correct}/{total} correct ({avg_accuracy:.1%})")
+            
+            # === RULE MEMORY: Store result for future learning ===
+            if self.rule_memory is not None and results.get("action_data"):
+                is_success = correct == total and avg_accuracy >= 0.99
+                self.rule_memory.store_rule(
+                    task=task,
+                    action_data=results["action_data"],
+                    success=is_success,
+                    accuracy=avg_accuracy,
+                    detected_transforms=detected_transformations[0] if detected_transformations else None,
+                    metadata={
+                        "was_fallback": results["metadata"].get("was_fallback_used", False),
+                        "llm_action": results["metadata"].get("llm_proposed_action")
+                    }
+                )
+                status = "✓" if is_success else "○"
+                self._log(f"  💾 {status} Rule stored in memory ({len(self.rule_memory)} total)")
         
         return results
     
@@ -631,7 +697,7 @@ class BRAINOrchestrator:
         
         # Get similar rules for few-shot prompting (RAG)
         similar_rules = []
-        if use_rag and self.rule_memory:
+        if use_rag and self.rule_memory is not None:
             similar_rules = self.rule_memory.find_similar_rules(task, top_k=3)
             if similar_rules:
                 self._log(f"  📚 Found {len(similar_rules)} similar past solutions")
@@ -675,7 +741,7 @@ class BRAINOrchestrator:
                     self._log(f"\n✓ Solved on attempt {attempt + 1}!")
                     
                     # Store successful rule in memory
-                    if self.rule_memory and results.get("action_data"):
+                    if self.rule_memory is not None and results.get("action_data"):
                         self.rule_memory.store_rule(
                             task=task,
                             action_data=results["action_data"],
@@ -692,7 +758,7 @@ class BRAINOrchestrator:
         self._log(f"\n⚠ Max retries reached. Best accuracy: {best_accuracy:.1%}")
         
         # Store the best (but failed) rule for learning
-        if self.rule_memory and best_results and best_results.get("action_data"):
+        if self.rule_memory is not None and best_results and best_results.get("action_data"):
             self.rule_memory.store_rule(
                 task=task,
                 action_data=best_results["action_data"],
@@ -715,7 +781,7 @@ class BRAINOrchestrator:
             Results dictionary
         """
         # If we have similar rules, enhance the prompt
-        if similar_rules and self.rule_memory:
+        if similar_rules and self.rule_memory is not None:
             # Get the original prompt
             prompt = self.prompt_maker.create_reasoning_chain_prompt(task)
             
@@ -960,42 +1026,93 @@ Be more careful with:
                                 }
                             }
                         elif t_type == "rotation":
+                            # === SMART ROTATION FALLBACK ===
+                            # Try brute-force validation to find working configuration
+                            best_rotation = self._find_best_rotation_action(task, params)
+                            if best_rotation:
+                                return best_rotation
+                            
+                            # Fallback to original logic if brute-force fails
                             angle = params.get("angle", 90)
                             is_grid_level = params.get("grid_level", False)
+                            per_object = params.get("per_object", False)
+                            position_changed = params.get("position_changed", False)
+                            
+                            # Auto-detect grid-level rotation based on grid dimensions
+                            if task and task.train_pairs and not per_object:
+                                pair = task.train_pairs[0]
+                                in_shape = pair.input_grid.data.shape
+                                out_shape = pair.output_grid.data.shape
+                                if angle in [90, 270]:
+                                    expected_shape = (in_shape[1], in_shape[0])
+                                    if out_shape == expected_shape:
+                                        is_grid_level = True
+                                elif angle == 180 and in_shape == out_shape:
+                                    import numpy as np
+                                    rotated = np.rot90(pair.input_grid.data, k=2)
+                                    if np.array_equal(rotated, pair.output_grid.data):
+                                        is_grid_level = True
+                            
+                            if position_changed and not is_grid_level:
+                                self._log(f"  Rotation with position change - may need composite handling")
                             
                             if is_grid_level:
-                                # Grid-level rotation
+                                self._log(f"  Rotation fallback (grid-level): angle={angle}")
                                 return {
                                     "action": "rotate",
                                     "params": {"angle": angle, "grid_level": True}
                                 }
                             else:
-                                # Object-level rotation
+                                rot_color = color_filter if color_filter else params.get("color")
+                                self._log(f"  Rotation fallback (object): angle={angle}, color={rot_color}")
                                 action = {
                                     "action": "rotate",
                                     "params": {"angle": angle}
                                 }
-                                if color_filter:
-                                    action["color_filter"] = color_filter
+                                if rot_color:
+                                    action["color_filter"] = int(rot_color)
                                 return action
                         elif t_type == "reflection":
+                            # === SMART REFLECTION FALLBACK ===
+                            # Try brute-force validation to find working configuration
+                            best_reflection = self._find_best_reflection_action(task, params)
+                            if best_reflection:
+                                return best_reflection
+                            
+                            # Fallback to original logic if brute-force fails
                             axis = params.get("axis", "horizontal")
-                            # Check if this is grid-level or object-level reflection
+                            per_object = params.get("per_object", False)
                             is_grid_level = params.get("grid_level", False)
                             
-                            if is_grid_level or color_filter is None:
-                                # Grid-level reflection
+                            # Auto-detect grid-level reflection
+                            if task and task.train_pairs and not per_object:
+                                import numpy as np
+                                pair = task.train_pairs[0]
+                                in_data = pair.input_grid.data
+                                out_data = pair.output_grid.data
+                                
+                                if in_data.shape == out_data.shape:
+                                    if axis == "horizontal" and np.array_equal(np.flipud(in_data), out_data):
+                                        is_grid_level = True
+                                    elif axis == "vertical" and np.array_equal(np.fliplr(in_data), out_data):
+                                        is_grid_level = True
+                            
+                            if is_grid_level:
+                                self._log(f"  Reflection fallback (grid-level): axis={axis}")
                                 return {
                                     "action": "reflect",
                                     "params": {"axis": axis, "grid_level": True}
                                 }
                             else:
-                                # Object-level reflection
-                                return {
+                                ref_color = color_filter if color_filter else params.get("color")
+                                self._log(f"  Reflection fallback (object): axis={axis}, color={ref_color}")
+                                action = {
                                     "action": "reflect",
-                                    "params": {"axis": axis},
-                                    "color_filter": color_filter
+                                    "params": {"axis": axis}
                                 }
+                                if ref_color:
+                                    action["color_filter"] = int(ref_color)
+                                return action
                         elif t_type == "color_change":
                             return {
                                 "action": "color_change",
@@ -1051,17 +1168,429 @@ Be more careful with:
                                 }
                             }
                         elif t_type == "composite":
-                            # Composite transformation: rotation + translation, etc.
+                            # === SMART COMPOSITE FALLBACK ===
+                            # Try brute-force validation to find working configuration
+                            best_composite = self._find_best_composite_action(task, params)
+                            if best_composite:
+                                return best_composite
+                            
+                            # Fallback to original logic if brute-force fails
                             transformations = params.get("transformations", [])
                             desc = params.get("description", "composite")
+                            
+                            # Validate and clean up transformations
+                            cleaned_transforms = []
+                            for t in transformations:
+                                if isinstance(t, dict) and "action" in t:
+                                    t_params = t.get("params", {})
+                                    if not isinstance(t_params, dict):
+                                        t_params = {}
+                                    
+                                    cleaned_t = {
+                                        "action": t["action"],
+                                        "params": t_params
+                                    }
+                                    cleaned_transforms.append(cleaned_t)
+                            
+                            comp_color = color_filter
+                            if comp_color is None and task and task.test_pairs:
+                                test_colors = [c for c in task.test_pairs[0].input_grid.unique_colors if c != 0]
+                                if test_colors:
+                                    comp_color = test_colors[0]
+                            
                             self._log(f"  Composite fallback: {desc}")
-                            return {
+                            self._log(f"    Transforms: {[t['action'] for t in cleaned_transforms]}")
+                            self._log(f"    Color: {comp_color}")
+                            
+                            action = {
                                 "action": "composite",
-                                "color_filter": color_filter,
                                 "params": {
-                                    "transformations": transformations
+                                    "transformations": cleaned_transforms
                                 }
                             }
+                            if comp_color:
+                                action["color_filter"] = int(comp_color)
+                            return action
+                        elif t_type == "flood_fill":
+                            # Flood fill enclosed regions with a color
+                            seed_point = params.get("seed_point", "enclosed_regions")
+                            fill_color = params.get("fill_color", 1)
+                            self._log(f"  Flood fill fallback: seed={seed_point}, fill_color={fill_color}")
+                            return {
+                                "action": "flood_fill",
+                                "params": {
+                                    "seed_point": seed_point,
+                                    "fill_color": int(fill_color)
+                                }
+                            }
+                        elif t_type == "symmetry":
+                            # === SMART SYMMETRY FALLBACK ===
+                            # Try brute-force validation to find working configuration
+                            best_symmetry = self._find_best_symmetry_action(task, params)
+                            if best_symmetry:
+                                return best_symmetry
+                            
+                            # Fallback to original logic if brute-force fails
+                            axis = params.get("axis", "vertical")
+                            position = params.get("position", "adjacent")
+                            sym_color = color_filter if color_filter else params.get("color")
+                            self._log(f"  Symmetry fallback: axis={axis}, position={position}, color={sym_color}")
+                            action = {
+                                "action": "symmetry",
+                                "params": {
+                                    "axis": axis,
+                                    "position": position
+                                }
+                            }
+                            if sym_color:
+                                action["color_filter"] = int(sym_color)
+                            return action
+                        elif t_type == "scaling":
+                            # Scale objects by a factor
+                            factor = params.get("factor", 2)
+                            
+                            # Check if this is GRID-LEVEL scaling (output size = input size * factor)
+                            # In that case, we should NOT use color_filter
+                            is_grid_level_scale = False
+                            if task and task.train_pairs:
+                                pair = task.train_pairs[0]
+                                in_h, in_w = pair.input_grid.data.shape
+                                out_h, out_w = pair.output_grid.data.shape
+                                expected_h = int(in_h * factor)
+                                expected_w = int(in_w * factor)
+                                if abs(out_h - expected_h) < 2 and abs(out_w - expected_w) < 2:
+                                    is_grid_level_scale = True
+                            
+                            if is_grid_level_scale:
+                                self._log(f"  Scaling fallback (grid-level): factor={factor}")
+                                return {
+                                    "action": "scale",
+                                    "params": {
+                                        "factor": float(factor)
+                                    }
+                                }
+                            else:
+                                # Object-level scaling within same grid
+                                scale_color = color_filter if color_filter else params.get("color")
+                                self._log(f"  Scaling fallback (object): factor={factor}, color={scale_color}")
+                                action = {
+                                    "action": "scale",
+                                    "params": {
+                                        "factor": float(factor)
+                                    }
+                                }
+                                if scale_color:
+                                    action["color_filter"] = int(scale_color)
+                                return action
+        
+        return None
+    
+    def _validate_action_on_training(
+        self,
+        action: Dict[str, Any],
+        task: ARCTask,
+        tolerance: float = 0.98
+    ) -> bool:
+        """
+        Validate if an action produces correct output on training examples.
+        
+        Args:
+            action: The action to validate
+            task: The ARCTask with training pairs
+            tolerance: Required accuracy (0.98 = 98% of pixels must match)
+            
+        Returns:
+            True if action produces correct output on at least one training pair
+        """
+        if not task or not task.train_pairs:
+            return False
+        
+        import numpy as np
+        
+        for pair in task.train_pairs:
+            try:
+                # Copy action and update color_filter for this training pair
+                test_action = dict(action)
+                train_colors = [c for c in pair.input_grid.unique_colors if c != 0]
+                if train_colors and "color_filter" in test_action:
+                    test_action["color_filter"] = train_colors[0]
+                
+                result = self.executor.execute(pair.input_grid, test_action)
+                
+                if result.success and result.output_grid:
+                    expected = pair.output_grid.data
+                    actual = result.output_grid.data
+                    
+                    if expected.shape == actual.shape:
+                        match_ratio = np.sum(expected == actual) / expected.size
+                        if match_ratio >= tolerance:
+                            return True
+            except Exception:
+                continue
+        
+        return False
+    
+    def _find_best_rotation_action(
+        self,
+        task: ARCTask,
+        detected_params: dict
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Try multiple rotation configurations and return the one that works.
+        
+        Tries all angles (90, 180, 270), both grid-level and object-level,
+        and different anchor strategies (centroid, topleft, center).
+        """
+        import numpy as np
+        
+        if not task or not task.train_pairs:
+            return None
+        
+        color_filter = None
+        if task.test_pairs:
+            test_colors = [c for c in task.test_pairs[0].input_grid.unique_colors if c != 0]
+            if test_colors:
+                color_filter = test_colors[0]
+        
+        # Configurations to try (ordered by likelihood)
+        detected_angle = detected_params.get("angle", 90)
+        angles_to_try = [detected_angle]
+        for a in [90, 180, 270]:
+            if a not in angles_to_try:
+                angles_to_try.append(a)
+        
+        # Anchor strategies to try
+        anchors_to_try = ["topleft", "centroid", "center", "topright"]
+        
+        configs_to_try = []
+        
+        # Try grid-level first (most reliable for full grid rotations)
+        for angle in angles_to_try:
+            configs_to_try.append({
+                "action": "rotate",
+                "params": {"angle": angle, "grid_level": True}
+            })
+        
+        # Then object-level with different anchor strategies
+        if color_filter:
+            # Try each anchor strategy for each angle
+            for anchor in anchors_to_try:
+                for angle in angles_to_try:
+                    configs_to_try.append({
+                        "action": "rotate",
+                        "params": {"angle": angle, "anchor": anchor},
+                        "color_filter": int(color_filter)
+                    })
+        
+        # Test each configuration
+        for config in configs_to_try:
+            if self._validate_action_on_training(config, task):
+                anchor = config.get("params", {}).get("anchor", "grid_level" if config.get("params", {}).get("grid_level") else "default")
+                self._log(f"  ✓ Found working rotation: angle={config['params'].get('angle')}, anchor={anchor}")
+                return config
+        
+        # If nothing works, return None (will use original fallback)
+        return None
+    
+    def _find_best_reflection_action(
+        self,
+        task: ARCTask,
+        detected_params: dict
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Try multiple reflection configurations and return the one that works.
+        
+        Tries all axes and both grid-level and object-level.
+        """
+        import numpy as np
+        
+        if not task or not task.train_pairs:
+            return None
+        
+        color_filter = None
+        if task.test_pairs:
+            test_colors = [c for c in task.test_pairs[0].input_grid.unique_colors if c != 0]
+            if test_colors:
+                color_filter = test_colors[0]
+        
+        detected_axis = detected_params.get("axis", "horizontal")
+        axes_to_try = [detected_axis]
+        for ax in ["horizontal", "vertical", "diagonal_main", "diagonal_anti"]:
+            if ax not in axes_to_try:
+                axes_to_try.append(ax)
+        
+        configs_to_try = []
+        
+        # Try grid-level first
+        for axis in axes_to_try:
+            configs_to_try.append({
+                "action": "reflect",
+                "params": {"axis": axis, "grid_level": True}
+            })
+        
+        # Then object-level with color
+        if color_filter:
+            for axis in axes_to_try:
+                configs_to_try.append({
+                    "action": "reflect",
+                    "params": {"axis": axis},
+                    "color_filter": int(color_filter)
+                })
+        
+        # Test each configuration
+        for config in configs_to_try:
+            if self._validate_action_on_training(config, task):
+                self._log(f"  ✓ Found working reflection: axis={config['params'].get('axis')}, grid_level={config['params'].get('grid_level', False)}")
+                return config
+        
+        return None
+    
+    def _find_best_symmetry_action(
+        self,
+        task: ARCTask,
+        detected_params: dict
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Try multiple symmetry configurations and return the one that works.
+        """
+        if not task or not task.train_pairs:
+            return None
+        
+        color_filter = None
+        if task.test_pairs:
+            test_colors = [c for c in task.test_pairs[0].input_grid.unique_colors if c != 0]
+            if test_colors:
+                color_filter = test_colors[0]
+        
+        detected_axis = detected_params.get("axis", "vertical")
+        detected_position = detected_params.get("position", "adjacent")
+        
+        axes = [detected_axis]
+        for ax in ["vertical", "horizontal"]:
+            if ax not in axes:
+                axes.append(ax)
+        
+        positions = [detected_position]
+        for pos in ["adjacent", "opposite", "centered"]:
+            if pos not in positions:
+                positions.append(pos)
+        
+        configs_to_try = []
+        for axis in axes:
+            for position in positions:
+                config = {
+                    "action": "symmetry",
+                    "params": {"axis": axis, "position": position}
+                }
+                if color_filter:
+                    config["color_filter"] = int(color_filter)
+                configs_to_try.append(config)
+        
+        for config in configs_to_try:
+            if self._validate_action_on_training(config, task):
+                self._log(f"  ✓ Found working symmetry: axis={config['params'].get('axis')}, position={config['params'].get('position')}")
+                return config
+        
+        return None
+    
+    def _find_best_composite_action(
+        self,
+        task: ARCTask,
+        detected_params: dict
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Try multiple composite configurations and return the one that works.
+        
+        Common patterns:
+        - rotate + translate
+        - reflect + translate  
+        - just rotate (mis-detected as composite)
+        - just reflect (mis-detected as composite)
+        """
+        import numpy as np
+        
+        if not task or not task.train_pairs:
+            return None
+        
+        color_filter = None
+        if task.test_pairs:
+            test_colors = [c for c in task.test_pairs[0].input_grid.unique_colors if c != 0]
+            if test_colors:
+                color_filter = test_colors[0]
+        
+        configs_to_try = []
+        
+        # 1. Try pure rotations first (sometimes composite is just rotation)
+        for angle in [90, 180, 270]:
+            config = {
+                "action": "rotate",
+                "params": {"angle": angle, "grid_level": True}
+            }
+            configs_to_try.append(config)
+            
+            if color_filter:
+                config = {
+                    "action": "rotate",
+                    "params": {"angle": angle},
+                    "color_filter": int(color_filter)
+                }
+                configs_to_try.append(config)
+        
+        # 2. Try pure reflections
+        for axis in ["horizontal", "vertical"]:
+            config = {
+                "action": "reflect",
+                "params": {"axis": axis, "grid_level": True}
+            }
+            configs_to_try.append(config)
+            
+            if color_filter:
+                config = {
+                    "action": "reflect",
+                    "params": {"axis": axis},
+                    "color_filter": int(color_filter)
+                }
+                configs_to_try.append(config)
+        
+        # 3. Try detected transformations if available
+        detected_transforms = detected_params.get("transformations", [])
+        if detected_transforms and color_filter:
+            config = {
+                "action": "composite",
+                "params": {"transformations": detected_transforms},
+                "color_filter": int(color_filter)
+            }
+            configs_to_try.insert(0, config)  # Try detected first
+        
+        # 4. Try common composite patterns: rotate + translate
+        for angle in [90, 180, 270]:
+            for dx in [-1, 0, 1, 2]:
+                for dy in [-1, 0, 1, 2]:
+                    if dx == 0 and dy == 0:
+                        continue
+                    config = {
+                        "action": "composite",
+                        "params": {
+                            "transformations": [
+                                {"action": "rotate", "params": {"angle": angle}},
+                                {"action": "translate", "params": {"dx": dx, "dy": dy}}
+                            ]
+                        }
+                    }
+                    if color_filter:
+                        config["color_filter"] = int(color_filter)
+                    configs_to_try.append(config)
+        
+        # Test each configuration
+        for config in configs_to_try:
+            if self._validate_action_on_training(config, task):
+                action_name = config.get("action")
+                if action_name == "composite":
+                    transforms = [t["action"] for t in config.get("params", {}).get("transformations", [])]
+                    self._log(f"  ✓ Found working composite: {transforms}")
+                else:
+                    self._log(f"  ✓ Found working {action_name} (instead of composite)")
+                return config
         
         return None
     
@@ -1261,7 +1790,9 @@ Examples:
             model=args.model,
             verbose=not args.quiet,
             visualize=False,  # ALWAYS False during batch - no popups!
-            multi_mode=args.multi
+            multi_mode=args.multi,
+            use_memory=True,  # Enable rule memory for learning
+            memory_path=args.memory_path
         )
         
         result = runner.run_batch(

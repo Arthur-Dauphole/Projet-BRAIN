@@ -1,4 +1,5 @@
-model,accuracy,correct,total,avg_time_ms,fallback_rate
-llama3,0.9830,44,52,6266.4,0.2308
-mistral,0.9763,41,52,7453.7,0.2308
-phi3,0.9000,39,52,7408.0,0.2308
+model,correct,total,correct_pct,accuracy,avg_time_ms,fallback_rate
+mistral,101,140,72.14,0.9584,14844.0,0.1357
+llama3,99,140,70.71,0.9687,11607.8,0.1357
+gemma2,97,140,69.29,0.9282,15083.0,0.1357
+phi3,94,140,67.14,0.9152,8671.1,0.1357

@@ -97,6 +97,66 @@ Example 9 - ADD BORDER (Color contour):
 {"action": "add_border", "color_filter": 2, "params": {"border_color": 1}}
 ```
 
+Example 10 - FLOOD FILL (Fill enclosed regions):
+- Detected: "FLOOD FILL enclosed regions with fill_color=3"
+- Output:
+```json
+{"action": "flood_fill", "params": {"seed_point": "enclosed_regions", "fill_color": 3}}
+```
+
+Example 11 - FLOOD FILL (Fill from specific point):
+- Detected: "FLOOD FILL from point (2, 3) with fill_color=5"
+- Output:
+```json
+{"action": "flood_fill", "params": {"seed_point": {"row": 2, "col": 3}, "fill_color": 5}}
+```
+
+Example 12 - FLOOD FILL (Fill background):
+- Detected: "FLOOD FILL background with fill_color=1"
+- Output:
+```json
+{"action": "flood_fill", "params": {"seed_point": "background", "fill_color": 1}}
+```
+
+Example 13 - SYMMETRY (Create vertical mirror copy):
+- Detected: "SYMMETRY with axis=vertical, position=adjacent"
+- Test input has color 2
+- Output:
+```json
+{"action": "symmetry", "params": {"axis": "vertical", "position": "adjacent"}, "color_filter": 2}
+```
+
+Example 14 - SYMMETRY (Create horizontal mirror copy):
+- Detected: "SYMMETRY with axis=horizontal, position=adjacent"
+- Test input has color 3
+- Output:
+```json
+{"action": "symmetry", "params": {"axis": "horizontal", "position": "adjacent"}, "color_filter": 3}
+```
+
+Example 15 - SCALE (Enlarge object):
+- Detected: "SCALE factor=2"
+- Test input has color 4
+- Output:
+```json
+{"action": "scale", "params": {"factor": 2}, "color_filter": 4}
+```
+
+Example 16 - SCALE (Shrink object):
+- Detected: "SCALE factor=0.5"
+- Test input has color 1
+- Output:
+```json
+{"action": "scale", "params": {"factor": 0.5}, "color_filter": 1}
+```
+
+Example 17 - SCALE (Entire grid):
+- Detected: "SCALE entire grid factor=3"
+- Output:
+```json
+{"action": "scale", "params": {"factor": 3}}
+```
+
 ## RULES
 
 1. Look at "DETECTED TRANSFORMATION" - it tells you EXACTLY what to output
@@ -278,6 +338,43 @@ Example 9 - ADD BORDER (Color contour):
             if rotated.shape == out_data.shape and np.array_equal(rotated, out_data):
                 return f"**DETECTED TRANSFORMATION: ROTATION with angle={angle} (GRID-LEVEL)**"
         
+        # Priority 0.7: Check for FLOOD FILL EARLY (new color fills enclosed regions)
+        # This MUST be checked BEFORE object-level reflections because frames are often symmetric
+        from modules.transformation_detector import TransformationDetector
+        detector = TransformationDetector()
+        flood_fill = detector.detect_flood_fill(input_grid, output_grid)
+        if flood_fill and flood_fill.confidence >= 0.9:
+            seed = flood_fill.parameters.get("seed_point", "enclosed_regions")
+            fill_color = flood_fill.parameters.get("fill_color", 1)
+            
+            if seed == "enclosed_regions":
+                return f"**DETECTED TRANSFORMATION: FLOOD FILL enclosed regions with fill_color={fill_color}**"
+            elif seed == "background":
+                return f"**DETECTED TRANSFORMATION: FLOOD FILL background with fill_color={fill_color}**"
+            else:
+                row = seed.get("row", 0)
+                col = seed.get("col", 0)
+                return f"**DETECTED TRANSFORMATION: FLOOD FILL from point ({row}, {col}) with fill_color={fill_color}**"
+        
+        # Priority 0.8: Check for SYMMETRY GENERATION (object mirrored to create symmetric pattern)
+        symmetry_gen = detector.detect_symmetry_generation(input_grid, output_grid)
+        if symmetry_gen and symmetry_gen.confidence >= 0.9:
+            axis = symmetry_gen.parameters.get("axis", "vertical")
+            position = symmetry_gen.parameters.get("position", "adjacent")
+            return f"**DETECTED TRANSFORMATION: SYMMETRY with axis={axis}, position={position}**"
+        
+        # Priority 0.9: Check for SCALING (objects enlarged or reduced)
+        scaling = detector.detect_scaling(input_grid, output_grid)
+        if scaling and scaling.confidence >= 0.85:
+            factor = scaling.parameters.get("factor", 2)
+            # Check if it's grid-level scaling (output size = input size * factor)
+            in_h, in_w = in_data.shape
+            out_h, out_w = out_data.shape
+            if abs(out_h - in_h * factor) < 1 and abs(out_w - in_w * factor) < 1:
+                return f"**DETECTED TRANSFORMATION: SCALE entire grid factor={factor}**"
+            else:
+                return f"**DETECTED TRANSFORMATION: SCALE factor={factor}**"
+        
         # Priority 1: Check for TRANSLATION (objects moved)
         if input_grid.objects and output_grid.objects:
             for in_obj in input_grid.objects:
@@ -359,9 +456,7 @@ Example 9 - ADD BORDER (Color contour):
                     return f"**DETECTED TRANSFORMATION: COLOR CHANGE from_color={from_color}, to_color={to_color}**"
         
         # Priority 5: Check for COMPOSITE transformations (rotation + translation, etc.)
-        # Use the transformation detector to find composites
-        from modules.transformation_detector import TransformationDetector
-        detector = TransformationDetector()
+        # Note: flood_fill is already checked at Priority 0.7, detector already imported
         composite = detector.detect_composite_transformation(input_grid, output_grid)
         if composite and composite.confidence >= 0.95:
             desc = composite.parameters.get("description", "")
@@ -695,6 +790,42 @@ Example 9 - ADD BORDER (Color contour):
         if match:
             obj_color, border_color = match.groups()
             return f'{{"action": "add_border", "color_filter": {obj_color}, "params": {{"border_color": {border_color}}}}}'
+        
+        # Parse FLOOD FILL - enclosed regions
+        match = re.search(r'FLOOD FILL enclosed regions.*?fill_color=(\d+)', transformation)
+        if match:
+            fill_color = match.group(1)
+            return f'{{"action": "flood_fill", "params": {{"seed_point": "enclosed_regions", "fill_color": {fill_color}}}}}'
+        
+        # Parse FLOOD FILL - background
+        match = re.search(r'FLOOD FILL background.*?fill_color=(\d+)', transformation)
+        if match:
+            fill_color = match.group(1)
+            return f'{{"action": "flood_fill", "params": {{"seed_point": "background", "fill_color": {fill_color}}}}}'
+        
+        # Parse FLOOD FILL - from specific point
+        match = re.search(r'FLOOD FILL from point \((\d+),\s*(\d+)\).*?fill_color=(\d+)', transformation)
+        if match:
+            row, col, fill_color = match.groups()
+            return f'{{"action": "flood_fill", "params": {{"seed_point": {{"row": {row}, "col": {col}}}, "fill_color": {fill_color}}}}}'
+        
+        # Parse SYMMETRY
+        match = re.search(r'SYMMETRY.*?axis=(\w+).*?position=(\w+)', transformation)
+        if match:
+            axis, position = match.groups()
+            return f'{{"action": "symmetry", "params": {{"axis": "{axis}", "position": "{position}"}}, "color_filter": {main_color}}}'
+        
+        # Parse SCALE - entire grid
+        match = re.search(r'SCALE entire grid factor=(\d+(?:\.\d+)?)', transformation)
+        if match:
+            factor = match.group(1)
+            return f'{{"action": "scale", "params": {{"factor": {factor}}}}}'
+        
+        # Parse SCALE - object level
+        match = re.search(r'SCALE factor=(\d+(?:\.\d+)?)', transformation)
+        if match:
+            factor = match.group(1)
+            return f'{{"action": "scale", "params": {{"factor": {factor}}}, "color_filter": {main_color}}}'
         
         # Fallback
         return '{"action": "translate", "params": {"dx": 0, "dy": 0}}'

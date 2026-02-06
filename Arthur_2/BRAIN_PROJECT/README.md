@@ -4,8 +4,8 @@
 
 Un solveur neuro-symbolique pour les puzzles [ARC-AGI](https://arcprize.org/) (Abstraction and Reasoning Corpus).
 
-> **Version:** 2.3.0  
-> **Dernière mise à jour:** Janvier 2026
+> **Version:** 2.6.0  
+> **Dernière mise à jour:** Février 2026
 
 ---
 
@@ -27,8 +27,9 @@ Un solveur neuro-symbolique pour les puzzles [ARC-AGI](https://arcprize.org/) (A
 
 BRAIN combine :
 - **Perception symbolique** : Détection automatique de formes géométriques (carrés, rectangles, lignes, formes en L/T/+, blobs)
-- **Détection de transformations** : Identification automatique des règles (translation, rotation, réflexion, changement de couleur, tiling, etc.)
+- **Détection de transformations** : Identification automatique des règles (translation, rotation, réflexion, scaling, symmetry, flood_fill, changement de couleur, tiling, etc.)
 - **Raisonnement LLM** : Utilisation d'un modèle de langage local (Ollama) pour inférer les règles
+- **Rule Memory (RAG)** : Apprentissage des solutions réussies pour améliorer les prédictions futures
 - **Exécution symbolique** : Application des transformations sur les grilles
 - **Évaluation batch** : Exécution et analyse de multiples tâches
 - **Comparaison de modèles** : Benchmark de différents LLMs sur les mêmes tâches
@@ -36,7 +37,7 @@ BRAIN combine :
 ### Pipeline
 
 ```
-Input Grid → Perception → Transformation Detection → Prompting → LLM → Execution → Analysis → Visualization
+Input Grid → Rule Memory → Perception → Transformation Detection → Prompting → LLM → Execution → Analysis → Storage
 ```
 
 ---
@@ -205,9 +206,19 @@ python compare_models.py --viz-only comparison_results/
 
 | Modèle | Description | Taille | Installation |
 |--------|-------------|--------|--------------|
+| `mistral` | **🏆 Recommandé** - Mistral 7B - Meilleur score et plus rapide | 4.1 GB | `ollama pull mistral` |
 | `llama3` | Meta Llama 3 8B - Bon généraliste | 4.7 GB | `ollama pull llama3` |
-| `mistral` | Mistral 7B - Excellent raisonnement | 4.1 GB | `ollama pull mistral` |
 | `phi3` | Microsoft Phi-3 - Petit mais capable | 2.2 GB | `ollama pull phi3` |
+
+### Benchmark (140 tâches)
+
+| Modèle | Tâches Correctes | Accuracy | Temps Moyen |
+|--------|------------------|----------|-------------|
+| 🏆 **mistral** | **100/140 (71.4%)** | 97.0% | **6.9s** |
+| llama3 | 98/140 (70.0%) | 94.8% | 11.4s |
+| phi3 | 91/140 (65.0%) | 93.1% | 9.3s |
+
+> **Mistral** est recommandé : meilleur taux de réussite ET ~2x plus rapide que llama3.
 
 ### Visualisations générées
 
@@ -218,22 +229,68 @@ python compare_models.py --viz-only comparison_results/
 
 ---
 
+## Rule Memory (RAG)
+
+Le système apprend des solutions réussies et les réutilise pour améliorer les prédictions futures.
+
+### Fonctionnement
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Nouvelle tâche → Recherche de règles similaires (top 3)  │
+│ 2. Ajout des exemples au prompt (few-shot learning)         │
+│ 3. LLM + Exécution + Analyse                                │
+│ 4. Stockage du résultat dans rule_memory.json               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Utilisation
+
+```bash
+# Le rule memory est activé par défaut
+python main.py --batch data/
+
+# Vérifier le contenu de la mémoire
+python -c "from modules.rule_memory import RuleMemory; m=RuleMemory('rule_memory.json'); print(m.get_statistics())"
+
+# Désactiver le rule memory (si besoin)
+# Modifier use_memory=False dans le code
+```
+
+### Fichiers générés
+
+- `rule_memory.json` - Base de connaissances avec toutes les règles apprises
+- Contient : signatures des tâches, actions exécutées, accuracy, métadonnées
+
+### Amélioration des performances
+
+À chaque exécution, le système :
+1. Trouve les tâches similaires dans sa mémoire
+2. Utilise leurs solutions comme exemples (few-shot)
+3. Stocke les nouveaux résultats pour apprentissage futur
+
+---
+
 ## Structure du projet
 
 ```
 BRAIN_PROJECT/
 │
-├── 📂 data/                              # 53 puzzles ARC au format JSON
-│   ├── task_translation_*.json           # 8 tâches de translation
-│   ├── task_rotation_*.json              # 7 tâches de rotation
-│   ├── task_reflection_*.json            # 6 tâches de réflexion
-│   ├── task_color_change_*.json          # 6 tâches de changement de couleur
-│   ├── task_draw_line_*.json             # 5 tâches de tracé de ligne
-│   ├── task_add_border_*.json            # 4 tâches d'ajout de contour
-│   ├── task_tiling_*.json                # 3 tâches de pavage
-│   ├── task_composite_*.json             # 3 tâches de transformations composées
-│   ├── task_blob_*.json                  # 4 tâches sur formes irrégulières
-│   └── task_multi_objects*.json          # 2 tâches multi-objets
+├── 📂 data/                              # 140 puzzles ARC au format JSON (v2.5)
+│   ├── task_translation_*.json           # 10 tâches de translation
+│   ├── task_rotation_*.json              # 11 tâches de rotation
+│   ├── task_reflection_*.json            # 10 tâches de réflexion
+│   ├── task_color_change_*.json          # 10 tâches de changement de couleur
+│   ├── task_draw_line_*.json             # 10 tâches de tracé de ligne
+│   ├── task_add_border_*.json            # 10 tâches d'ajout de contour
+│   ├── task_tiling_*.json                # 10 tâches de pavage
+│   ├── task_composite_*.json             # 10 tâches de transformations composées
+│   ├── task_flood_fill_*.json            # 10 tâches de remplissage
+│   ├── task_symmetry_*.json              # 10 tâches de symétrie
+│   ├── task_scale_*.json                 # 10 tâches de mise à l'échelle
+│   ├── task_blob_*.json                  # 10 tâches sur formes irrégulières
+│   ├── task_multi_objects_*.json         # 10 tâches multi-objets
+│   └── task_pattern_tile_*.json          # 10 tâches de patterns/pavages
 │
 ├── 📂 modules/                           # Pipeline principal (12 modules)
 │   ├── __init__.py                       # Exports publics

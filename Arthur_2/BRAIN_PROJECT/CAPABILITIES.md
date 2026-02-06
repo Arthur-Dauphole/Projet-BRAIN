@@ -1,7 +1,7 @@
 # BRAIN Project - Capacités du Système
 
-> **Dernière mise à jour :** Janvier 2026  
-> **Version :** 2.3.0 (Unified Model Comparison)
+> **Dernière mise à jour :** Février 2026  
+> **Version :** 2.6.0 (Rule Memory RAG, Rotation améliorée, Brute-force validation)
 
 ---
 
@@ -126,7 +126,9 @@ bordered = detector.detect_bordered_objects(grid)
 | `draw_line` | Tracer une ligne entre 2 points | ✅ |
 | `tiling` | Répétition d'un motif pour remplir une grille plus grande | ✅ |
 | `composite` | Combinaison de transformations (rotate+translate, etc.) | ✅ |
-| `add_border` | Ajouter un contour coloré à un objet solide | ✅ **NEW** |
+| `add_border` | Ajouter un contour coloré à un objet solide | ✅ |
+| `flood_fill` | Remplissage de régions fermées avec une couleur | ✅ **NEW v2.4** |
+| `symmetry` | Création de copies symétriques d'objets | ✅ **NEW v2.4** |
 | `blob_transformation` | Transformation de formes irrégulières | ✅ |
 | `translation_and_color` | Translation + changement de couleur combinés | ✅ |
 
@@ -158,7 +160,9 @@ Le système peut détecter des transformations appliquées à des formes irrégu
 | `draw_line` | `color_filter` ou `point1`, `point2` | Tracer une ligne entre 2 points | ✅ |
 | `tile` | `repetitions_horizontal`, `repetitions_vertical` | Répéter un motif pour créer une grille plus grande | ✅ |
 | `composite` | `transformations` (liste d'actions) | Combiner plusieurs transformations (rotate + translate, etc.) | ✅ |
-| `add_border` | `border_color`, `color_filter` | Ajouter un contour coloré à un objet | ✅ **NEW** |
+| `add_border` | `border_color`, `color_filter` | Ajouter un contour coloré à un objet | ✅ |
+| `flood_fill` | `seed_point`, `fill_color`, `connectivity` | Remplir une région connectée | ✅ **NEW v2.4** |
+| `symmetry` | `axis`, `position`, `color_filter` | Créer une copie symétrique | ✅ **NEW v2.4** |
 
 ### Détails des axes de réflexion
 
@@ -353,12 +357,79 @@ ou
 |--------|--------|
 | `llama3` | ✅ Fonctionne |
 | `llama3.2` | ✅ Fonctionne |
+| `mistral` | ✅ **Recommandé** |
+| `phi3` | ✅ Fonctionne |
+| `gemma2` | ✅ Fonctionne |
 
 ---
 
-## 📁 Dataset de test (v1.12.0)
+## 📚 Module RULE MEMORY (RAG) - v2.6.0
 
-Le projet inclut **52 tâches de test** couvrant toutes les transformations supportées, avec une répartition équilibrée pour des analyses statistiques robustes.
+### Description
+
+Système d'apprentissage qui stocke les solutions réussies et les réutilise pour améliorer les prédictions futures via few-shot learning.
+
+### Fonctionnalités
+
+| Fonctionnalité | Description | Status |
+|----------------|-------------|--------|
+| Stockage des règles | Sauvegarde automatique des solutions dans `rule_memory.json` | ✅ |
+| Extraction de signature | Caractéristiques extraites : forme, couleurs, objets, transformations | ✅ |
+| Recherche par similarité | Trouve les tâches similaires (top-k) basé sur signature | ✅ |
+| Few-shot prompting | Ajoute les solutions passées au prompt LLM | ✅ |
+| Déduplication | Évite les doublons, garde la meilleure version | ✅ |
+| Persistance JSON | Stockage longue durée dans fichier JSON | ✅ |
+
+### Critères de similarité
+
+| Critère | Poids | Description |
+|---------|-------|-------------|
+| Forme input/output | Élevé | Dimensions des grilles |
+| Changement de taille | Élevé | Input → Output plus grand/petit/identique |
+| Nombre de couleurs | Moyen | Couleurs input vs output |
+| Pattern de couleurs | Moyen | Couleurs ajoutées/supprimées |
+| Types d'objets | Moyen | Formes détectées (blob, rectangle, etc.) |
+| Transformations | **Très élevé** | Type de transformation détecté |
+
+### Pipeline d'utilisation
+
+```
+Nouvelle tâche
+     ↓
+1. Extraction de signature
+     ↓
+2. Recherche de règles similaires (top 3, accuracy ≥ 90%)
+     ↓
+3. Ajout des exemples au prompt (few-shot)
+     ↓
+4. LLM + Exécution + Analyse
+     ↓
+5. Stockage du résultat (succès ou échec)
+```
+
+### Utilisation Python
+
+```python
+from modules.rule_memory import RuleMemory
+
+# Créer/charger la mémoire
+memory = RuleMemory("rule_memory.json", verbose=True)
+
+# Statistiques
+print(memory.get_statistics())
+
+# Trouver des règles similaires
+similar = memory.find_similar_rules(task, top_k=3, min_accuracy=0.9)
+
+# Formater pour le prompt
+few_shot_text = memory.format_for_prompt(similar)
+```
+
+---
+
+## 📁 Dataset de test (v2.6.0)
+
+Le projet inclut **140 tâches de test** (10 par type de transformation) couvrant toutes les transformations supportées, avec une répartition équilibrée pour des analyses statistiques robustes.
 
 ### Répartition par type de transformation
 
@@ -366,13 +437,17 @@ Le projet inclut **52 tâches de test** couvrant toutes les transformations supp
 |------|--------|----------|
 | **Translation** | 10 | `task_translation_01` à `08`, `task_blob_translation`, `task_l_shape` |
 | **Rotation** | 8 | `task_rotation_01` à `06`, `task_rotation_90`, `task_blob_rotation` |
-| **Reflection** | 7 | `task_reflection_01` à `05`, `task_reflection`, `task_blob_reflection` |
-| **Color change** | 7 | `task_color_change_01` à `05`, `task_color_change`, `task_blob_color_change` |
-| **Draw line** | 5 | `task_draw_line_01` à `04`, `task_draw_line` |
-| **Add border** | 4 | `task_add_border_01` à `03`, `task_add_border` |
-| **Tiling** | 5 | `task_tiling_01` à `03`, `task_pattern_tile`, `task_pattern_tile_3x3` |
-| **Composite** | 3 | `task_composite_01`, `02`, `task_composite_rotate_translate` |
-| **Multi-transform** | 3 | `task_multi_objects`, `task_multi_objects_same_transform`, `task_challenge_multi_transform` |
+| **Reflection** | 7 | `task_reflection_01` à `06`, `task_blob_reflection` |
+| **Color change** | 7 | `task_color_change_01` à `06`, `task_blob_color_change` |
+| **Draw line** | 5 | `task_draw_line_01` à `05` |
+| **Add border** | 4 | `task_add_border_01` à `04` |
+| **Tiling** | 5 | `task_tiling_01` à `03`, `task_pattern_tile_01`, `task_pattern_tile_02` |
+| **Composite** | 4 | `task_composite_01` à `04` |
+| **Flood fill** | 4 | `task_flood_fill_01` à `04` **(NEW v2.4)** |
+| **Symmetry** | 4 | `task_symmetry_01` à `04` **(NEW v2.4)** |
+| **Scale** | 4 | `task_scale_01` à `04` **(NEW v2.4)** |
+| **Blob** | 4 | `task_blob_01` à `04` |
+| **Multi-transform** | 3 | `task_multi_objects_01` à `03` |
 
 ### Variété des tests
 
@@ -401,6 +476,35 @@ python main.py --batch data/ --pattern "task_color_change_*.json"
 ---
 
 ## 📝 Historique des versions
+
+### v2.6.0 (Février 2026) - Rule Memory RAG + Rotation améliorée
+- ✅ **Rule Memory intégré** - Stockage automatique des solutions réussies dans `rule_memory.json`
+- ✅ **Few-shot learning (RAG)** - Utilise les solutions similaires passées pour améliorer les prédictions
+- ✅ **Rotation multi-anchor** - Stratégies d'ancrage (topleft, centroid, center, topright)
+- ✅ **Brute-force validation** - Essai de multiples configurations pour rotation/reflection/symmetry/composite
+- ✅ **Déduplication des règles** - Évite les doublons, garde la meilleure version
+- ✅ **Similarité améliorée** - Matching des patterns, types d'objets, transformations détectées
+- ✅ **Fix bug `__len__`** - Correction de l'évaluation booléenne de RuleMemory vide
+
+### v2.5.0 (Février 2026) - Dataset 140 tâches + Benchmark 3 modèles
+- ✅ **Dataset élargi** - 140 tâches (10 par type de transformation)
+- ✅ **Benchmark complet** - Comparaison llama3, mistral, phi3 sur 140 tâches
+- ✅ **Mistral recommandé** - 100/140 correct (71.4%), ~2x plus rapide que llama3
+- ✅ **Fallbacks améliorés** - Direct fallback pour rotation/reflection (bypass LLM)
+- ✅ **Composite executor** - Support color_change dans transformations composées
+- ✅ **Auto-détection grid-level** - Rotation/reflection grid vs object-level
+- ✅ **Script `generate_figures.py`** - Génération simplifiée des visualisations
+
+### v2.4.0 (Février 2026) - Extended DSL + New Primitives
+- ✅ **NOUVEAU: Action `flood_fill`** - Remplissage de régions fermées (enclosed regions, background)
+- ✅ **NOUVEAU: Action `symmetry`** - Création de copies symétriques (vertical, horizontal, adjacent)
+- ✅ **NOUVEAU: Action `scale`** - Mise à l'échelle d'objets (object-level scaling)
+- ✅ **Détection automatique** - Les 3 nouvelles transformations sont détectées automatiquement
+- ✅ **Direct fallback** - Exécution directe si confiance >= 0.85 (bypass LLM)
+- ✅ **12 nouvelles tâches de test** - 4 par nouvelle primitive
+- ✅ **DataLoader amélioré** - `load_latest_batch()` pour analyser uniquement le dernier batch
+- ✅ **BatchRunner v1.11.0** - Rapport de couverture des transformations
+- ✅ **64 tâches de test** au total
 
 ### v1.12.0 (Janvier 2026) - IEEE Publication Quality + Extended Dataset
 - ✅ **NOUVEAU: Figures vectorielles PDF** - Sortie compatible LaTeX/Overleaf
@@ -518,9 +622,19 @@ python main.py --batch data/ --pattern "task_color_change_*.json"
 - [x] ~~Support de transformations composées (translation + rotation simultanées)~~ ✅ v1.9.0
 - [x] ~~Module d'analyse de données pour publications~~ ✅ v1.11.0
 - [x] ~~Dataset élargi (~10 tâches par transformation)~~ ✅ v1.12.0
+- [x] ~~Primitive `flood_fill` (remplissage régions fermées)~~ ✅ v2.4.0
+- [x] ~~Primitive `symmetry` (création symétrie)~~ ✅ v2.4.0
+- [x] ~~Primitive `scale` (mise à l'échelle objets)~~ ✅ v2.4.0
+- [x] ~~Dataset 140 tâches (10 par transformation)~~ ✅ v2.5.0
+- [x] ~~Benchmark 3 modèles (llama3, mistral, phi3)~~ ✅ v2.5.0
+- [x] ~~Fallbacks améliorés (rotation, reflection)~~ ✅ v2.5.0
+- [x] ~~Rule Memory (RAG) - stockage et réutilisation des solutions~~ ✅ v2.6.0
+- [x] ~~Rotation multi-anchor (topleft, centroid, center)~~ ✅ v2.6.0
+- [x] ~~Brute-force validation (rotation, reflection, symmetry, composite)~~ ✅ v2.6.0
 - [ ] Auto-détection du mode (single vs multi-transform)
 - [ ] Détection de structures hiérarchiques (grilles dans grilles)
 - [ ] Support de transformations conditionnelles (si couleur X alors...)
+- [ ] Self-correction avancée (feedback loop avec analyse d'erreurs)
 
 ---
 
@@ -982,25 +1096,25 @@ python main.py --task data/task.json --self-correct --max-retries 2
 
 ---
 
-## 📊 Résumé des Actions Supportées (v2.0.0)
+## 📊 Résumé des Actions Supportées (v2.6.0)
 
-| Action | TIER | Description |
-|--------|------|-------------|
-| `translate` | - | Translation (dx, dy) |
-| `rotate` | - | Rotation (90°, 180°, 270°) |
-| `reflect` | - | Réflexion (horizontal, vertical, diagonal) |
-| `scale` | - | Mise à l'échelle (facteur) |
-| `color_change` | - | Changement de couleur |
-| `fill` | - | Remplissage simple |
-| `copy` | - | Copie avec offset |
-| `replace_color` | - | Remplacement de couleur |
-| `draw_line` | - | Tracer ligne (Bresenham) |
-| `tile` | - | Pavage/Tiling |
-| `add_border` | - | Ajout de contour |
-| `composite` | - | Transformations combinées |
-| **`symmetry`** | **2** | **Création de symétrie** |
-| **`flood_fill`** | **2** | **Remplissage connecté** |
-| **`conditional_color`** | **2** | **Couleur conditionnelle** |
+| Action | TIER | Description | Status |
+|--------|------|-------------|--------|
+| `translate` | - | Translation (dx, dy) | ✅ |
+| `rotate` | - | Rotation (90°, 180°, 270°) | ✅ |
+| `reflect` | - | Réflexion (horizontal, vertical, diagonal) | ✅ |
+| `scale` | **2** | Mise à l'échelle (facteur) | ✅ **v2.4** |
+| `color_change` | - | Changement de couleur | ✅ |
+| `fill` | - | Remplissage simple | ✅ |
+| `copy` | - | Copie avec offset | ✅ |
+| `replace_color` | - | Remplacement de couleur | ✅ |
+| `draw_line` | - | Tracer ligne (Bresenham) | ✅ |
+| `tile` | - | Pavage/Tiling | ✅ |
+| `add_border` | - | Ajout de contour | ✅ |
+| `composite` | - | Transformations combinées | ✅ |
+| **`symmetry`** | **2** | **Création de symétrie (vertical, horizontal, adjacent)** | ✅ **v2.4** |
+| **`flood_fill`** | **2** | **Remplissage régions fermées** | ✅ **v2.4** |
+| `conditional_color` | 2 | Couleur conditionnelle | ⏳ Planned |
 
 ---
 
@@ -1046,14 +1160,24 @@ compare_models.py
 
 | Modèle | Description | Taille | Installation |
 |--------|-------------|--------|--------------|
+| `mistral` | **🏆 RECOMMANDÉ** - Meilleur score et plus rapide | 4.1 GB | `ollama pull mistral` |
 | `llama3` | Meta Llama 3 8B - Bon généraliste | 4.7 GB | `ollama pull llama3` |
-| `mistral` | Mistral 7B - Excellent raisonnement, rapide | 4.1 GB | `ollama pull mistral` |
 | `phi3` | Microsoft Phi-3 Mini - Petit mais capable | 2.2 GB | `ollama pull phi3` |
 | `gemma2` | Google Gemma 2 9B - Bon raisonnement | 5.4 GB | `ollama pull gemma2` |
 | `codellama` | Meta Code Llama - Optimisé code/logique | 3.8 GB | `ollama pull codellama` |
 | `qwen2` | Alibaba Qwen 2 7B - Multilingue, bonne logique | 4.4 GB | `ollama pull qwen2` |
 | `llama3.1` | Meta Llama 3.1 8B - Dernière version | 4.7 GB | `ollama pull llama3.1` |
 | `deepseek-coder` | DeepSeek Coder 6.7B - Spécialisé code | 3.8 GB | `ollama pull deepseek-coder` |
+
+### Benchmark officiel (v2.5.0 - 140 tâches)
+
+| Modèle | Tâches Correctes | Accuracy | Temps Moyen | Fallback |
+|--------|------------------|----------|-------------|----------|
+| 🏆 **mistral** | **100/140 (71.4%)** | **97.0%** | **6.9s** | 13.6% |
+| llama3 | 98/140 (70.0%) | 94.8% | 11.4s | 13.6% |
+| phi3 | 91/140 (65.0%) | 93.1% | 9.3s | 15.0% |
+
+**Conclusion :** Mistral offre le meilleur compromis performance/vitesse. Il est ~2x plus rapide que llama3 tout en ayant un meilleur taux de réussite.
 
 ### Utilisation CLI
 

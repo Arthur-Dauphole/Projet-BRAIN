@@ -138,6 +138,16 @@ class TransformationDetector:
         if add_border and add_border.confidence >= 0.95:
             return [add_border]  # Return immediately - this is a clear add_border task
         
+        # PRIORITY 4.6: Flood fill (enclosed regions filled with color)
+        flood_fill = self.detect_flood_fill(input_grid, output_grid)
+        if flood_fill and flood_fill.confidence >= 0.95:
+            return [flood_fill]  # Return immediately - this is a clear flood_fill task
+        
+        # PRIORITY 4.7: Symmetry generation (object mirrored to create symmetric pattern)
+        symmetry_gen = self.detect_symmetry_generation(input_grid, output_grid)
+        if symmetry_gen and symmetry_gen.confidence >= 0.95:
+            return [symmetry_gen]  # Return immediately - this is a clear symmetry task
+        
         # PRIORITY 5: Scaling (for same-size grids where object scales)
         scaling = self.detect_scaling(input_grid, output_grid)
         if scaling:
@@ -1289,6 +1299,392 @@ class TransformationDetector:
                     "border_color": int(border_color)
                 }
             )
+        
+        return None
+    
+    def detect_flood_fill(
+        self, 
+        input_grid: Grid, 
+        output_grid: Grid
+    ) -> Optional[TransformationResult]:
+        """
+        Detect if flood fill has been applied to enclosed regions.
+        
+        This detects the transformation where:
+        - Input: has enclosed regions (background pixels surrounded by colored pixels)
+        - Output: those enclosed regions are filled with a new color
+        
+        Example:
+            Input:               Output:
+            1 1 1 1 1           1 1 1 1 1
+            1 0 0 0 1    -->    1 3 3 3 1
+            1 0 0 0 1           1 3 3 3 1
+            1 1 1 1 1           1 1 1 1 1
+            
+        Returns:
+            TransformationResult if flood fill is detected
+        """
+        in_data = input_grid.data
+        out_data = output_grid.data
+        
+        # Must be same size
+        if in_data.shape != out_data.shape:
+            return None
+        
+        height, width = in_data.shape
+        
+        # IMPORTANT: Check that existing colored pixels didn't move
+        # If colored pixels moved, it's likely a translation, not flood fill
+        for color in range(1, 10):
+            in_positions = set(zip(*np.where(in_data == color)))
+            out_positions = set(zip(*np.where(out_data == color)))
+            
+            if in_positions and out_positions:
+                # If existing color positions changed significantly, it's not flood fill
+                # (Allow some tolerance for edge cases)
+                if in_positions != out_positions:
+                    # Check if it's a complete displacement (translation)
+                    if len(in_positions) == len(out_positions) and len(in_positions - out_positions) > 0:
+                        return None  # Likely translation
+        
+        # Find colors that exist in output but not in input (fill colors)
+        in_colors = set(np.unique(in_data))
+        out_colors = set(np.unique(out_data))
+        new_colors = out_colors - in_colors
+        
+        if not new_colors:
+            # No new colors - check if background was filled with existing color
+            # Find pixels that changed from 0 to something else
+            changed_pixels = set(zip(*np.where((in_data == 0) & (out_data != 0))))
+            if not changed_pixels:
+                return None
+            
+            # Get the fill color
+            sample_pos = list(changed_pixels)[0]
+            fill_color = int(out_data[sample_pos[0], sample_pos[1]])
+            
+            # Verify all changed pixels have the same color
+            for r, c in changed_pixels:
+                if int(out_data[r, c]) != fill_color:
+                    return None  # Multiple colors - not a simple flood fill
+            
+            # CRITICAL: Check that the fill color already existed in input
+            # and its positions didn't change (otherwise it's likely translation)
+            if fill_color in in_colors:
+                in_fill_positions = set(zip(*np.where(in_data == fill_color)))
+                out_fill_positions = set(zip(*np.where(out_data == fill_color)))
+                
+                # If existing pixels of fill_color moved, it's not flood fill
+                if not in_fill_positions.issubset(out_fill_positions):
+                    return None
+        else:
+            fill_color = list(new_colors)[0]
+        
+        # Find pixels that were filled (changed from 0 to fill_color)
+        filled_pixels = set(zip(*np.where((in_data == 0) & (out_data == fill_color))))
+        
+        if not filled_pixels:
+            return None
+        
+        # Check if the filled pixels are enclosed regions
+        # Enclosed regions are background pixels NOT connected to the edge
+        
+        # Find all background pixels in input
+        bg_pixels = set(zip(*np.where(in_data == 0)))
+        
+        # Find edge-connected background pixels using BFS from edges
+        edge_connected = set()
+        queue = []
+        
+        # Add all edge background pixels to queue
+        for r in range(height):
+            if (r, 0) in bg_pixels:
+                queue.append((r, 0))
+            if (r, width - 1) in bg_pixels:
+                queue.append((r, width - 1))
+        for c in range(width):
+            if (0, c) in bg_pixels:
+                queue.append((0, c))
+            if (height - 1, c) in bg_pixels:
+                queue.append((height - 1, c))
+        
+        # BFS to find all edge-connected background
+        visited = set(queue)
+        while queue:
+            r, c = queue.pop(0)
+            edge_connected.add((r, c))
+            
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = r + dr, c + dc
+                if (nr, nc) in bg_pixels and (nr, nc) not in visited:
+                    visited.add((nr, nc))
+                    queue.append((nr, nc))
+        
+        # Enclosed pixels = background pixels NOT connected to edge
+        enclosed_pixels = bg_pixels - edge_connected
+        
+        # Check if filled pixels match enclosed pixels
+        if filled_pixels == enclosed_pixels and len(enclosed_pixels) > 0:
+            return TransformationResult(
+                transformation_type="flood_fill",
+                confidence=1.0,
+                parameters={
+                    "seed_point": "enclosed_regions",
+                    "fill_color": int(fill_color),
+                    "pixels_filled": len(filled_pixels)
+                }
+            )
+        
+        # Check if this is a background fill (all background filled)
+        if filled_pixels == bg_pixels and len(bg_pixels) > 0:
+            return TransformationResult(
+                transformation_type="flood_fill",
+                confidence=1.0,
+                parameters={
+                    "seed_point": "background",
+                    "fill_color": int(fill_color),
+                    "pixels_filled": len(filled_pixels)
+                }
+            )
+        
+        # Check for partial flood fill (some enclosed region filled)
+        if len(filled_pixels) > 0 and filled_pixels.issubset(enclosed_pixels):
+            # Find the seed point (any filled pixel)
+            seed = list(filled_pixels)[0]
+            return TransformationResult(
+                transformation_type="flood_fill",
+                confidence=0.9,
+                parameters={
+                    "seed_point": {"row": seed[0], "col": seed[1]},
+                    "fill_color": int(fill_color),
+                    "pixels_filled": len(filled_pixels)
+                }
+            )
+        
+        # Check if filled pixels form a connected region from a specific point
+        if len(filled_pixels) > 0:
+            # Verify connectivity
+            seed = list(filled_pixels)[0]
+            connected = self._get_connected_region(filled_pixels, seed)
+            
+            if connected == filled_pixels:
+                return TransformationResult(
+                    transformation_type="flood_fill",
+                    confidence=0.85,
+                    parameters={
+                        "seed_point": {"row": seed[0], "col": seed[1]},
+                        "fill_color": int(fill_color),
+                        "pixels_filled": len(filled_pixels)
+                    }
+                )
+        
+        return None
+    
+    def _get_connected_region(
+        self, 
+        pixels: set, 
+        seed: Tuple[int, int], 
+        connectivity: int = 4
+    ) -> set:
+        """
+        Get all pixels connected to seed within the given pixel set.
+        
+        Args:
+            pixels: Set of candidate pixels
+            seed: Starting pixel
+            connectivity: 4 or 8 connectivity
+            
+        Returns:
+            Set of connected pixels
+        """
+        if seed not in pixels:
+            return set()
+        
+        if connectivity == 8:
+            neighbors = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+        else:
+            neighbors = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        
+        connected = set()
+        queue = [seed]
+        visited = {seed}
+        
+        while queue:
+            r, c = queue.pop(0)
+            connected.add((r, c))
+            
+            for dr, dc in neighbors:
+                nr, nc = r + dr, c + dc
+                if (nr, nc) in pixels and (nr, nc) not in visited:
+                    visited.add((nr, nc))
+                    queue.append((nr, nc))
+        
+        return connected
+    
+    def detect_symmetry_generation(
+        self, 
+        input_grid: Grid, 
+        output_grid: Grid
+    ) -> Optional[TransformationResult]:
+        """
+        Detect if an object was mirrored to create a symmetric pattern.
+        
+        This detects the transformation where:
+        - Input: has an object on one side
+        - Output: has the object + its mirror copy (creating symmetry)
+        
+        Example (vertical axis, adjacent):
+            Input:               Output:
+            2 2 0 0 0           2 2 0 2 2
+            2 0 0 0 0    -->    2 0 0 0 2
+            2 2 0 0 0           2 2 0 2 2
+            
+        Returns:
+            TransformationResult if symmetry generation is detected
+        """
+        in_data = input_grid.data
+        out_data = output_grid.data
+        
+        # Must be same size (symmetry generation doesn't change grid size)
+        if in_data.shape != out_data.shape:
+            return None
+        
+        height, width = in_data.shape
+        
+        # Check each color
+        for color in range(1, 10):
+            in_positions = set(zip(*np.where(in_data == color)))
+            out_positions = set(zip(*np.where(out_data == color)))
+            
+            if not in_positions:
+                continue
+            
+            # For symmetry generation: output should have MORE pixels than input
+            # (the original + the mirrored copy)
+            if len(out_positions) <= len(in_positions):
+                continue
+            
+            # The input positions should be a subset of output positions
+            # (the original object is preserved)
+            if not in_positions.issubset(out_positions):
+                continue
+            
+            # The new pixels are the mirrored copy
+            new_positions = out_positions - in_positions
+            
+            # Check if new positions form a mirror of the original
+            # Get bounding box of input object
+            in_rows, in_cols = zip(*in_positions)
+            in_min_r, in_max_r = min(in_rows), max(in_rows)
+            in_min_c, in_max_c = min(in_cols), max(in_cols)
+            in_center_r = (in_min_r + in_max_r) / 2
+            in_center_c = (in_min_c + in_max_c) / 2
+            
+            # Normalize input positions to origin
+            in_normalized = frozenset((r - in_min_r, c - in_min_c) for r, c in in_positions)
+            in_h = in_max_r - in_min_r + 1
+            in_w = in_max_c - in_min_c + 1
+            
+            # Get bounding box of new positions
+            new_rows, new_cols = zip(*new_positions)
+            new_min_r, new_max_r = min(new_rows), max(new_rows)
+            new_min_c, new_max_c = min(new_cols), max(new_cols)
+            
+            # Normalize new positions to origin
+            new_normalized = frozenset((r - new_min_r, c - new_min_c) for r, c in new_positions)
+            
+            # Check vertical reflection (mirror left-right)
+            vertical_mirror = frozenset((r, in_w - 1 - c) for r, c in in_normalized)
+            if vertical_mirror:
+                vm_min_c = min(p[1] for p in vertical_mirror)
+                vertical_mirror = frozenset((r, c - vm_min_c) for r, c in vertical_mirror)
+            
+            if vertical_mirror == new_normalized:
+                # Determine position relative to original
+                if new_min_c > in_max_c:
+                    position = "adjacent"
+                elif new_max_c < in_min_c:
+                    position = "opposite"
+                else:
+                    position = "adjacent"
+                
+                return TransformationResult(
+                    transformation_type="symmetry",
+                    confidence=1.0,
+                    parameters={
+                        "axis": "vertical",
+                        "position": position,
+                        "color": int(color)
+                    }
+                )
+            
+            # Check horizontal reflection (mirror up-down)
+            horizontal_mirror = frozenset((in_h - 1 - r, c) for r, c in in_normalized)
+            if horizontal_mirror:
+                hm_min_r = min(p[0] for p in horizontal_mirror)
+                horizontal_mirror = frozenset((r - hm_min_r, c) for r, c in horizontal_mirror)
+            
+            if horizontal_mirror == new_normalized:
+                if new_min_r > in_max_r:
+                    position = "adjacent"
+                elif new_max_r < in_min_r:
+                    position = "opposite"
+                else:
+                    position = "adjacent"
+                
+                return TransformationResult(
+                    transformation_type="symmetry",
+                    confidence=1.0,
+                    parameters={
+                        "axis": "horizontal",
+                        "position": position,
+                        "color": int(color)
+                    }
+                )
+            
+            # Check if output is perfectly symmetric (both halves present)
+            # This means the input was "completed" to form full symmetry
+            out_rows, out_cols = zip(*out_positions)
+            out_center_c = (min(out_cols) + max(out_cols)) / 2
+            out_center_r = (min(out_rows) + max(out_rows)) / 2
+            
+            # Check vertical symmetry of output
+            is_vertically_symmetric = True
+            for r, c in out_positions:
+                mirror_c = int(round(2 * out_center_c - c))
+                if (r, mirror_c) not in out_positions:
+                    is_vertically_symmetric = False
+                    break
+            
+            if is_vertically_symmetric and len(out_positions) > len(in_positions):
+                return TransformationResult(
+                    transformation_type="symmetry",
+                    confidence=0.9,
+                    parameters={
+                        "axis": "vertical",
+                        "position": "adjacent",
+                        "color": int(color)
+                    }
+                )
+            
+            # Check horizontal symmetry of output
+            is_horizontally_symmetric = True
+            for r, c in out_positions:
+                mirror_r = int(round(2 * out_center_r - r))
+                if (mirror_r, c) not in out_positions:
+                    is_horizontally_symmetric = False
+                    break
+            
+            if is_horizontally_symmetric and len(out_positions) > len(in_positions):
+                return TransformationResult(
+                    transformation_type="symmetry",
+                    confidence=0.9,
+                    parameters={
+                        "axis": "horizontal",
+                        "position": "adjacent",
+                        "color": int(color)
+                    }
+                )
         
         return None
     
