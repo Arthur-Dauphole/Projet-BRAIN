@@ -1,28 +1,34 @@
 Category,Metric,Value
-Overall,Total Tasks,140
-Overall,Mean Accuracy,0.9784
-Overall,Success Rate (100%),0.8357
+Overall,Total Tasks,1356
+Overall,Mean Accuracy,0.9764
+Overall,Success Rate (100%),0.8090
 Transformation: add_border,Mean Accuracy,1.0000
-Transformation: add_border,Count,4
-Transformation: rotation,Mean Accuracy,0.9467
-Transformation: rotation,Count,16
-Transformation: color_change,Mean Accuracy,0.9850
-Transformation: color_change,Count,4
-Transformation: reflection,Mean Accuracy,0.9679
-Transformation: reflection,Count,16
-Transformation: translation,Mean Accuracy,0.9922
-Transformation: translation,Count,18
-Transformation: composite,Mean Accuracy,0.9782
-Transformation: composite,Count,14
-Transformation: draw_line,Mean Accuracy,1.0000
-Transformation: draw_line,Count,10
-Transformation: flood_fill,Mean Accuracy,1.0000
-Transformation: flood_fill,Count,10
-Transformation: scaling,Mean Accuracy,0.9973
-Transformation: scaling,Count,11
-Transformation: symmetry,Mean Accuracy,0.9930
-Transformation: symmetry,Count,10
+Transformation: add_border,Count,49
+Transformation: color_change,Mean Accuracy,0.9898
+Transformation: color_change,Count,41
+Transformation: reflection,Mean Accuracy,0.9667
+Transformation: reflection,Count,165
+Transformation: rotation,Mean Accuracy,0.9441
+Transformation: rotation,Count,156
+Transformation: translation,Mean Accuracy,0.9941
+Transformation: translation,Count,190
+Transformation: composite,Mean Accuracy,0.9630
+Transformation: composite,Count,147
+Transformation: draw_line,Mean Accuracy,0.9988
+Transformation: draw_line,Count,98
 Transformation: tiling,Mean Accuracy,1.0000
-Transformation: tiling,Count,20
-Model: gemma2,Mean Accuracy,0.9784
-Model: gemma2,Count,140
+Transformation: tiling,Count,182
+Transformation: flood_fill,Mean Accuracy,1.0000
+Transformation: flood_fill,Count,81
+Transformation: scaling,Mean Accuracy,0.9965
+Transformation: scaling,Count,92
+Transformation: symmetry,Mean Accuracy,0.9900
+Transformation: symmetry,Count,84
+Model: llama3,Mean Accuracy,0.9734
+Model: llama3,Count,412
+Model: mistral,Mean Accuracy,0.9799
+Model: mistral,Count,52
+Model: phi3,Mean Accuracy,0.9753
+Model: phi3,Count,52
+Model: gemma2,Mean Accuracy,0.9776
+Model: gemma2,Count,840

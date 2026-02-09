@@ -1270,7 +1270,6 @@ viz.plot_summary_dashboard(save_path="dashboard.pdf")
 viz.save_all_plots("output/figures/", formats=['png', 'pdf'])
 ```
 
-### Installation rapide (3 modèles)
 
 ```bash
 # Installer les modèles
