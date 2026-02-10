@@ -1,34 +1,20 @@
 Category,Metric,Value
-Overall,Total Tasks,1356
-Overall,Mean Accuracy,0.9764
-Overall,Success Rate (100%),0.8090
+Overall,Total Tasks,50
+Overall,Mean Accuracy,0.9697
+Overall,Success Rate (100%),0.7000
 Transformation: add_border,Mean Accuracy,1.0000
-Transformation: add_border,Count,49
-Transformation: color_change,Mean Accuracy,0.9898
-Transformation: color_change,Count,41
-Transformation: reflection,Mean Accuracy,0.9667
-Transformation: reflection,Count,165
-Transformation: rotation,Mean Accuracy,0.9441
-Transformation: rotation,Count,156
-Transformation: translation,Mean Accuracy,0.9941
-Transformation: translation,Count,190
-Transformation: composite,Mean Accuracy,0.9630
-Transformation: composite,Count,147
-Transformation: draw_line,Mean Accuracy,0.9988
-Transformation: draw_line,Count,98
-Transformation: tiling,Mean Accuracy,1.0000
-Transformation: tiling,Count,182
-Transformation: flood_fill,Mean Accuracy,1.0000
-Transformation: flood_fill,Count,81
-Transformation: scaling,Mean Accuracy,0.9965
-Transformation: scaling,Count,92
-Transformation: symmetry,Mean Accuracy,0.9900
-Transformation: symmetry,Count,84
-Model: llama3,Mean Accuracy,0.9734
-Model: llama3,Count,412
-Model: mistral,Mean Accuracy,0.9799
-Model: mistral,Count,52
-Model: phi3,Mean Accuracy,0.9753
-Model: phi3,Count,52
-Model: gemma2,Mean Accuracy,0.9776
-Model: gemma2,Count,840
+Transformation: add_border,Count,4
+Transformation: rotation,Mean Accuracy,0.8868
+Transformation: rotation,Count,7
+Transformation: color_change,Mean Accuracy,1.0000
+Transformation: color_change,Count,3
+Transformation: reflection,Mean Accuracy,0.9550
+Transformation: reflection,Count,4
+Transformation: translation,Mean Accuracy,0.9900
+Transformation: translation,Count,8
+Transformation: composite,Mean Accuracy,0.9765
+Transformation: composite,Count,13
+Transformation: draw_line,Mean Accuracy,1.0000
+Transformation: draw_line,Count,10
+Model: llama3,Mean Accuracy,0.9697
+Model: llama3,Count,50

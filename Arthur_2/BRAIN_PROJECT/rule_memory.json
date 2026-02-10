@@ -7396,13 +7396,66 @@
         "was_fallback": false,
         "llm_action": "translate"
       }
+    },
+    {
+      "task_id": "task_add_border_07",
+      "signature": {
+        "input_shape": [
+          8,
+          8
+        ],
+        "output_shape": [
+          8,
+          8
+        ],
+        "size_change": false,
+        "input_colors": [
+          7
+        ],
+        "output_colors": [
+          4,
+          7
+        ],
+        "colors_added": [
+          4
+        ],
+        "colors_removed": [],
+        "num_colors_input": 1,
+        "num_colors_output": 2,
+        "num_objects_input": 1,
+        "num_objects_output": 2,
+        "object_types_input": [
+          "T_shape"
+        ],
+        "object_types_output": [
+          "blob_with_hole",
+          "T_shape"
+        ],
+        "detected_transforms": [],
+        "transform_confidence": 0.0,
+        "signature_hash": "0b00d9c8878a"
+      },
+      "action_data": {
+        "action": "add_border",
+        "params": {
+          "border_color": 8
+        },
+        "color_filter": 8
+      },
+      "success": false,
+      "accuracy": 0.84,
+      "timestamp": "2026-02-09T14:09:18.745607",
+      "metadata": {
+        "was_fallback": false,
+        "llm_action": "add_border"
+      }
     }
   ],
   "statistics": {
-    "total_rules": 133,
+    "total_rules": 134,
     "successful_rules": 112,
-    "success_rate": 0.8421052631578947,
-    "avg_accuracy": 0.9851817042606514,
+    "success_rate": 0.835820895522388,
+    "avg_accuracy": 0.9840982587064677,
     "transform_counts": {
       "add_border": 4,
       "rotation": 49,
@@ -7416,6 +7469,6 @@
       "symmetry": 10,
       "tiling": 20
     },
-    "unique_tasks": 133
+    "unique_tasks": 134
   }
 }

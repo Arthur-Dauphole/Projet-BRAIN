@@ -1,0 +1,11 @@
+task_id,success,is_correct,accuracy,execution_time,transformations,action_used,grid_size,train_examples,test_examples,primary_transformation,transformation_confidence,was_fallback_used,llm_proposed_action,fallback_reason,llm_time,detection_time,action_time,num_colors,num_objects,mode,error
+task_add_border_01,True,True,1.0000,28.31,add_border|add_border,scale,8x8,2,1,add_border,1.0000,True,scale,direct_add_border,27.987,0.000,0.004,1,0,single,
+task_add_border_02,True,True,1.0000,7.23,add_border|add_border,scale,9x9,2,1,add_border,1.0000,True,scale,direct_add_border,7.206,0.000,0.001,1,0,single,
+task_add_border_03,True,True,1.0000,7.13,add_border|add_border,color_change,8x8,2,1,add_border,1.0000,True,color_change,direct_add_border,7.118,0.001,0.000,1,0,single,
+task_add_border_04,True,True,1.0000,9.31,add_border|add_border|add_border,scale,7x8,3,1,add_border,1.0000,True,scale,direct_add_border,9.293,0.001,0.000,1,0,single,
+task_add_border_05,True,False,0.8400,5.45,rotation,reflect,10x10,1,1,rotation,1.0000,True,reflect,direct_rotate,5.432,0.001,0.001,1,0,single,
+task_add_border_06,True,False,0.8125,5.01,rotation,reflect,8x8,1,1,rotation,1.0000,True,reflect,direct_rotate,5.001,0.001,0.001,1,0,single,
+task_add_border_07,True,False,0.8400,6.43,,add_border,10x10,1,1,,0.0000,False,add_border,,6.400,0.001,0.000,1,0,single,
+task_add_border_08,True,False,0.8400,5.66,rotation,reflect,10x10,1,1,rotation,1.0000,True,reflect,direct_rotate,5.653,0.001,0.001,1,0,single,
+task_add_border_09,True,False,0.8750,4.68,rotation,reflect,8x8,1,1,rotation,1.0000,True,reflect,direct_rotate,4.667,0.001,0.001,1,0,single,
+task_add_border_10,True,False,0.8400,5.35,rotation,reflect,10x10,1,1,rotation,1.0000,True,reflect,direct_rotate,5.339,0.000,0.000,1,0,single,
