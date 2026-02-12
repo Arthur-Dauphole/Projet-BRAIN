@@ -1,0 +1,73 @@
+(venv) (base) MacBook-de-Arthur:BRAIN_PROJECT patriciadauphole$ python main.py --task data/task_pattern_tile_10.json 
+Initializing BRAIN Pipeline...
+  ✓ Symbol Detector (Shapes)
+  ✓ Transformation Detector (Patterns)
+  ✓ Prompt Maker (Bridge)
+  ✓ LLM Client (Reasoning) - Model: llama3
+  ✓ Action Executor (Hands)
+  ✓ Result Analyzer (Evaluation)
+  ✓ Visualizer (Dashboard)
+  📂 Loaded 134 rules from rule_memory.json
+  ✓ Rule Memory (134 rules loaded)
+Pipeline ready!
+
+Loaded task: ARCTask(task_pattern_tile_10, train=1, test=1)
+
+📚 RULE MEMORY: Found 3 similar past solutions
+   1. task_pattern_tile_10 (100%) -> tile
+   2. task_pattern_tile_07 (100%) -> tile
+   3. task_pattern_tile_08 (100%) -> tile
+==================================================
+STEP 1a: PERCEPTION (Shape Detection)
+==================================================
+  Train input: Grid(3x3, colors=[1, 2, 3, 4, 5, 6, 7, 8, 9], objects=9)
+  Train output: Grid(6x6, colors=[1, 2, 3, 4, 5, 6, 7, 8, 9], objects=36)
+  Test input: Grid(3x3, colors=[1, 2, 3, 4, 5, 6, 7, 8, 9], objects=9)
+
+==================================================
+STEP 1b: TRANSFORMATION DETECTION
+==================================================
+  Example 1: [100%] tiling: {'repetitions_horizontal': 2, 'repetitions_vertical': 2, 'tile_width': 3, 'tile_height': 3, 'coverage': 1.0}
+
+  ℹ️ Grid-level transformation detected (tiling), skipping per-color analysis
+
+==================================================
+STEP 2: PROMPTING (Prompt Creation)
+==================================================
+  📚 Added 3 similar solutions to prompt
+  Created prompt (4697 chars)
+
+==================================================
+STEP 3: LLM REASONING
+==================================================
+  Querying LLM...
+  Got response (164 chars)
+  Reasoning: **YOUR OUTPUT**
+
+Copy this JSON (fill in the values from above):...
+  ✓ Action JSON extracted: {'action': 'tile', 'params': {'repetitions_horizontal': 2, 'repetitions_vertical': 2}}
+
+==================================================
+STEP 4: ACTION EXECUTION (The Hands)
+==================================================
+  Executing action on test input 1...
+  Executing TILE: 2x horizontal, 2x vertical
+  ✓ Action executed: Tiled pattern 2x2 to create 6x6 grid
+
+==================================================
+STEP 5: ANALYSIS (Evaluation)
+==================================================
+  Test 1 Results:
+    ✓ Correct: True
+    📊 Accuracy: 100.00%
+
+==================================================
+STEP 6: VISUALIZATION
+==================================================
+
+==================================================
+PIPELINE COMPLETE
+==================================================
+  Results: 1/1 correct (100.0%)
+  ⊘ Skipping duplicate: task_pattern_tile_10 (existing: 100.0%)
+  💾 ✓ Rule stored in memory (134 total)

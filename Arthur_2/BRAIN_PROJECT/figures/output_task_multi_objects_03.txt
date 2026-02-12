@@ -1,0 +1,105 @@
+(venv) (base) MacBook-de-Arthur:BRAIN_PROJECT patriciadauphole$ python main.py --task data/task_multi_objects_03.json 
+Initializing BRAIN Pipeline...
+  ✓ Symbol Detector (Shapes)
+  ✓ Transformation Detector (Patterns)
+  ✓ Prompt Maker (Bridge)
+  ✓ LLM Client (Reasoning) - Model: llama3
+  ✓ Action Executor (Hands)
+  ✓ Result Analyzer (Evaluation)
+  ✓ Visualizer (Dashboard)
+  📂 Loaded 134 rules from rule_memory.json
+  ✓ Rule Memory (134 rules loaded)
+Pipeline ready!
+
+Loaded task: ARCTask(task_multi_objects_03, train=2, test=1)
+
+📚 RULE MEMORY: Found 3 similar past solutions
+   1. task_blob_04 (100%) -> translate
+   2. task_composite_04 (100%) -> translate
+   3. task_draw_line_05 (100%) -> draw_line
+==================================================
+STEP 1a: PERCEPTION (Shape Detection)
+==================================================
+  Train input: Grid(10x12, colors=[1, 2, 3], objects=3)
+  Train output: Grid(10x12, colors=[1, 2, 4], objects=3)
+  Train input: Grid(10x12, colors=[1, 2, 3], objects=3)
+  Train output: Grid(10x12, colors=[1, 2, 4], objects=3)
+  Test input: Grid(10x12, colors=[1, 2, 3], objects=3)
+
+==================================================
+STEP 1b: TRANSFORMATION DETECTION
+==================================================
+  Example 1: [100%] Rotation: 180° clockwise
+  Example 2: [100%] Rotation: 180° clockwise
+  Detecting per-color transformations...
+    Input colors: {1, 2, 3}
+    Output colors: {1, 2, 4}
+    Color 1: rotation - {'angle': 180, 'color': 1}
+    Color 2: translation - {'dx': np.int64(2), 'dy': np.int64(0), 'color': 2}
+    Color 3: color_change - {'from_color': 3, 'to_color': 4}
+
+  🔄 AUTO-SWITCH: Multiple different transformations detected, using multi-transform mode
+==================================================
+STEP 1a: PERCEPTION (Shape Detection)
+==================================================
+  Train input: Grid(10x12, colors=[1, 2, 3], objects=3)
+  Train output: Grid(10x12, colors=[1, 2, 4], objects=3)
+  Train input: Grid(10x12, colors=[1, 2, 3], objects=3)
+  Train output: Grid(10x12, colors=[1, 2, 4], objects=3)
+  Test input: Grid(10x12, colors=[1, 2, 3], objects=3)
+
+==================================================
+STEP 1b: PER-COLOR TRANSFORMATION DETECTION
+==================================================
+  Detecting per-color transformations...
+    Input colors: {1, 2, 3}
+    Output colors: {1, 2, 4}
+    Color 1: rotation - {'angle': 180, 'color': 1}
+    Color 2: translation - {'dx': np.int64(2), 'dy': np.int64(0), 'color': 2}
+    Color 3: color_change - {'from_color': 3, 'to_color': 4}
+  Detected per-color transformations:
+    BLUE (1): rotate 180°
+    RED (2): translate dx=2, dy=0
+    GREEN (3): change to yellow (4)
+
+==================================================
+STEP 2: PROMPTING (Multi-Transform Mode)
+==================================================
+  Created multi-transform prompt (3173 chars)
+
+==================================================
+STEP 3: LLM REASONING (Multi-Actions)
+==================================================
+  Querying LLM for multiple actions...
+  Got response (516 chars)
+  Reasoning: Here is the solution:...
+  ✓ Multi-actions extracted: 3 actions
+    - Color 1: rotate {'angle': 180}
+    - Color 2: translate {'dx': 2, 'dy': 0}
+    - Color 3: color_change {'from_color': 3, 'to_color': 4}
+
+==================================================
+STEP 4: ACTION EXECUTION (Multi-Transform)
+==================================================
+  Executing 3 actions on test input 1...
+  Executing 3 multi-actions...
+    Processing color 1: rotate with {'angle': 180}
+    Processing color 2: translate with {'dx': 2, 'dy': 0}
+    Processing color 3: color_change with {'from_color': 3, 'to_color': 4}
+  ✓ Multi-actions executed: Executed 3 actions: Color 1: rotate 180°; Color 2: translate dx=2, dy=0; Color 3: change to 4
+
+==================================================
+STEP 5: ANALYSIS (Evaluation)
+==================================================
+  Test 1 Results:
+    ✓ Correct: True
+    📊 Accuracy: 100.00%
+
+==================================================
+STEP 6: VISUALIZATION
+==================================================
+
+==================================================
+PIPELINE COMPLETE (Multi-Transform Mode)
+==================================================
+  Results: 1/1 correct

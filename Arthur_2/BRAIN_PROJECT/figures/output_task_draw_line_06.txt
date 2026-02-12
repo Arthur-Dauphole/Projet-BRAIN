@@ -1,0 +1,70 @@
+(venv) (base) MacBook-de-Arthur:BRAIN_PROJECT patriciadauphole$ python main.py --task data/task_draw_line_06.json
+Initializing BRAIN Pipeline...
+  ✓ Symbol Detector (Shapes)
+  ✓ Transformation Detector (Patterns)
+  ✓ Prompt Maker (Bridge)
+  ✓ LLM Client (Reasoning) - Model: llama3
+  ✓ Action Executor (Hands)
+  ✓ Result Analyzer (Evaluation)
+  ✓ Visualizer (Dashboard)
+  📂 Loaded 134 rules from rule_memory.json
+  ✓ Rule Memory (134 rules loaded)
+Pipeline ready!
+
+Loaded task: ARCTask(task_draw_line_06, train=1, test=1)
+
+📚 RULE MEMORY: Found 3 similar past solutions
+   1. task_blob_02 (100%) -> reflect
+   2. task_blob_03 (100%) -> rotate
+   3. task_blob_05 (100%) -> translate
+==================================================
+STEP 1a: PERCEPTION (Shape Detection)
+==================================================
+  Train input: Grid(8x8, colors=[3], objects=2)
+  Train output: Grid(8x8, colors=[3], objects=5)
+  Test input: Grid(10x10, colors=[7], objects=2)
+
+==================================================
+STEP 1b: TRANSFORMATION DETECTION
+==================================================
+  Example 1: [100%] draw_line: {'color': 3, 'point1': {'row': np.int64(1), 'col': np.int64(1)}, 'point2': {'row': np.int64(5), 'col': np.int64(5)}, 'line_type': 'diagonal'}
+
+==================================================
+STEP 2: PROMPTING (Prompt Creation)
+==================================================
+  📚 Added 3 similar solutions to prompt
+  Created prompt (2238 chars)
+
+==================================================
+STEP 3: LLM REASONING
+==================================================
+  Querying LLM...
+  Got response (247 chars)
+  Reasoning: output a JSON action:...
+  ✓ Action JSON extracted: {'action': 'draw_line', 'color_filter': 7}
+
+==================================================
+STEP 4: ACTION EXECUTION (The Hands)
+==================================================
+  Executing action on test input 1...
+  Executing DRAW_LINE: color_filter=7, params={}
+    Drawing line from (2, 2) to (6, 6) with color 7
+  ✓ Action executed: Drew line from (2, 2) to (6, 6) with color 7
+
+==================================================
+STEP 5: ANALYSIS (Evaluation)
+==================================================
+  Test 1 Results:
+    ✓ Correct: True
+    📊 Accuracy: 100.00%
+
+==================================================
+STEP 6: VISUALIZATION
+==================================================
+
+==================================================
+PIPELINE COMPLETE
+==================================================
+  Results: 1/1 correct (100.0%)
+  ⊘ Skipping duplicate: task_draw_line_06 (existing: 100.0%)
+  💾 ✓ Rule stored in memory (134 total)
