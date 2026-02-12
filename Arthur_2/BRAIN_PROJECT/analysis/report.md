@@ -1,37 +1,33 @@
 # BRAIN Project - Analysis Report
 
-**Generated:** 2026-02-04 11:19:24
+**Generated:** 2026-02-09 15:03:12
 
 ## Overview
 
-- **Total tasks analyzed:** 140
-- **Overall accuracy:** 97.8%
-- **Success rate (100%):** 83.6%
+- **Total tasks analyzed:** 50
+- **Overall accuracy:** 97.0%
+- **Success rate (100%):** 70.0%
 
 ## Performance by Model
 
 | Model | Mean Accuracy | Std | N |
 |-------|---------------|-----|---|
-| gemma2 | 97.8% | 0.094 | 140 |
+| llama3 | 97.0% | 0.056 | 50 |
 
 ## Performance by Transformation
 
 | Transformation | Mean Accuracy | Success Rate | N |
 |----------------|---------------|--------------|---|
 | add_border | 100.0% | 100.0% | 4 |
+| color_change | 100.0% | 100.0% | 3 |
 | draw_line | 100.0% | 100.0% | 10 |
-| flood_fill | 100.0% | 100.0% | 10 |
-| tiling | 100.0% | 100.0% | 20 |
-| scaling | 99.7% | 90.9% | 11 |
-| symmetry | 99.3% | 80.0% | 10 |
-| translation | 99.2% | 77.8% | 18 |
-| color_change | 98.5% | 75.0% | 4 |
-| composite | 97.8% | 71.4% | 14 |
-| reflection | 96.8% | 81.2% | 16 |
-| rotation | 94.7% | 62.5% | 16 |
+| translation | 99.0% | 62.5% | 8 |
+| composite | 97.7% | 69.2% | 13 |
+| reflection | 95.5% | 50.0% | 4 |
+| rotation | 88.7% | 28.6% | 7 |
 
 ## LLM vs Fallback
 
-- **Fallback usage rate:** 61.4%
-- **LLM-only accuracy:** 97.9%
-- **With fallback accuracy:** 97.8%
+- **Fallback usage rate:** 62.0%
+- **LLM-only accuracy:** 99.2%
+- **With fallback accuracy:** 95.6%

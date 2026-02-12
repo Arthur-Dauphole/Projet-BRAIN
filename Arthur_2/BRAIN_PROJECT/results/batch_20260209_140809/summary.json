@@ -1,0 +1,455 @@
+{
+  "summary": {
+    "total_tasks": 10,
+    "successful_tasks": 10,
+    "correct_tasks": 4,
+    "failed_tasks": 0,
+    "success_rate": "100.0%",
+    "correctness_rate": "40.0%",
+    "overall_accuracy": "90.5%",
+    "accuracy_when_successful": "90.5%"
+  },
+  "timing": {
+    "total_time_seconds": 84.56,
+    "avg_time_per_task_seconds": 8.46,
+    "avg_llm_time_seconds": 8.41,
+    "avg_detection_time_seconds": 0.001,
+    "avg_action_execution_seconds": 0.001
+  },
+  "transformation_stats": {
+    "add_border": 9,
+    "rotation": 5
+  },
+  "action_stats": {
+    "scale": 3,
+    "color_change": 1,
+    "reflect": 5,
+    "add_border": 1
+  },
+  "accuracy_by_transformation": {
+    "add_border": {
+      "count": 4,
+      "correct": 4,
+      "accuracy": 1.0,
+      "success_rate": 1.0
+    },
+    "rotation": {
+      "count": 5,
+      "correct": 0,
+      "accuracy": 0.8414999999999999,
+      "success_rate": 0.0
+    }
+  },
+  "llm_vs_fallback": {
+    "llm_success_rate": "0.0%",
+    "fallback_usage_rate": "90.0%"
+  },
+  "metadata": {
+    "run_timestamp": "2026-02-09T14:08:09.894821",
+    "run_folder": "batch_20260209_140809",
+    "model_used": "llama3",
+    "pattern_used": "task_*.json",
+    "directory": "data/",
+    "program_version": "1.11.0"
+  },
+  "transformation_coverage": {
+    "total_supported": 11,
+    "tested_count": 2,
+    "coverage_percent": 18.2,
+    "tested": [
+      "add_border",
+      "rotation"
+    ],
+    "not_tested": [
+      "color_change",
+      "composite",
+      "draw_line",
+      "flood_fill",
+      "reflection",
+      "scaling",
+      "symmetry",
+      "tiling",
+      "translation"
+    ],
+    "supported_transformations": [
+      "translation",
+      "rotation",
+      "reflection",
+      "scaling",
+      "symmetry",
+      "flood_fill",
+      "color_change",
+      "draw_line",
+      "tiling",
+      "add_border",
+      "composite"
+    ]
+  },
+  "task_results": [
+    {
+      "task_id": "task_add_border_01",
+      "task_file": "data/task_add_border_01.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 28.311790227890015,
+      "detected_transformations": [
+        "add_border",
+        "add_border"
+      ],
+      "action_used": "scale",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "add_border",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color_filter": 3,
+        "border_color": 1
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "scale",
+      "fallback_reason": "direct_add_border",
+      "timing": {
+        "total": 28.312,
+        "llm_response": 27.987,
+        "detection": 0.0,
+        "action_execution": 0.004
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_add_border_02",
+      "task_file": "data/task_add_border_02.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 7.225768089294434,
+      "detected_transformations": [
+        "add_border",
+        "add_border"
+      ],
+      "action_used": "scale",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "9x9",
+      "primary_transformation": "add_border",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color_filter": 1,
+        "border_color": 4
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "scale",
+      "fallback_reason": "direct_add_border",
+      "timing": {
+        "total": 7.226,
+        "llm_response": 7.206,
+        "detection": 0.0,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_add_border_03",
+      "task_file": "data/task_add_border_03.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 7.128414154052734,
+      "detected_transformations": [
+        "add_border",
+        "add_border"
+      ],
+      "action_used": "color_change",
+      "error_message": null,
+      "num_train_examples": 2,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "add_border",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color_filter": 6,
+        "border_color": 2
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "color_change",
+      "fallback_reason": "direct_add_border",
+      "timing": {
+        "total": 7.128,
+        "llm_response": 7.118,
+        "detection": 0.001,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_add_border_04",
+      "task_file": "data/task_add_border_04.json",
+      "success": true,
+      "is_correct": true,
+      "accuracy": 1.0,
+      "execution_time": 9.308146953582764,
+      "detected_transformations": [
+        "add_border",
+        "add_border",
+        "add_border"
+      ],
+      "action_used": "scale",
+      "error_message": null,
+      "num_train_examples": 3,
+      "num_test_examples": 1,
+      "grid_size": "7x8",
+      "primary_transformation": "add_border",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "color_filter": 2,
+        "border_color": 1
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "scale",
+      "fallback_reason": "direct_add_border",
+      "timing": {
+        "total": 9.308,
+        "llm_response": 9.293,
+        "detection": 0.001,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_add_border_05",
+      "task_file": "data/task_add_border_05.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.84,
+      "execution_time": 5.447119951248169,
+      "detected_transformations": [
+        "rotation"
+      ],
+      "action_used": "reflect",
+      "error_message": null,
+      "num_train_examples": 1,
+      "num_test_examples": 1,
+      "grid_size": "10x10",
+      "primary_transformation": "rotation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "angle": 180,
+        "per_object": true,
+        "color": 2
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "reflect",
+      "fallback_reason": "direct_rotate",
+      "timing": {
+        "total": 5.447,
+        "llm_response": 5.432,
+        "detection": 0.001,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_add_border_06",
+      "task_file": "data/task_add_border_06.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.8125,
+      "execution_time": 5.013256072998047,
+      "detected_transformations": [
+        "rotation"
+      ],
+      "action_used": "reflect",
+      "error_message": null,
+      "num_train_examples": 1,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "rotation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "angle": 90,
+        "per_object": true,
+        "color": 5
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "reflect",
+      "fallback_reason": "direct_rotate",
+      "timing": {
+        "total": 5.013,
+        "llm_response": 5.001,
+        "detection": 0.001,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_add_border_07",
+      "task_file": "data/task_add_border_07.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.84,
+      "execution_time": 6.429403781890869,
+      "detected_transformations": [],
+      "action_used": "add_border",
+      "error_message": null,
+      "num_train_examples": 1,
+      "num_test_examples": 1,
+      "grid_size": "10x10",
+      "primary_transformation": null,
+      "transformation_confidence": 0.0,
+      "transformation_params": {},
+      "was_fallback_used": false,
+      "llm_proposed_action": "add_border",
+      "fallback_reason": null,
+      "timing": {
+        "total": 6.429,
+        "llm_response": 6.4,
+        "detection": 0.001,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_add_border_08",
+      "task_file": "data/task_add_border_08.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.84,
+      "execution_time": 5.660494089126587,
+      "detected_transformations": [
+        "rotation"
+      ],
+      "action_used": "reflect",
+      "error_message": null,
+      "num_train_examples": 1,
+      "num_test_examples": 1,
+      "grid_size": "10x10",
+      "primary_transformation": "rotation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "angle": 180,
+        "per_object": true,
+        "color": 3
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "reflect",
+      "fallback_reason": "direct_rotate",
+      "timing": {
+        "total": 5.66,
+        "llm_response": 5.653,
+        "detection": 0.001,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_add_border_09",
+      "task_file": "data/task_add_border_09.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.875,
+      "execution_time": 4.679024696350098,
+      "detected_transformations": [
+        "rotation"
+      ],
+      "action_used": "reflect",
+      "error_message": null,
+      "num_train_examples": 1,
+      "num_test_examples": 1,
+      "grid_size": "8x8",
+      "primary_transformation": "rotation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "angle": 90,
+        "per_object": true,
+        "color": 4
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "reflect",
+      "fallback_reason": "direct_rotate",
+      "timing": {
+        "total": 4.679,
+        "llm_response": 4.667,
+        "detection": 0.001,
+        "action_execution": 0.001
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    },
+    {
+      "task_id": "task_add_border_10",
+      "task_file": "data/task_add_border_10.json",
+      "success": true,
+      "is_correct": false,
+      "accuracy": 0.84,
+      "execution_time": 5.3482019901275635,
+      "detected_transformations": [
+        "rotation"
+      ],
+      "action_used": "reflect",
+      "error_message": null,
+      "num_train_examples": 1,
+      "num_test_examples": 1,
+      "grid_size": "10x10",
+      "primary_transformation": "rotation",
+      "transformation_confidence": 1.0,
+      "transformation_params": {
+        "angle": 90,
+        "per_object": true,
+        "color": 3
+      },
+      "was_fallback_used": true,
+      "llm_proposed_action": "reflect",
+      "fallback_reason": "direct_rotate",
+      "timing": {
+        "total": 5.348,
+        "llm_response": 5.339,
+        "detection": 0.0,
+        "action_execution": 0.0
+      },
+      "complexity": {
+        "mode": "single",
+        "num_colors": 1,
+        "num_objects": 0
+      }
+    }
+  ]
+}

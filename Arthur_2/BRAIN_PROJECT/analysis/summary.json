@@ -1,66 +1,66 @@
 {
-  "generated_at": "2026-02-02T16:02:31.539021",
-  "total_tasks": 516,
+  "generated_at": "2026-02-04T11:39:42.771062",
+  "total_tasks": 1356,
   "overall": {
-    "accuracy_mean": 0.9742591246770026,
-    "accuracy_std": 0.08040473284218573,
-    "success_rate": 0.7810077519379846
+    "accuracy_mean": 0.9763566248770894,
+    "accuracy_std": 0.08929023873379936,
+    "success_rate": 0.8089970501474927
   },
   "by_transformation": {
     "add_border": {
-      "count": 25,
+      "count": 49,
       "accuracy_mean": 1.0,
       "success_rate": 1.0
     },
     "color_change": {
-      "count": 17,
-      "accuracy_mean": 0.9964705882352942,
-      "success_rate": 0.9411764705882353
+      "count": 41,
+      "accuracy_mean": 0.9897560975609756,
+      "success_rate": 0.8292682926829268
     },
     "reflection": {
-      "count": 68,
-      "accuracy_mean": 0.9650245098039216,
-      "success_rate": 0.7794117647058824
+      "count": 165,
+      "accuracy_mean": 0.9667373737373737,
+      "success_rate": 0.793939393939394
     },
     "rotation": {
-      "count": 59,
-      "accuracy_mean": 0.945021186440678,
-      "success_rate": 0.4745762711864407
+      "count": 156,
+      "accuracy_mean": 0.9440905448717948,
+      "success_rate": 0.5384615384615384
     },
     "translation": {
-      "count": 82,
-      "accuracy_mean": 0.9965853658536585,
-      "success_rate": 0.9024390243902439
+      "count": 190,
+      "accuracy_mean": 0.9941052631578947,
+      "success_rate": 0.8315789473684211
     },
     "composite": {
-      "count": 63,
-      "accuracy_mean": 0.942635582010582,
-      "success_rate": 0.42857142857142855
+      "count": 147,
+      "accuracy_mean": 0.9629662698412698,
+      "success_rate": 0.5918367346938775
     },
     "draw_line": {
-      "count": 39,
-      "accuracy_mean": 0.997948717948718,
-      "success_rate": 0.9487179487179487
+      "count": 98,
+      "accuracy_mean": 0.9987755102040816,
+      "success_rate": 0.9693877551020408
     },
     "tiling": {
-      "count": 62,
+      "count": 182,
       "accuracy_mean": 1.0,
       "success_rate": 1.0
     },
     "flood_fill": {
-      "count": 22,
+      "count": 81,
       "accuracy_mean": 1.0,
       "success_rate": 1.0
     },
     "scaling": {
-      "count": 26,
-      "accuracy_mean": 0.9946153846153846,
-      "success_rate": 0.8846153846153846
+      "count": 92,
+      "accuracy_mean": 0.9965217391304347,
+      "success_rate": 0.9021739130434783
     },
     "symmetry": {
-      "count": 24,
-      "accuracy_mean": 0.9826562499999999,
-      "success_rate": 0.6666666666666666
+      "count": 84,
+      "accuracy_mean": 0.9900446428571428,
+      "success_rate": 0.7619047619047619
     }
   },
   "by_model": {
@@ -78,6 +78,11 @@
       "count": 52,
       "accuracy_mean": 0.9752804487179488,
       "success_rate": 0.8076923076923077
+    },
+    "gemma2": {
+      "count": 840,
+      "accuracy_mean": 0.9776450892857143,
+      "success_rate": 0.8261904761904761
     }
   }
 }
