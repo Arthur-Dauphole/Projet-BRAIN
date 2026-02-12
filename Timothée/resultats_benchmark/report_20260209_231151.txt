@@ -1,0 +1,53 @@
+======================================================================
+RAPPORT DE BENCHMARK ARC
+======================================================================
+
+Date d'exécution: 2026-02-09 23:11:55
+Paramètres: use_shape_detection=True
+
+RÉSUMÉ GLOBAL
+----------------------------------------------------------------------
+Fichiers traités: 140
+  ✓ Succès: 140
+  ✗ Échecs: 0
+Tests totaux: 140
+Tests corrects: 20
+Précision globale: 14.29%
+Temps d'exécution moyen: 0.00 secondes
+
+DISTRIBUTION DES TYPES DE RÈGLES
+----------------------------------------------------------------------
+translations        :  74 problèmes ( 24.32% de précision)
+color_changes       :  70 problèmes ( 20.00% de précision)
+propagations        :  52 problèmes (  0.00% de précision)
+connections         :  12 problèmes ( 16.67% de précision)
+
+TOP 10 MEILLEURES PERFORMANCES
+----------------------------------------------------------------------
+ 1. task_blob_01.json               1/ 1 ( 100.0%) en 0.00s
+ 2. task_blob_06.json               1/ 1 ( 100.0%) en 0.00s
+ 3. task_color_change_01.json       1/ 1 ( 100.0%) en 0.00s
+ 4. task_color_change_02.json       1/ 1 ( 100.0%) en 0.00s
+ 5. task_color_change_03.json       1/ 1 ( 100.0%) en 0.00s
+ 6. task_color_change_04.json       1/ 1 ( 100.0%) en 0.00s
+ 7. task_color_change_05.json       1/ 1 ( 100.0%) en 0.00s
+ 8. task_color_change_06.json       1/ 1 ( 100.0%) en 0.00s
+ 9. task_color_change_07.json       1/ 1 ( 100.0%) en 0.00s
+10. task_color_change_08.json       1/ 1 ( 100.0%) en 0.00s
+
+TOP 10 PIRE PERFORMANCES
+----------------------------------------------------------------------
+ 1. task_add_border_01.json         0/ 1 (   0.0%)
+ 2. task_add_border_02.json         0/ 1 (   0.0%)
+ 3. task_add_border_03.json         0/ 1 (   0.0%)
+ 4. task_add_border_04.json         0/ 1 (   0.0%)
+ 5. task_add_border_05.json         0/ 1 (   0.0%)
+ 6. task_add_border_06.json         0/ 1 (   0.0%)
+ 7. task_add_border_07.json         0/ 1 (   0.0%)
+ 8. task_add_border_08.json         0/ 1 (   0.0%)
+ 9. task_add_border_09.json         0/ 1 (   0.0%)
+10. task_add_border_10.json         0/ 1 (   0.0%)
+
+======================================================================
+FIN DU RAPPORT
+======================================================================

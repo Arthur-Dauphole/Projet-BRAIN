@@ -1,0 +1,1314 @@
+"""
+RUNNER COMPLET - Système de benchmark ARC
+Contient toutes les classes nécessaires
+"""
+
+import json
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+import glob
+import time
+from datetime import datetime
+from collections import defaultdict, Counter
+import pandas as pd
+import seaborn as sns
+from typing import Dict, List, Tuple, Any, Optional
+import sys
+import copy
+from scipy import ndimage
+
+# ============================================
+# PARTIE 1: CLASSES DU SYSTÈME ARC (à copier depuis votre code)
+# ============================================
+
+class GeometryDetector:
+    """Détecte tous les objets géométriques présents dans une grille."""
+    
+    def __init__(self):
+        self.grid = None
+        self.objects = []
+        
+    def load_grid(self, grid):
+        """Charge une grille pour l'analyser."""
+        self.grid = np.array(grid)
+        self.objects = []
+        
+    def extract_objects(self):
+        """
+        Extrait tous les objets distincts de la grille.
+        Un objet = pixels de même couleur connectés (8-connectivité).
+        
+        Returns:
+            list: Liste de (color, positions) pour chaque objet
+        """
+        objects = []
+        
+        # Pour chaque couleur non-noire
+        for color in range(1, 10):
+            # Créer un masque binaire pour cette couleur
+            mask = (self.grid == color).astype(int)
+            
+            if not mask.any():
+                continue
+            
+            # Trouver les composantes connexes (8-connectivité)
+            labeled, num_features = ndimage.label(mask, structure=np.ones((3, 3)))
+            
+            # Pour chaque composante
+            for obj_id in range(1, num_features + 1):
+                positions = np.argwhere(labeled == obj_id)
+                objects.append({
+                    'color': color,
+                    'positions': positions,
+                    'size': len(positions)
+                })
+        
+        return objects
+    
+    def detect_line_segment(self, positions):
+        """Détecte si un ensemble de positions forme un segment de ligne."""
+        if len(positions) < 2:
+            return None
+        
+        # Vérifier alignement horizontal
+        rows = positions[:, 0]
+        if len(set(rows)) == 1:
+            cols = sorted(positions[:, 1])
+            if all(cols[i+1] - cols[i] == 1 for i in range(len(cols)-1)):
+                return {
+                    "orientation": "horizontal",
+                    "length": len(positions),
+                    "start": tuple(positions[0]),
+                    "end": tuple(positions[-1])
+                }
+        
+        # Vérifier alignement vertical
+        cols = positions[:, 1]
+        if len(set(cols)) == 1:
+            rows = sorted(positions[:, 0])
+            if all(rows[i+1] - rows[i] == 1 for i in range(len(rows)-1)):
+                return {
+                    "orientation": "vertical",
+                    "length": len(positions),
+                    "start": tuple(positions[0]),
+                    "end": tuple(positions[-1])
+                }
+        
+        # Vérifier diagonale
+        sorted_positions = positions[positions[:, 0].argsort()]
+        diffs = np.diff(sorted_positions, axis=0)
+        
+        # Diagonale descendante (↘)
+        if len(diffs) > 0 and np.all((diffs[:, 0] == 1) & (diffs[:, 1] == 1)):
+            return {
+                "orientation": "diagonal_down_right",
+                "length": len(positions),
+                "start": tuple(sorted_positions[0]),
+                "end": tuple(sorted_positions[-1])
+            }
+        
+        # Diagonale montante (↗)
+        if len(diffs) > 0 and np.all((diffs[:, 0] == 1) & (diffs[:, 1] == -1)):
+            return {
+                "orientation": "diagonal_up_right",
+                "length": len(positions),
+                "start": tuple(sorted_positions[0]),
+                "end": tuple(sorted_positions[-1])
+            }
+        
+        return None
+    
+    def detect_all(self, grid):
+        """
+        Détecte tous les objets géométriques dans une grille.
+        
+        Returns:
+            dict: Résumé de l'analyse avec tous les objets détectés
+        """
+        self.load_grid(grid)
+        
+        # Extraire tous les objets
+        objects = self.extract_objects()
+        
+        if not objects:
+            return {
+                "total_objects": 0,
+                "objects": [],
+                "summary": "Grille vide"
+            }
+        
+        # Classifier chaque objet
+        type_counts = {}
+        for obj in objects:
+            segment = self.detect_line_segment(obj['positions'])
+            if segment:
+                obj_type = 'segment'
+            else:
+                obj_type = 'blob'
+            
+            type_counts[obj_type] = type_counts.get(obj_type, 0) + 1
+        
+        return {
+            "total_objects": len(objects),
+            "objects": objects,
+            "summary": dict(type_counts),
+            "colors_used": list(set(obj['color'] for obj in objects))
+        }
+
+# ============================================
+# PARTIE 2: EXTRACTEUR DE RÈGLES
+# ============================================
+
+class AdvancedGridRuleExtractor:
+    """Extrait les règles de transformation en utilisant la détection de formes."""
+    
+    def __init__(self, use_shape_detection: bool = True):
+        self.color_changes = {}  # {old_color: new_color}
+        self.connections = {}    # {color: set()} où set contient 'H', 'V', 'D'
+        self.translations = {}   # {color: (dx, dy)}
+        self.propagations = {}   # règles de propagation
+        self.position_based_changes = {}  # changements basés sur la position
+        self.color_pairs = set()  # stocke toutes les paires de couleurs
+        self.use_shape_detection = use_shape_detection
+        
+        if use_shape_detection:
+            self.shape_detector = GeometryDetector()
+        else:
+            self.shape_detector = None
+    
+    def extract_from_examples(self, train_examples: List[Dict]) -> None:
+        """Extrait les règles à partir des exemples d'entraînement."""
+        print("=== Extraction des règles depuis les exemples ===")
+        
+        # Réinitialiser les collections
+        self.color_pairs = set()
+        self.color_changes = {}
+        self.connections = {}
+        self.translations = {}
+        self.propagations = {}
+        self.position_based_changes = {}
+        
+        # Collecter toutes les paires de couleurs
+        print("\nPhase 1: Collecte des paires de couleurs...")
+        for idx, example in enumerate(train_examples):
+            input_grid = example["input"]
+            output_grid = example["output"]
+            h, w = len(input_grid), len(input_grid[0])
+            
+            for i in range(h):
+                for j in range(w):
+                    old_color = input_grid[i][j]
+                    new_color = output_grid[i][j]
+                    if old_color != 0 and old_color != new_color:
+                        self.color_pairs.add((old_color, new_color))
+        
+        # Construire la bijection globale
+        print("\nPhase 2: Construction de la bijection...")
+        self._build_color_mapping_advanced()
+        
+        # Analyser les transformations
+        print("\nPhase 3: Analyse des transformations...")
+        for idx, example in enumerate(train_examples):
+            input_grid = example["input"]
+            output_grid = example["output"]
+            
+            # Vérifier si c'est un pattern par colonne
+            h, w = len(input_grid), len(input_grid[0])
+            is_column_pattern = True
+            for i in range(1, h):
+                if input_grid[i] != input_grid[0] or output_grid[i] != output_grid[0]:
+                    is_column_pattern = False
+                    break
+            
+            if is_column_pattern:
+                print(f"  Exemple {idx+1}: Pattern par colonne détecté")
+                # Stocker les transformations par colonne comme référence
+                for j in range(w):
+                    old_color = input_grid[0][j]
+                    new_color = output_grid[0][j]
+                    if old_color != new_color:
+                        self.position_based_changes[('column', j)] = (old_color, new_color)
+            
+            # Analyser les autres transformations
+            self._analyze_transformations_with_propagation(input_grid, output_grid)
+    
+    def _build_color_mapping_advanced(self):
+        """Construit le mapping de couleurs avancé."""
+        if not self.color_pairs:
+            return
+            
+        print("\n  Construction du mapping de couleurs avancé...")
+        
+        # Détecter les paires réciproques (bijections)
+        forward_pairs = set(self.color_pairs)
+        backward_pairs = set((new, old) for (old, new) in self.color_pairs)
+        reciprocal_pairs = forward_pairs.intersection(backward_pairs)
+        
+        # Si plus de la moitié des paires sont réciproques, c'est probablement une bijection
+        if len(reciprocal_pairs) >= len(self.color_pairs) / 2:
+            print("  Pattern bijectif détecté! Construction de paires réciproques...")
+            
+            # Créer des paires uniques
+            unique_pairs = set()
+            for old, new in self.color_pairs:
+                # Ne garder que la version "croissante" pour éviter les doublons
+                if (new, old) not in unique_pairs:
+                    unique_pairs.add((old, new))
+            
+            # Construire un mapping bidirectionnel
+            self.color_changes = {}
+            for old, new in unique_pairs:
+                self.color_changes[old] = new
+                # Si c'est une bijection, on ajoute aussi l'inverse
+                if (new, old) in self.color_pairs:
+                    self.color_changes[new] = old
+        else:
+            # Sinon, utiliser l'approche par fréquence avec résolution de conflits
+            print("  Utilisation de l'approche par fréquence avec résolution de conflits...")
+            pair_counts = {}
+            for old, new in self.color_pairs:
+                pair_counts[(old, new)] = pair_counts.get((old, new), 0) + 1
+            
+            # Trier par fréquence (plus fréquent d'abord)
+            sorted_pairs = sorted(pair_counts.items(), key=lambda x: x[1], reverse=True)
+            
+            # Construire le mapping avec résolution de conflits
+            forward_map = {}
+            
+            for (old, new), count in sorted_pairs:
+                if old not in forward_map:
+                    forward_map[old] = new
+            
+            self.color_changes = forward_map
+        
+        # Afficher le mapping final
+        print("  Mapping final des couleurs:")
+        for old, new in sorted(self.color_changes.items()):
+            print(f"    {old} -> {new}")
+    
+    def _analyze_transformations_with_propagation(self, input_grid: List[List[int]], 
+                                                 output_grid: List[List[int]]) -> None:
+        """Analyse les transformations avec détection de propagations."""
+        h = len(input_grid)
+        w = len(input_grid[0])
+        
+        input_points_by_color = defaultdict(set)
+        output_points_by_color = defaultdict(set)
+        
+        # Collecter les points par couleur
+        for i in range(h):
+            for j in range(w):
+                c_in = input_grid[i][j]
+                c_out = output_grid[i][j]
+                if c_in != 0:
+                    input_points_by_color[c_in].add((i, j))
+                if c_out != 0:
+                    output_points_by_color[c_out].add((i, j))
+        
+        # Analyser chaque couleur en sortie
+        for color_out in output_points_by_color.keys():
+            possible_input_colors = []
+            
+            # Chercher les couleurs d'entrée qui peuvent devenir cette couleur de sortie
+            for old_color, new_color in self.color_changes.items():
+                if new_color == color_out:
+                    possible_input_colors.append(old_color)
+            
+            # Si cette couleur de sortie n'est pas le résultat d'un changement,
+            # elle peut provenir de la même couleur d'entrée
+            if color_out not in self.color_changes.values():
+                possible_input_colors.append(color_out)
+            
+            input_points_for_color = set()
+            for c_in in possible_input_colors:
+                if c_in in input_points_by_color:
+                    input_points_for_color.update(input_points_by_color[c_in])
+            
+            output_points = output_points_by_color[color_out]
+            
+            if not input_points_for_color:
+                continue
+            
+            # Essayer de détecter une propagation
+            self._try_detect_propagation(input_points_for_color, output_points, color_out)
+            # Essayer de détecter une translation
+            if not self._try_detect_translation(input_points_for_color, output_points, color_out):
+                self._try_detect_connection(input_points_for_color, output_points, color_out)
+    
+    def _try_detect_propagation(self, input_points: set[Tuple[int, int]],
+                               output_points: set[Tuple[int, int]], 
+                               color: int) -> bool:
+        """Détecte les propagations (horizontales et verticales)."""
+        if not input_points or not output_points:
+            return False
+        
+        # Convertir en listes pour analyse
+        input_list = list(input_points)
+        output_list = list(output_points)
+        
+        # Regrouper par ligne et colonne
+        input_by_row = defaultdict(list)
+        input_by_col = defaultdict(list)
+        
+        for i, j in input_list:
+            input_by_row[i].append(j)
+            input_by_col[j].append(i)
+        
+        output_by_row = defaultdict(list)
+        output_by_col = defaultdict(list)
+        
+        for i, j in output_list:
+            output_by_row[i].append(j)
+            output_by_col[j].append(i)
+        
+        propagation_detected = False
+        
+        # Détecter les propagations horizontales
+        for row, input_cols in input_by_row.items():
+            if row in output_by_row:
+                output_cols = output_by_row[row]
+                if len(output_cols) > len(input_cols):
+                    # Vérifier si c'est une propagation complète
+                    input_cols_sorted = sorted(input_cols)
+                    output_cols_sorted = sorted(output_cols)
+                    
+                    # Calculer la plage
+                    min_col = min(output_cols_sorted)
+                    max_col = max(output_cols_sorted)
+                    
+                    # Vérifier si tous les pixels intermédiaires sont remplis
+                    if all(col in output_cols for col in range(min_col, max_col + 1)):
+                        # Propagation horizontale détectée
+                        self.propagations[(color, 'horizontal', row)] = {
+                            'type': 'horizontal',
+                            'color': color,
+                            'row': row,
+                            'full_range': (min_col, max_col)
+                        }
+                        print(f"  Propagation horizontale pour couleur {color}, ligne {row}")
+                        propagation_detected = True
+        
+        # Détecter les propagations verticales
+        for col, input_rows in input_by_col.items():
+            if col in output_by_col:
+                output_rows = output_by_col[col]
+                if len(output_rows) > len(input_rows):
+                    # Vérifier si c'est une propagation complète
+                    input_rows_sorted = sorted(input_rows)
+                    output_rows_sorted = sorted(output_rows)
+                    
+                    # Calculer la plage
+                    min_row = min(output_rows_sorted)
+                    max_row = max(output_rows_sorted)
+                    
+                    # Vérifier si tous les pixels intermédiaires sont remplis
+                    if all(row in output_rows for row in range(min_row, max_row + 1)):
+                        # Propagation verticale détectée
+                        self.propagations[(color, 'vertical', col)] = {
+                            'type': 'vertical',
+                            'color': color,
+                            'col': col,
+                            'full_range': (min_row, max_row)
+                        }
+                        print(f"  Propagation verticale pour couleur {color}, colonne {col}")
+                        propagation_detected = True
+        
+        return propagation_detected
+    
+    def _try_detect_translation(self, input_points: set[Tuple[int, int]],
+                               output_points: set[Tuple[int, int]], 
+                               color: int) -> bool:
+        """Détecte si c'est une translation. Retourne True si détectée."""
+        if len(input_points) != len(output_points) or not input_points:
+            return False
+        
+        ref_in = next(iter(input_points))
+        possible_displacements = set()
+        
+        for p_out in output_points:
+            dx = p_out[0] - ref_in[0]
+            dy = p_out[1] - ref_in[1]
+            possible_displacements.add((dx, dy))
+        
+        for dx, dy in possible_displacements:
+            match_all = True
+            for p_in in input_points:
+                moved = (p_in[0] + dx, p_in[1] + dy)
+                if moved not in output_points:
+                    match_all = False
+                    break
+            
+            if match_all:
+                for p_out in output_points:
+                    original = (p_out[0] - dx, p_out[1] - dy)
+                    if original not in input_points:
+                        match_all = False
+                        break
+            
+            if match_all:
+                self.translations[color] = (dx, dy)
+                print(f"  Translation pour {color}: ({dx}, {dy})")
+                return True
+        
+        return False
+    
+    def _try_detect_connection(self, input_points: set[Tuple[int, int]],
+                              output_points: set[Tuple[int, int]],
+                              color: int) -> None:
+        """Détecte TOUS les types de connexion entre les points."""
+        base_points = input_points.intersection(output_points)
+        added_points = output_points - input_points
+        
+        if not added_points or len(base_points) < 2:
+            return
+        
+        base_list = list(base_points)
+        for i in range(len(base_list)):
+            for j in range(i+1, len(base_list)):
+                p1 = base_list[i]
+                p2 = base_list[j]
+                
+                # Détection horizontale
+                if p1[0] == p2[0]:  # Même ligne
+                    min_y = min(p1[1], p2[1])
+                    max_y = max(p1[1], p2[1])
+                    line_points = {(p1[0], y) for y in range(min_y, max_y+1)}
+                    
+                    if line_points.issubset(output_points):
+                        if color not in self.connections:
+                            self.connections[color] = set()
+                        self.connections[color].add('H')
+                        print(f"  Connexion horizontale détectée pour couleur {color}")
+                
+                # Détection verticale
+                if p1[1] == p2[1]:  # Même colonne
+                    min_x = min(p1[0], p2[0])
+                    max_x = max(p1[0], p2[0])
+                    line_points = {(x, p1[1]) for x in range(min_x, max_x+1)}
+                    
+                    if line_points.issubset(output_points):
+                        if color not in self.connections:
+                            self.connections[color] = set()
+                        self.connections[color].add('V')
+                        print(f"  Connexion verticale détectée pour couleur {color}")
+    
+    def get_rules(self) -> Dict:
+        """Retourne toutes les règles extraites."""
+        # Convertir les sets en listes pour la sérialisation JSON
+        connections_as_lists = {}
+        for color, conn_set in self.connections.items():
+            connections_as_lists[color] = list(conn_set) if conn_set else []
+        
+        return {
+            "color_changes": self.color_changes,
+            "connections": connections_as_lists,
+            "translations": self.translations,
+            "propagations": self.propagations,
+            "position_based_changes": self.position_based_changes
+        }
+
+# ============================================
+# PARTIE 3: TRANSFORMATEUR
+# ============================================
+
+class AdvancedGridTransformer:
+    """Applique les règles de transformation."""
+    
+    def __init__(self, rules: Dict):
+        self.color_changes = rules.get("color_changes", {})
+        # Convertir les connexions en sets si ce sont des listes
+        connections = rules.get("connections", {})
+        self.connections = {}
+        for color, conn_type in connections.items():
+            if isinstance(conn_type, list):
+                self.connections[color] = set(conn_type)
+            elif isinstance(conn_type, set):
+                self.connections[color] = conn_type
+            else:
+                self.connections[color] = {conn_type}
+        self.translations = rules.get("translations", {})
+        self.propagations = rules.get("propagations", {})
+        self.position_based_changes = rules.get("position_based_changes", {})
+    
+    def apply_rules(self, input_grid: List[List[int]]) -> List[List[int]]:
+        """
+        Applique les règles dans l'ordre avec priorité :
+        1. Si bijection globale disponible, l'utiliser
+        2. Sinon, utiliser les transformations par position
+        3. Propagations, connexions, translations
+        """
+        grid = copy.deepcopy(input_grid)
+        h = len(grid)
+        w = len(grid[0])
+        
+        # Étape 1: Vérifier si on a une bijection globale complète
+        if self.color_changes and len(self.color_changes) >= 4:  # Au moins 4 paires
+            print("  Utilisation de la bijection globale")
+            for i in range(h):
+                for j in range(w):
+                    old_color = grid[i][j]
+                    if old_color in self.color_changes:
+                        grid[i][j] = self.color_changes[old_color]
+            return grid
+        
+        # Étape 2: Sinon, essayer les transformations par colonne
+        grid = self._apply_position_based_changes(grid)
+        
+        # Étape 3: Autres transformations
+        grid = self._apply_propagations(grid)
+        grid = self._apply_connections(grid)
+        grid = self._apply_translations_advanced(grid)
+        
+        return grid
+    
+    def _apply_position_based_changes(self, grid: List[List[int]]) -> List[List[int]]:
+        """Applique les changements basés sur la position (colonne ou ligne)."""
+        h = len(grid)
+        w = len(grid[0])
+        
+        # Vérifier si les transformations par position sont cohérentes
+        if len(self.position_based_changes) > 2:
+            print("  ATTENTION: Transformations par position multiples - utilisation limitée")
+            # Ne pas appliquer dans ce cas pour éviter les erreurs
+            return grid
+        
+        # Appliquer les transformations par colonne
+        for (change_type, index), (old_color, new_color) in self.position_based_changes.items():
+            if change_type == 'column' and 0 <= index < w:
+                # Transformer toute la colonne
+                for i in range(h):
+                    if grid[i][index] == old_color:
+                        grid[i][index] = new_color
+        
+        return grid
+    
+    def _apply_propagations(self, grid: List[List[int]]) -> List[List[int]]:
+        """Applique les règles de propagation."""
+        h = len(grid)
+        w = len(grid[0])
+        
+        # Pour chaque règle de propagation
+        for key, rule in self.propagations.items():
+            color = rule['color']
+            rule_type = rule['type']
+            
+            if rule_type == 'horizontal':
+                row = rule['row']
+                min_col, max_col = rule['full_range']
+                
+                # Remplir toute la ligne entre min_col et max_col
+                if 0 <= row < h:
+                    for col in range(min_col, max_col + 1):
+                        if 0 <= col < w and grid[row][col] == 0:
+                            grid[row][col] = color
+            
+            elif rule_type == 'vertical':
+                col = rule['col']
+                min_row, max_row = rule['full_range']
+                
+                # Remplir toute la colonne entre min_row et max_row
+                if 0 <= col < w:
+                    for row in range(min_row, max_row + 1):
+                        if 0 <= row < h and grid[row][col] == 0:
+                            grid[row][col] = color
+        
+        return grid
+    
+    def _apply_connections(self, grid: List[List[int]]) -> List[List[int]]:
+        """Applique les règles de connexion."""
+        h = len(grid)
+        w = len(grid[0])
+        
+        # Appliquer tous les types de connexion pour chaque couleur
+        for color, conn_types in self.connections.items():
+            # Trouver tous les points de cette couleur
+            points = [(i, j) for i in range(h) for j in range(w) 
+                     if grid[i][j] == color]
+            
+            if len(points) < 2:
+                continue
+            
+            # Pour chaque type de connexion détecté
+            for conn_type in conn_types:
+                # Pour chaque paire de points
+                for k in range(len(points)):
+                    for l in range(k+1, len(points)):
+                        p1 = points[k]
+                        p2 = points[l]
+                        
+                        if conn_type == 'H' and p1[0] == p2[0]:  # Horizontal
+                            self._draw_horizontal_line(grid, p1, p2, color)
+                        
+                        elif conn_type == 'V' and p1[1] == p2[1]:  # Vertical
+                            self._draw_vertical_line(grid, p1, p2, color)
+        
+        return grid
+    
+    def _draw_horizontal_line(self, grid: List[List[int]], 
+                            p1: Tuple[int, int], p2: Tuple[int, int], 
+                            color: int) -> None:
+        """Dessine une ligne horizontale entre p1 et p2."""
+        row = p1[0]
+        start_col = min(p1[1], p2[1])
+        end_col = max(p1[1], p2[1])
+        
+        for col in range(start_col, end_col + 1):
+            if grid[row][col] == 0:  # Remplir seulement les cases vides
+                grid[row][col] = color
+    
+    def _draw_vertical_line(self, grid: List[List[int]], 
+                          p1: Tuple[int, int], p2: Tuple[int, int], 
+                          color: int) -> None:
+        """Dessine une ligne verticale entre p1 et p2."""
+        col = p1[1]
+        start_row = min(p1[0], p2[0])
+        end_row = max(p1[0], p2[0])
+        
+        for row in range(start_row, end_row + 1):
+            if grid[row][col] == 0:  # Remplir seulement les cases vides
+                grid[row][col] = color
+    
+    def _apply_translations_advanced(self, grid: List[List[int]]) -> List[List[int]]:
+        """Applique les translations avancées."""
+        h = len(grid)
+        w = len(grid[0])
+        
+        # Créer une copie de la grille pour l'analyse
+        working_grid = copy.deepcopy(grid)
+        
+        # Étape 1: Appliquer les changements de couleur (déjà fait, mais au cas où)
+        for i in range(h):
+            for j in range(w):
+                color = working_grid[i][j]
+                if color in self.color_changes:
+                    working_grid[i][j] = self.color_changes[color]
+        
+        # Étape 2: Préparer la grille finale
+        final_grid = [[0 for _ in range(w)] for _ in range(h)]
+        
+        # Étape 3: Appliquer les translations simples
+        for color, (dx, dy) in self.translations.items():
+            for i in range(h):
+                for j in range(w):
+                    if working_grid[i][j] == color:
+                        new_i = i + dy
+                        new_j = j + dx
+                        if 0 <= new_i < h and 0 <= new_j < w:
+                            if final_grid[new_i][new_j] == 0:
+                                final_grid[new_i][new_j] = color
+        
+        # Étape 4: Copier les pixels restants
+        for i in range(h):
+            for j in range(w):
+                if working_grid[i][j] != 0 and final_grid[i][j] == 0:
+                    final_grid[i][j] = working_grid[i][j]
+        
+        return final_grid
+
+# ============================================
+# PARTIE 4: BENCHMARK
+# ============================================
+
+class ARCBatchBenchmark:
+    """
+    Classe principale pour le benchmarking du système ARC sur un ensemble de fichiers.
+    """
+    
+    def __init__(self, use_shape_detection: bool = True, verbose: bool = False):
+        """
+        Initialise le benchmark.
+        
+        Args:
+            use_shape_detection: Si True, utilise la détection de formes
+            verbose: Si True, affiche des informations détaillées pendant le traitement
+        """
+        self.use_shape_detection = use_shape_detection
+        self.verbose = verbose
+        self.results = []
+        self.statistics = {}
+        
+    def load_all_json_files(self, directory_path: str) -> List[Dict]:
+        """
+        Charge tous les fichiers JSON d'un répertoire.
+        
+        Args:
+            directory_path: Chemin vers le dossier contenant les fichiers JSON
+            
+        Returns:
+            Liste des données chargées avec leurs noms de fichiers
+        """
+        print(f"Chargement des fichiers JSON depuis {directory_path}")
+        
+        # Correction du chemin
+        if '\\' in directory_path and not directory_path.startswith('r'):
+            directory_path = directory_path.replace('\\', '/')
+        
+        json_files = glob.glob(os.path.join(directory_path, "*.json"))
+        if not json_files:
+            print(f"ATTENTION: Aucun fichier JSON trouvé dans {directory_path}")
+            return []
+        
+        loaded_data = []
+        for filepath in json_files:
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    filename = os.path.basename(filepath)
+                    loaded_data.append({
+                        'filename': filename,
+                        'data': data,
+                        'filepath': filepath
+                    })
+                if self.verbose:
+                    print(f"  ✓ {filename}")
+            except Exception as e:
+                print(f"  ✗ Erreur lors du chargement de {filepath}: {e}")
+        
+        print(f"Chargement terminé: {len(loaded_data)} fichiers chargés")
+        return loaded_data
+    
+    def evaluate_single_problem(self, problem_data: Dict) -> Dict:
+        """
+        Évalue un seul problème ARC.
+        
+        Args:
+            problem_data: Données du problème (avec 'train' et 'test')
+            
+        Returns:
+            Résultats de l'évaluation pour ce problème
+        """
+        filename = problem_data['filename']
+        data = problem_data['data']
+        
+        print(f"\n{'='*70}")
+        print(f"ÉVALUATION DU PROBLÈME: {filename}")
+        print(f"{'='*70}")
+        
+        start_time = time.time()
+        
+        # Vérifier la structure des données
+        if 'train' not in data:
+            print(f"  ✗ Fichier {filename} n'a pas de données d'entraînement ('train')")
+            return {
+                'filename': filename,
+                'success': False,
+                'error': 'Missing train data',
+                'execution_time': 0
+            }
+        
+        # Extraire les règles
+        try:
+            extractor = AdvancedGridRuleExtractor(use_shape_detection=self.use_shape_detection)
+            extractor.extract_from_examples(data["train"])
+            rules = extractor.get_rules()
+            
+            # Analyser les types de règles
+            rule_types = self._analyze_rule_types(rules)
+            
+            if self.verbose:
+                print(f"  Règles extraites: {rule_types}")
+            
+            # Préparer le transformateur
+            transformer = AdvancedGridTransformer(rules)
+            
+            # Évaluer sur les tests
+            test_results = []
+            total_tests = 0
+            correct_tests = 0
+            
+            # Chercher les tests (supporte "Test" ou "test")
+            test_key = "Test" if "Test" in data else "test"
+            
+            if test_key in data and data[test_key]:
+                for test_idx, test_case in enumerate(data[test_key]):
+                    total_tests += 1
+                    
+                    input_grid = test_case["input"]
+                    
+                    # Générer la prédiction
+                    predicted_output = transformer.apply_rules(input_grid)
+                    
+                    # Vérifier si l'output attendu existe pour évaluation
+                    if "output" in test_case:
+                        expected_output = test_case["output"]
+                        is_correct = self._compare_grids(predicted_output, expected_output)
+                        
+                        if is_correct:
+                            correct_tests += 1
+                        
+                        test_results.append({
+                            'test_index': test_idx,
+                            'input': input_grid,
+                            'predicted': predicted_output,
+                            'expected': expected_output,
+                            'correct': is_correct
+                        })
+                        
+                        if self.verbose:
+                            status = "✓" if is_correct else "✗"
+                            print(f"  Test {test_idx+1}: {status}")
+                    else:
+                        # Pas d'output attendu, on ne peut pas évaluer
+                        test_results.append({
+                            'test_index': test_idx,
+                            'input': input_grid,
+                            'predicted': predicted_output,
+                            'expected': None,
+                            'correct': None
+                        })
+            
+            execution_time = time.time() - start_time
+            
+            # Calculer les statistiques
+            accuracy = correct_tests / total_tests if total_tests > 0 else 0
+            
+            result = {
+                'filename': filename,
+                'success': True,
+                'execution_time': execution_time,
+                'rule_types': rule_types,
+                'total_tests': total_tests,
+                'correct_tests': correct_tests,
+                'accuracy': accuracy,
+                'test_results': test_results,
+                'rules_summary': {
+                    'color_changes_count': len(rules.get('color_changes', {})),
+                    'connections_count': len(rules.get('connections', {})),
+                    'translations_count': len(rules.get('translations', {})),
+                    'propagations_count': len(rules.get('propagations', {})),
+                    'position_changes_count': len(rules.get('position_based_changes', {}))
+                }
+            }
+            
+            print(f"  Résultat: {correct_tests}/{total_tests} tests corrects ({accuracy*100:.1f}%)")
+            print(f"  Temps d'exécution: {execution_time:.2f} secondes")
+            
+            return result
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            print(f"  ✗ Erreur lors du traitement: {e}")
+            return {
+                'filename': filename,
+                'success': False,
+                'error': str(e),
+                'execution_time': execution_time
+            }
+    
+    def _analyze_rule_types(self, rules: Dict) -> List[str]:
+        """
+        Analyse les types de règles extraites.
+        
+        Args:
+            rules: Dictionnaire de règles
+            
+        Returns:
+            Liste des types de règles détectés
+        """
+        rule_types = []
+        
+        if rules.get('color_changes'):
+            rule_types.append('color_changes')
+        
+        if rules.get('connections'):
+            rule_types.append('connections')
+        
+        if rules.get('translations'):
+            rule_types.append('translations')
+        
+        if rules.get('propagations'):
+            rule_types.append('propagations')
+        
+        if rules.get('position_based_changes'):
+            rule_types.append('position_changes')
+        
+        # Détection de patterns spécifiques
+        color_changes = rules.get('color_changes', {})
+        if len(color_changes) >= 4:
+            # Vérifier si c'est une bijection
+            unique_values = set(color_changes.values())
+            if len(color_changes) == len(unique_values):
+                rule_types.append('bijection')
+        
+        return rule_types
+    
+    def _compare_grids(self, grid1: List[List[int]], grid2: List[List[int]]) -> bool:
+        """
+        Compare deux grilles pixel par pixel.
+        
+        Args:
+            grid1: Première grille
+            grid2: Deuxième grille
+            
+        Returns:
+            True si les grilles sont identiques
+        """
+        if len(grid1) != len(grid2):
+            return False
+        
+        for i in range(len(grid1)):
+            if len(grid1[i]) != len(grid2[i]):
+                return False
+            
+            for j in range(len(grid1[i])):
+                if grid1[i][j] != grid2[i][j]:
+                    return False
+        
+        return True
+    
+    def run_benchmark(self, directory_path: str) -> None:
+        """
+        Exécute le benchmark sur tous les fichiers d'un répertoire.
+        
+        Args:
+            directory_path: Chemin vers le dossier contenant les fichiers JSON
+        """
+        print("\n" + "="*70)
+        print("DÉMARRAGE DU BENCHMARK COMPLET")
+        print("="*70)
+        
+        # Charger tous les fichiers
+        all_data = self.load_all_json_files(directory_path)
+        
+        if not all_data:
+            print("Aucune donnée à traiter. Fin du benchmark.")
+            return
+        
+        # Traiter chaque fichier
+        total_files = len(all_data)
+        successful_files = 0
+        failed_files = 0
+        
+        self.results = []
+        
+        for idx, problem_data in enumerate(all_data):
+            print(f"\n[{idx+1}/{total_files}] Traitement de {problem_data['filename']}")
+            
+            result = self.evaluate_single_problem(problem_data)
+            self.results.append(result)
+            
+            if result['success']:
+                successful_files += 1
+            else:
+                failed_files += 1
+        
+        # Générer les statistiques
+        self._generate_statistics()
+        
+        print("\n" + "="*70)
+        print("BENCHMARK TERMINÉ")
+        print("="*70)
+        print(f"Fichiers traités: {total_files}")
+        print(f"  ✓ Succès: {successful_files}")
+        print(f"  ✗ Échecs: {failed_files}")
+        
+        if successful_files > 0:
+            print(f"\nPrécision moyenne: {self.statistics.get('overall_accuracy', 0)*100:.1f}%")
+            print(f"Temps d'exécution moyen: {self.statistics.get('avg_execution_time', 0):.2f} secondes")
+    
+    def _generate_statistics(self) -> None:
+        """Génère les statistiques à partir des résultats."""
+        successful_results = [r for r in self.results if r.get('success')]
+        
+        if not successful_results:
+            self.statistics = {
+                'total_files': len(self.results),
+                'successful_files': 0,
+                'failed_files': len(self.results),
+                'overall_accuracy': 0,
+                'avg_execution_time': 0
+            }
+            return
+        
+        # Statistiques générales
+        total_tests = sum(r.get('total_tests', 0) for r in successful_results)
+        total_correct = sum(r.get('correct_tests', 0) for r in successful_results)
+        
+        # Regrouper par types de règles
+        rule_type_distribution = defaultdict(int)
+        rule_type_accuracy = defaultdict(list)
+        
+        for result in successful_results:
+            rule_types = result.get('rule_types', [])
+            accuracy = result.get('accuracy', 0)
+            
+            for rule_type in rule_types:
+                rule_type_distribution[rule_type] += 1
+                rule_type_accuracy[rule_type].append(accuracy)
+        
+        # Calculer les moyennes par type de règle
+        rule_type_avg_accuracy = {}
+        for rule_type, accuracies in rule_type_accuracy.items():
+            rule_type_avg_accuracy[rule_type] = np.mean(accuracies) if accuracies else 0
+        
+        # Distribution des combinaisons de règles
+        rule_combinations = Counter()
+        for result in successful_results:
+            rule_types = result.get('rule_types', [])
+            if rule_types:
+                combination_key = '+'.join(sorted(rule_types))
+                rule_combinations[combination_key] += 1
+        
+        self.statistics = {
+            'total_files': len(self.results),
+            'successful_files': len(successful_results),
+            'failed_files': len(self.results) - len(successful_results),
+            'total_tests': total_tests,
+            'total_correct': total_correct,
+            'overall_accuracy': total_correct / total_tests if total_tests > 0 else 0,
+            'avg_execution_time': np.mean([r.get('execution_time', 0) for r in successful_results]),
+            'rule_type_distribution': dict(rule_type_distribution),
+            'rule_type_accuracy': dict(rule_type_avg_accuracy),
+            'rule_combinations': dict(rule_combinations),
+            'individual_results': self.results
+        }
+    
+    def generate_report(self, output_dir: str = "benchmark_results") -> None:
+        """
+        Génère un rapport complet avec visualisations.
+        
+        Args:
+            output_dir: Répertoire où sauvegarder les résultats
+        """
+        if not self.results:
+            print("Aucun résultat à reporter. Exécutez d'abord run_benchmark().")
+            return
+        
+        # Créer le répertoire de sortie
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Générer un timestamp pour les fichiers
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Sauvegarder les résultats bruts
+        raw_results_file = os.path.join(output_dir, f"raw_results_{timestamp}.json")
+        with open(raw_results_file, 'w', encoding='utf-8') as f:
+            json.dump(self.results, f, indent=2, default=str)
+        
+        # Sauvegarder les statistiques
+        stats_file = os.path.join(output_dir, f"statistics_{timestamp}.json")
+        with open(stats_file, 'w', encoding='utf-8') as f:
+            json.dump(self.statistics, f, indent=2, default=str)
+        
+        print(f"\nRapport généré dans: {output_dir}")
+        print(f"  - Résultats bruts: {os.path.basename(raw_results_file)}")
+        print(f"  - Statistiques: {os.path.basename(stats_file)}")
+        
+        # Générer les visualisations
+        self._generate_visualizations(output_dir, timestamp)
+        
+        # Générer un rapport texte
+        self._generate_text_report(output_dir, timestamp)
+    
+    def _generate_visualizations(self, output_dir: str, timestamp: str) -> None:
+        """Génère les graphiques de visualisation."""
+        try:
+            # 1. Graphique global de performance
+            fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+            fig.suptitle(f"Benchmark ARC - Résultats ({timestamp})", fontsize=16, fontweight='bold')
+            
+            # A. Distribution succès/échecs
+            ax1 = axes[0, 0]
+            success_count = self.statistics['successful_files']
+            fail_count = self.statistics['failed_files']
+            labels = ['Succès', 'Échecs']
+            sizes = [success_count, fail_count]
+            colors = ['#2ECC40', '#FF4136']
+            
+            ax1.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
+            ax1.set_title('Distribution Succès/Échecs')
+            
+            # B. Précision globale
+            ax2 = axes[0, 1]
+            accuracy = self.statistics['overall_accuracy'] * 100
+            ax2.bar(['Précision'], [accuracy], color='#0074D9')
+            ax2.set_ylim([0, 100])
+            ax2.set_ylabel('Précision (%)')
+            ax2.set_title(f'Précision Globale: {accuracy:.1f}%')
+            
+            # Ajouter la valeur sur la barre
+            ax2.text(0, accuracy + 1, f'{accuracy:.1f}%', 
+                    ha='center', va='bottom', fontweight='bold')
+            
+            # C. Distribution des types de règles
+            ax3 = axes[0, 2]
+            rule_dist = self.statistics.get('rule_type_distribution', {})
+            if rule_dist:
+                labels = list(rule_dist.keys())
+                values = list(rule_dist.values())
+                
+                # Traductions françaises
+                french_labels = {
+                    'color_changes': 'Changements\ncouleur',
+                    'connections': 'Connexions',
+                    'translations': 'Translations',
+                    'propagations': 'Propagations',
+                    'position_changes': 'Par position',
+                    'bijection': 'Bijection'
+                }
+                
+                display_labels = [french_labels.get(label, label) for label in labels]
+                
+                bars = ax3.bar(display_labels, values, color='#FF851B')
+                ax3.set_title('Distribution des Types de Règles')
+                ax3.set_ylabel('Nombre de problèmes')
+                
+                # Ajouter les valeurs sur les barres
+                for bar in bars:
+                    height = bar.get_height()
+                    ax3.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                            f'{int(height)}', ha='center', va='bottom')
+            
+            # D. Précision par type de règle
+            ax4 = axes[1, 0]
+            rule_accuracy = self.statistics.get('rule_type_accuracy', {})
+            if rule_accuracy:
+                labels = list(rule_accuracy.keys())
+                accuracies = [acc * 100 for acc in rule_accuracy.values()]
+                
+                display_labels = [french_labels.get(label, label) for label in labels]
+                
+                bars = ax4.bar(display_labels, accuracies, color='#F012BE')
+                ax4.set_title('Précision par Type de Règles')
+                ax4.set_ylabel('Précision (%)')
+                ax4.set_ylim([0, 100])
+                
+                # Ajouter les valeurs sur les barres
+                for bar in bars:
+                    height = bar.get_height()
+                    ax4.text(bar.get_x() + bar.get_width()/2., height + 1,
+                            f'{height:.1f}%', ha='center', va='bottom')
+            
+            # E. Temps d'exécution
+            ax5 = axes[1, 1]
+            execution_times = [r.get('execution_time', 0) for r in self.results if r.get('success')]
+            if execution_times:
+                ax5.hist(execution_times, bins=20, color='#7FDBFF', edgecolor='black')
+                ax5.set_title('Distribution des Temps d\'Exécution')
+                ax5.set_xlabel('Temps (secondes)')
+                ax5.set_ylabel('Nombre de problèmes')
+                
+                # Ajouter des lignes verticales pour la moyenne
+                avg_time = np.mean(execution_times)
+                ax5.axvline(avg_time, color='red', linestyle='--', linewidth=2,
+                          label=f'Moyenne: {avg_time:.2f}s')
+                ax5.legend()
+            
+            # F. Combinaisons de règles les plus fréquentes
+            ax6 = axes[1, 2]
+            rule_combo = self.statistics.get('rule_combinations', {})
+            if rule_combo:
+                # Prendre les 10 combinaisons les plus fréquentes
+                top_combos = sorted(rule_combo.items(), key=lambda x: x[1], reverse=True)[:10]
+                combo_labels = [combo[0] for combo in top_combos]
+                combo_counts = [combo[1] for combo in top_combos]
+                
+                # Raccourcir les labels pour une meilleure lisibilité
+                short_labels = []
+                for label in combo_labels:
+                    short_label = label
+                    if len(label) > 20:
+                        short_label = label[:17] + '...'
+                    short_labels.append(short_label)
+                
+                y_pos = np.arange(len(short_labels))
+                ax6.barh(y_pos, combo_counts, color='#2ECC40')
+                ax6.set_yticks(y_pos)
+                ax6.set_yticklabels(short_labels)
+                ax6.invert_yaxis()  # Plus fréquent en haut
+                ax6.set_title('Top 10 Combinaisons de Règles')
+                ax6.set_xlabel('Fréquence')
+            
+            plt.tight_layout()
+            
+            # Sauvegarder le graphique principal
+            main_plot_file = os.path.join(output_dir, f"main_plot_{timestamp}.png")
+            plt.savefig(main_plot_file, dpi=300, bbox_inches='tight')
+            print(f"  - Graphique principal: {os.path.basename(main_plot_file)}")
+            
+            plt.close('all')
+            
+        except Exception as e:
+            print(f"  ✗ Erreur lors de la génération des visualisations: {e}")
+    
+    def _generate_text_report(self, output_dir: str, timestamp: str) -> None:
+        """Génère un rapport texte détaillé."""
+        report_file = os.path.join(output_dir, f"report_{timestamp}.txt")
+        
+        with open(report_file, 'w', encoding='utf-8') as f:
+            f.write("="*70 + "\n")
+            f.write("RAPPORT DE BENCHMARK ARC\n")
+            f.write("="*70 + "\n\n")
+            
+            f.write(f"Date d'exécution: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Paramètres: use_shape_detection={self.use_shape_detection}\n\n")
+            
+            # Résumé global
+            f.write("RÉSUMÉ GLOBAL\n")
+            f.write("-"*70 + "\n")
+            f.write(f"Fichiers traités: {self.statistics['total_files']}\n")
+            f.write(f"  ✓ Succès: {self.statistics['successful_files']}\n")
+            f.write(f"  ✗ Échecs: {self.statistics['failed_files']}\n")
+            f.write(f"Tests totaux: {self.statistics['total_tests']}\n")
+            f.write(f"Tests corrects: {self.statistics['total_correct']}\n")
+            f.write(f"Précision globale: {self.statistics['overall_accuracy']*100:.2f}%\n")
+            f.write(f"Temps d'exécution moyen: {self.statistics['avg_execution_time']:.2f} secondes\n\n")
+            
+            f.write("\n" + "="*70 + "\n")
+            f.write("FIN DU RAPPORT\n")
+            f.write("="*70 + "\n")
+        
+        print(f"  - Rapport texte: {os.path.basename(report_file)}")
+    
+    def get_summary(self) -> Dict:
+        """Retourne un résumé des statistiques."""
+        return {
+            'overall_accuracy': self.statistics.get('overall_accuracy', 0),
+            'success_rate': self.statistics.get('successful_files', 0) / 
+                          max(1, self.statistics.get('total_files', 1)),
+            'avg_execution_time': self.statistics.get('avg_execution_time', 0),
+            'total_tests': self.statistics.get('total_tests', 0),
+            'total_correct': self.statistics.get('total_correct', 0)
+        }
+
+# ============================================
+# PARTIE 5: EXÉCUTION PRINCIPALE
+# ============================================
+
+if __name__ == "__main__":
+    # Chemin correct avec raw string
+    data_dir = r"Arthur_2\BRAIN_PROJECT\data"
+    
+    # Ou avec forward slashes
+    # data_dir = "Arthur_2/BRAIN_PROJECT/data"
+    
+    # Ou en corrigeant le chemin
+    data_dir = data_dir.replace('\\', '/')
+    
+    print("Démarrage du benchmark ARC...")
+    print(f"Répertoire des données: {data_dir}")
+    
+    # Vérifier si le répertoire existe
+    if not os.path.exists(data_dir):
+        print(f"ERREUR: Le répertoire {data_dir} n'existe pas!")
+        print("Vérifiez le chemin et réessayez.")
+        sys.exit(1)
+    
+    # Créer l'instance du benchmark
+    benchmark = ARCBatchBenchmark(use_shape_detection=True, verbose=True)
+    
+    # Exécuter le benchmark
+    benchmark.run_benchmark(data_dir)
+    
+    # Générer le rapport
+    benchmark.generate_report("C:\Users\timor\.virtual_documents\Projet-BRAIN\Timothée\benchmark_results")
+    
+    # Afficher un résumé
+    summary = benchmark.get_summary()
+    print(f"\n{'='*50}")
+    print("RÉSUMÉ FINAL")
+    print(f"{'='*50}")
+    print(f"Précision globale: {summary['overall_accuracy']*100:.1f}%")
+    print(f"Taux de succès: {summary['success_rate']*100:.1f}%")
+    print(f"Temps moyen par problème: {summary['avg_execution_time']:.2f}s")
