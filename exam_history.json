@@ -31,7 +31,11 @@
     "1770636737.1431649",
     "1770637410.531015",
     "1770638275.826772",
-    "1770638838.5346088"
+    "1770638838.5346088",
+    "1770639416.050008",
+    "1770640872.633312",
+    "1770643236.022858",
+    "1770643300.7668018"
   ],
   "results": [
     {
@@ -1970,6 +1974,286 @@
     {
       "batch_id": "1770638838.5346088",
       "timestamp": 1770638838.5346088,
+      "expected": "Rotation",
+      "detected_guess": "Rotation",
+      "success": true
+    },
+    {
+      "batch_id": "1770639416.050008",
+      "timestamp": 1770639416.050008,
+      "expected": "Fill",
+      "detected_guess": "None",
+      "success": false
+    },
+    {
+      "batch_id": "1770639416.050008",
+      "timestamp": 1770639416.050008,
+      "expected": "Fill",
+      "detected_guess": "Fill",
+      "success": true
+    },
+    {
+      "batch_id": "1770639416.050008",
+      "timestamp": 1770639416.050008,
+      "expected": "Fill",
+      "detected_guess": "None",
+      "success": false
+    },
+    {
+      "batch_id": "1770639416.050008",
+      "timestamp": 1770639416.050008,
+      "expected": "Color",
+      "detected_guess": "Color",
+      "success": true
+    },
+    {
+      "batch_id": "1770639416.050008",
+      "timestamp": 1770639416.050008,
+      "expected": "Symmetry",
+      "detected_guess": "Symmetry",
+      "success": true
+    },
+    {
+      "batch_id": "1770639416.050008",
+      "timestamp": 1770639416.050008,
+      "expected": "Translation",
+      "detected_guess": "Translation",
+      "success": true
+    },
+    {
+      "batch_id": "1770639416.050008",
+      "timestamp": 1770639416.050008,
+      "expected": "Rotation",
+      "detected_guess": "Rotation",
+      "success": true
+    },
+    {
+      "batch_id": "1770639416.050008",
+      "timestamp": 1770639416.050008,
+      "expected": "Color",
+      "detected_guess": "Color",
+      "success": true
+    },
+    {
+      "batch_id": "1770639416.050008",
+      "timestamp": 1770639416.050008,
+      "expected": "Symmetry",
+      "detected_guess": "Symmetry",
+      "success": true
+    },
+    {
+      "batch_id": "1770639416.050008",
+      "timestamp": 1770639416.050008,
+      "expected": "Rotation",
+      "detected_guess": "Rotation",
+      "success": true
+    },
+    {
+      "batch_id": "1770640872.633312",
+      "timestamp": 1770640872.633312,
+      "expected": "Rotation",
+      "detected_guess": "Rotation",
+      "success": true
+    },
+    {
+      "batch_id": "1770640872.633312",
+      "timestamp": 1770640872.633312,
+      "expected": "Symmetry",
+      "detected_guess": "Symmetry",
+      "success": true
+    },
+    {
+      "batch_id": "1770640872.633312",
+      "timestamp": 1770640872.633312,
+      "expected": "Rotation",
+      "detected_guess": "Rotation",
+      "success": true
+    },
+    {
+      "batch_id": "1770640872.633312",
+      "timestamp": 1770640872.633312,
+      "expected": "Symmetry",
+      "detected_guess": "Rotation",
+      "success": true
+    },
+    {
+      "batch_id": "1770640872.633312",
+      "timestamp": 1770640872.633312,
+      "expected": "Symmetry",
+      "detected_guess": "Rotation",
+      "success": false
+    },
+    {
+      "batch_id": "1770640872.633312",
+      "timestamp": 1770640872.633312,
+      "expected": "Translation",
+      "detected_guess": "Translation",
+      "success": true
+    },
+    {
+      "batch_id": "1770640872.633312",
+      "timestamp": 1770640872.633312,
+      "expected": "Color",
+      "detected_guess": "Color",
+      "success": true
+    },
+    {
+      "batch_id": "1770640872.633312",
+      "timestamp": 1770640872.633312,
+      "expected": "Translation",
+      "detected_guess": "None",
+      "success": false
+    },
+    {
+      "batch_id": "1770640872.633312",
+      "timestamp": 1770640872.633312,
+      "expected": "Color",
+      "detected_guess": "Color",
+      "success": true
+    },
+    {
+      "batch_id": "1770640872.633312",
+      "timestamp": 1770640872.633312,
+      "expected": "Translation",
+      "detected_guess": "Translation",
+      "success": true
+    },
+    {
+      "batch_id": "1770643236.022858",
+      "timestamp": 1770643236.022858,
+      "expected": "Color",
+      "detected_guess": "Color",
+      "success": true
+    },
+    {
+      "batch_id": "1770643236.022858",
+      "timestamp": 1770643236.022858,
+      "expected": "Symmetry",
+      "detected_guess": "Rotation",
+      "success": true
+    },
+    {
+      "batch_id": "1770643236.022858",
+      "timestamp": 1770643236.022858,
+      "expected": "Rotation",
+      "detected_guess": "Rotation",
+      "success": true
+    },
+    {
+      "batch_id": "1770643236.022858",
+      "timestamp": 1770643236.022858,
+      "expected": "Translation",
+      "detected_guess": "Translation",
+      "success": true
+    },
+    {
+      "batch_id": "1770643236.022858",
+      "timestamp": 1770643236.022858,
+      "expected": "Translation",
+      "detected_guess": "Translation",
+      "success": true
+    },
+    {
+      "batch_id": "1770643236.022858",
+      "timestamp": 1770643236.022858,
+      "expected": "Rotation",
+      "detected_guess": "Rotation",
+      "success": true
+    },
+    {
+      "batch_id": "1770643236.022858",
+      "timestamp": 1770643236.022858,
+      "expected": "Symmetry",
+      "detected_guess": "Rotation",
+      "success": true
+    },
+    {
+      "batch_id": "1770643236.022858",
+      "timestamp": 1770643236.022858,
+      "expected": "Translation",
+      "detected_guess": "Translation",
+      "success": true
+    },
+    {
+      "batch_id": "1770643236.022858",
+      "timestamp": 1770643236.022858,
+      "expected": "Fill",
+      "detected_guess": "None",
+      "success": false
+    },
+    {
+      "batch_id": "1770643236.022858",
+      "timestamp": 1770643236.022858,
+      "expected": "Symmetry",
+      "detected_guess": "Symmetry",
+      "success": true
+    },
+    {
+      "batch_id": "1770643300.7668018",
+      "timestamp": 1770643300.7668018,
+      "expected": "Color",
+      "detected_guess": "Color",
+      "success": true
+    },
+    {
+      "batch_id": "1770643300.7668018",
+      "timestamp": 1770643300.7668018,
+      "expected": "Color",
+      "detected_guess": "Color",
+      "success": true
+    },
+    {
+      "batch_id": "1770643300.7668018",
+      "timestamp": 1770643300.7668018,
+      "expected": "Rotation",
+      "detected_guess": "Rotation",
+      "success": true
+    },
+    {
+      "batch_id": "1770643300.7668018",
+      "timestamp": 1770643300.7668018,
+      "expected": "Symmetry",
+      "detected_guess": "Rotation",
+      "success": true
+    },
+    {
+      "batch_id": "1770643300.7668018",
+      "timestamp": 1770643300.7668018,
+      "expected": "Translation",
+      "detected_guess": "Translation",
+      "success": true
+    },
+    {
+      "batch_id": "1770643300.7668018",
+      "timestamp": 1770643300.7668018,
+      "expected": "Translation",
+      "detected_guess": "Translation",
+      "success": true
+    },
+    {
+      "batch_id": "1770643300.7668018",
+      "timestamp": 1770643300.7668018,
+      "expected": "Symmetry",
+      "detected_guess": "Symmetry",
+      "success": true
+    },
+    {
+      "batch_id": "1770643300.7668018",
+      "timestamp": 1770643300.7668018,
+      "expected": "Fill",
+      "detected_guess": "None",
+      "success": false
+    },
+    {
+      "batch_id": "1770643300.7668018",
+      "timestamp": 1770643300.7668018,
+      "expected": "Fill",
+      "detected_guess": "None",
+      "success": false
+    },
+    {
+      "batch_id": "1770643300.7668018",
+      "timestamp": 1770643300.7668018,
       "expected": "Rotation",
       "detected_guess": "Rotation",
       "success": true
