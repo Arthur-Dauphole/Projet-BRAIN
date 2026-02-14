@@ -49,18 +49,34 @@ def grid_to_rgb(grid):
     return rgb_array
 
 # Display function with grid lines
-def show_grid_with_lines(grid, title):
-    rgb = grid_to_rgb(grid)
-    h, w, _ = rgb.shape
-    fig, ax = plt.subplots()
-    ax.imshow(rgb)
-    ax.set_xticks(np.arange(-0.5, w, 1), minor=True)
-    ax.set_yticks(np.arange(-0.5, h, 1), minor=True)
-    ax.grid(which='minor', color='white', linewidth=1)
-    ax.tick_params(which='both', bottom=False, left=False, labelbottom=False, labelleft=False)
-    ax.set_title(title)
+def show_side_by_side(grid1, grid2, title1="Original Grid", title2="After Geometric Reasoning"):
+    rgb1 = grid_to_rgb(grid1)
+    rgb2 = grid_to_rgb(grid2)
+
+    h, w, _ = rgb1.shape
+
+    fig, axes = plt.subplots(1, 2, figsize=(8, 4))
+
+    for ax, rgb, title in zip(axes, [rgb1, rgb2], [title1, title2]):
+        ax.imshow(rgb)
+
+        ax.set_xticks(np.arange(-0.5, w, 1), minor=True)
+        ax.set_yticks(np.arange(-0.5, h, 1), minor=True)
+        ax.grid(which='minor', color='white', linewidth=1)
+
+        ax.tick_params(
+            which='both',
+            bottom=False,
+            left=False,
+            labelbottom=False,
+            labelleft=False
+        )
+
+        ax.set_title(title)
+
+    plt.tight_layout()
     plt.show()
 
+
 # Display
-show_grid_with_lines(grid, "Original Grid")
-show_grid_with_lines(new_grid, "After Geometric Reasoning")
+show_side_by_side(grid, new_grid, "Original Grid", "After Geometric Reasoning")
